@@ -90,6 +90,9 @@ jobs:
       - name: Build
         shell: pwsh
         run: cmake --build windows/build --config Release --parallel
+      - name: Check the Release binary and symbols
+        shell: pwsh
+        run: ./scripts/ci/check-tsf-dll.ps1 -BuildDir 'windows/build'
       - name: Test the wire contract on this architecture
         run: ctest --no-tests=error --test-dir windows/build -C Release --output-on-failure
 
@@ -167,6 +170,9 @@ jobs:
       - name: Build
         shell: pwsh
         run: cmake --build server/build-release --config Release --parallel
+      - name: Check the Release binaries and symbols
+        shell: pwsh
+        run: ./scripts/ci/check-server-binaries.ps1 -BuildDir server/build-release/bin/Release
       - name: Test with the product's exact data
         shell: pwsh
         env:

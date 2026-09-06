@@ -1,9 +1,20 @@
 cmake_minimum_required(VERSION 3.25.0)
+if(POLICY CMP0141)
+    cmake_policy(SET CMP0141 NEW)
+endif()
 
 set(PROJECT_NAME "MetasequoiaImeServer")
 
 cmake_policy(SET CMP0167 NEW)
 project(${PROJECT_NAME} VERSION 1.0)
+
+# Release binaries need usable symbols for crash diagnosis. Keep the PDB beside each executable so
+# the release job can validate and publish it without changing the binary's install layout.
+if(MSVC)
+    set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "ProgramDatabase")
+    add_compile_options("$<$<CONFIG:Release>:/Zi>")
+    add_link_options("$<$<CONFIG:Release>:/DEBUG>")
+endif()
 
 include(CTest)
 

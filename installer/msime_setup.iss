@@ -92,6 +92,7 @@ Source: "{#MySourceRoot}\LICENSE.txt"; \
     DestDir: "{commonpf64}\metasequoiaime"; Flags: ignoreversion
 
 ; TSF DLL 使用版本独立目录，避免升级时覆盖仍被进程加载的 DLL。
+; PDB 与对应 DLL 放在同一目录，调试器可按二进制的内嵌路径自动找到符号。
 Source: "{#MySourceRoot}\tsf_dll\32\*.dll"; \
     DestDir: "{commonpf32}\metasequoiaime\{code:GetVersionDir}"; \
     Flags: ignoreversion regserver 32bit
@@ -99,6 +100,14 @@ Source: "{#MySourceRoot}\tsf_dll\32\*.dll"; \
 Source: "{#MySourceRoot}\tsf_dll\64\*.dll"; \
     DestDir: "{commonpf64}\metasequoiaime\{code:GetVersionDir}"; \
     Flags: ignoreversion regserver
+
+Source: "{#MySourceRoot}\tsf_dll\32\*.pdb"; \
+    DestDir: "{commonpf32}\metasequoiaime\{code:GetVersionDir}"; \
+    Flags: ignoreversion
+
+Source: "{#MySourceRoot}\tsf_dll\64\*.pdb"; \
+    DestDir: "{commonpf64}\metasequoiaime\{code:GetVersionDir}"; \
+    Flags: ignoreversion
 
 Source: "{#MySourceRoot}\server_exe\*"; \
     DestDir: "{commonpf64}\metasequoiaime\server"; \

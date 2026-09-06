@@ -2,7 +2,7 @@
 
 本目录的脚本从 Windows 合仓目录收集产物、签名、用 Inno Setup 打成安装包。它服务两条流程：
 
-- **正式发布**：由 `MSIME-Windows` 的 release workflow 驱动，用真实证书签名 `MetasequoiaImeServer.exe`（保证 `uiAccess` 生效）和最终安装包；产物是挂在 Release 上的 `MetasequoiaIME_Setup_v<版本>.exe`。见下面「CI 契约」
+- **正式发布**：由 `MSIME-Windows` 的 release workflow 驱动，用真实证书签名 `MetasequoiaImeServer.exe`（保证 `uiAccess` 生效）和最终安装包；产物是挂在 Release 上的 `MetasequoiaIME_Setup_v<版本>.exe`，并携带与 Release 二进制匹配的 PDB 符号文件。见下面「CI 契约」
 - **本地测试**：手工跑，用本机自签名证书，用来在自己机器上验证安装流程。本文其余部分讲的是这条
 
 版本号不是固定的，由 `Prepare-PackageFiles.ps1` 的 `-TargetVersion` 决定，默认 `0.0.1`；正式发布时 CI 传入真实版本。
@@ -36,7 +36,7 @@ pwsh -File ./Prepare-PackageFiles.ps1 -TargetVersion 1.2.3 -RepoRoot .. `
 - Windows 10/11，PowerShell 7（`pwsh`）
 - [Inno Setup](https://jrsoftware.org/isinfo.php) 6.6 或更高版本
 - Windows SDK（提供 `signtool.exe`）
-- 先初始化本仓 submodule，并完成 `windows/`、`server/` 的 Release 编译以及 `ui-html/` 设置页构建。
+- 先初始化本仓 submodule，并完成 `windows/`、`server/` 的 Release 编译以及 `ui-html/` 设置页构建。Release 构建必须生成同目录 PDB；打包脚本会拒绝缺少匹配符号的产物。
 - 在仓库根目录运行 `python scripts/product_lock.py fetch-dictionaries --staging-root .`，下载并验证产品锁中的词库。
 - `vendor/MetasequoiaImeEngine/helpcode/helpcodes/` 随引擎检出，无需旧 HelpCode 仓库。
 
@@ -56,7 +56,7 @@ pwsh -File .\test.ps1
 `test.ps1` 会按顺序做这些事：
 
 1. 编译本仓 TSF、Server，并构建设置页；缺少组件入口则失败
-2. `Prepare-PackageFiles.ps1` — 收集 `server_exe\`、`tsf_dll\`、`app_data\`，并把 `msime_setup.iss` 的版本写成 `0.0.1`
+2. `Prepare-PackageFiles.ps1` — 收集 `server_exe\`、`tsf_dll\`、`app_data\` 及匹配的 PDB，并把 `msime_setup.iss` 的版本写成 `0.0.1`
 3. `Sign-PackageBinaries-Local.ps1` — 本机自签名包内 EXE/DLL
 4. `Compile-Installer.ps1` — 编译出 `Output\MetasequoiaIME_Setup_v0.0.1.exe`
 5. `Sign-Installer-Local.ps1` — 本机自签名安装包

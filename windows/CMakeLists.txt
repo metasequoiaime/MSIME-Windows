@@ -1,4 +1,7 @@
 cmake_minimum_required(VERSION 3.25.0)
+if(POLICY CMP0141)
+    cmake_policy(SET CMP0141 NEW)
+endif()
 
 # TSF tip loads into host processes (QQ/Chrome/...). Static CRT avoids
 # colliding with the host's MSVCP140/VCRUNTIME140 (common QQ crash signature).
@@ -6,6 +9,14 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 set(PROJECT_NAME MetasequoiaImeTsf)
 project(${PROJECT_NAME} LANGUAGES CXX C)
+
+# Release binaries need usable symbols for crash diagnosis. Keep the PDB beside the DLL so the
+# release job can validate and publish it without changing the binary's install layout.
+if(MSVC)
+    set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "ProgramDatabase")
+    add_compile_options("$<$<CONFIG:Release>:/Zi>")
+    add_link_options("$<$<CONFIG:Release>:/DEBUG>")
+endif()
 
 include(CTest)
 if(BUILD_TESTING)

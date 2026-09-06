@@ -14,10 +14,17 @@ try {
     Copy-Item (Join-Path $PSScriptRoot '../default_config') $installer -Recurse
     foreach ($file in @(
         'server/build-release/bin/Release/MetasequoiaImeServer.exe',
+        'server/build-release/bin/Release/MetasequoiaImeServer.pdb',
         'server/build-release/bin/Release/MetasequoiaImeDictionaryReplay.exe',
+        'server/build-release/bin/Release/MetasequoiaImeDictionaryReplay.pdb',
         'server/build-release/bin/Release/MetasequoiaImeServerTests.exe',
+        'server/build-release/bin/Release/MetasequoiaImeServerTests.pdb',
+        'server/build-release/bin/Release/test_webview_contract.exe',
+        'server/build-release/bin/Release/test_webview_contract.pdb',
         'windows/build32-release/Release/MetasequoiaImeTsf.dll',
+        'windows/build32-release/Release/MetasequoiaImeTsf.pdb',
         'windows/build64-release/Release/MetasequoiaImeTsf.dll',
+        'windows/build64-release/Release/MetasequoiaImeTsf.pdb',
         'THIRD_PARTY_NOTICES.txt',
         'LICENSE',
         'server/assets/config/config.toml',
@@ -40,11 +47,27 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Failed to create packaging fixture' }
     & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -TargetVersion '2026.9.1'
     foreach ($file in @('app_data/html/webview2/shared/runtime.js', 'app_data/dictionary-manifest.json',
-                         'tsf_dll/32/MetasequoiaImeTsf.dll', 'tsf_dll/64/MetasequoiaImeTsf.dll',
+                         'tsf_dll/32/MetasequoiaImeTsf.dll', 'tsf_dll/32/MetasequoiaImeTsf.pdb',
+                         'tsf_dll/64/MetasequoiaImeTsf.dll', 'tsf_dll/64/MetasequoiaImeTsf.pdb',
+                         'server_exe/MetasequoiaImeServer.pdb',
+                         'server_exe/MetasequoiaImeDictionaryReplay.pdb',
                          'app_data/helpcodes/helpcode.txt', 'THIRD_PARTY_NOTICES.txt', 'LICENSE.txt')) {
         if (-not (Test-Path (Join-Path $installer $file))) { throw "Missing packaged file: $file" }
     }
-    if (Test-Path (Join-Path $installer 'server_exe/MetasequoiaImeServerTests.exe')) { throw 'Packaged a test executable' }
+    foreach ($testFile in @(
+        'server_exe/MetasequoiaImeServerTests.exe',
+        'server_exe/MetasequoiaImeServerTests.pdb',
+        'server_exe/test_webview_contract.exe',
+        'server_exe/test_webview_contract.pdb'
+    )) {
+        if (Test-Path (Join-Path $installer $testFile)) { throw "Packaged a test file: $testFile" }
+    }
+    $serverPdbFixture = Join-Path $fixture 'server/build-release/bin/Release/MetasequoiaImeServer.pdb'
+    Remove-Item $serverPdbFixture -Force
+    $rejected = $false
+    try { & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture } catch { $rejected = $_.Exception.Message -match 'PDB' }
+    if (-not $rejected) { throw 'Missing production PDB was accepted' }
+    [IO.File]::WriteAllText($serverPdbFixture, 'fixture')
     $database = Join-Path $installer 'app_data/msime.db'
     [IO.File]::WriteAllText($database, 'preserved user data')
     & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -TsfDirectory windows -ServerDirectory server -UiHtmlDirectory ui-html -NoticesDirectory . -Light

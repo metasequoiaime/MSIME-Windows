@@ -45,6 +45,8 @@ $serverRelease = Join-Path $RepoRoot (Join-Path $ServerDirectory 'build-release\
 $dictionaryReplayRelease = Join-Path $serverRelease 'MetasequoiaImeDictionaryReplay.exe'
 $tsf32Release = Join-Path $RepoRoot (Join-Path $TsfDirectory 'build32-release\Release\MetasequoiaImeTsf.dll')
 $tsf64Release = Join-Path $RepoRoot (Join-Path $TsfDirectory 'build64-release\Release\MetasequoiaImeTsf.dll')
+$tsf32Pdb = Join-Path $RepoRoot (Join-Path $TsfDirectory 'build32-release\Release\MetasequoiaImeTsf.pdb')
+$tsf64Pdb = Join-Path $RepoRoot (Join-Path $TsfDirectory 'build64-release\Release\MetasequoiaImeTsf.pdb')
 $webviewRoot = Join-Path $RepoRoot (Join-Path $UiHtmlDirectory 'webview2')
 $serverConfig = Join-Path $RepoRoot (Join-Path $ServerDirectory 'assets\config\config.toml')
 $factoryConfig = Join-Path $PSScriptRoot 'default_config\config.default.toml'
@@ -65,6 +67,22 @@ Assert-PathExists -LiteralPath $serverRelease -Description 'Server Release 输�
 Assert-PathExists -LiteralPath $dictionaryReplayRelease -Description '用户词库回放程序 Release EXE'
 Assert-PathExists -LiteralPath $tsf32Release -Description '32 位 TSF Release DLL'
 Assert-PathExists -LiteralPath $tsf64Release -Description '64 位 TSF Release DLL'
+Assert-PathExists -LiteralPath $tsf32Pdb -Description '32 位 TSF Release PDB'
+Assert-PathExists -LiteralPath $tsf64Pdb -Description '64 位 TSF Release PDB'
+$serverExecutables = @(
+    Get-ChildItem -LiteralPath $serverRelease -Recurse -File -Filter '*.exe' |
+        Where-Object { $_.BaseName -notlike '*Tests' -and $_.BaseName -notlike 'test_*' }
+)
+$missingServerPdb = @(
+    $serverExecutables |
+        Where-Object {
+            -not (Test-Path -LiteralPath (Join-Path $_.DirectoryName "$($_.BaseName).pdb"))
+        } |
+        ForEach-Object { Join-Path $_.DirectoryName "$($_.BaseName).pdb" }
+)
+if ($missingServerPdb.Count -gt 0) {
+    throw "Server Release 缺少同名 PDB：$($missingServerPdb -join ', ')"
+}
 Assert-PathExists -LiteralPath $serverConfig -Description 'Server config.toml'
 Assert-PathExists -LiteralPath $appIcon -Description '应用图标'
 Assert-PathExists -LiteralPath $thirdPartyNotices -Description '第三方声明 THIRD_PARTY_NOTICES.txt'
@@ -160,10 +178,17 @@ Copy-DirectoryContents -Source (Join-Path $webviewRoot 'menu') -Destination (Joi
 Copy-DirectoryContents -Source (Join-Path $webviewRoot 'settings\ime-settings\dist') `
     -Destination (Join-Path $targetWebview 'settings\ime-settings\dist')
 
-# Server Release 输出整体复制，但测试程序绝不能进入安装包。
+# Server Release 输出整体复制，但测试程序及其 PDB 绝不能进入安装包。
+# 其他 PDB 保留在对应 EXE 旁边，方便安装后直接进行崩溃分析。
 Reset-Directory -LiteralPath $targetServer
 Copy-DirectoryContents -Source $serverRelease -Destination $targetServer
 Get-ChildItem -LiteralPath $targetServer -Recurse -File -Filter '*Tests.exe' |
+    Remove-Item -Force
+Get-ChildItem -LiteralPath $targetServer -Recurse -File -Filter '*Tests.pdb' |
+    Remove-Item -Force
+Get-ChildItem -LiteralPath $targetServer -Recurse -File -Filter 'test_*.exe' |
+    Remove-Item -Force
+Get-ChildItem -LiteralPath $targetServer -Recurse -File -Filter 'test_*.pdb' |
     Remove-Item -Force
 
 Reset-Directory -LiteralPath $targetTsf
@@ -171,7 +196,9 @@ $targetTsf32 = Join-Path $targetTsf '32'
 $targetTsf64 = Join-Path $targetTsf '64'
 New-Item -ItemType Directory -Path $targetTsf32, $targetTsf64 -Force | Out-Null
 Copy-Item -LiteralPath $tsf32Release -Destination $targetTsf32 -Force
+Copy-Item -LiteralPath $tsf32Pdb -Destination $targetTsf32 -Force
 Copy-Item -LiteralPath $tsf64Release -Destination $targetTsf64 -Force
+Copy-Item -LiteralPath $tsf64Pdb -Destination $targetTsf64 -Force
 Copy-Item -LiteralPath $appIcon -Destination (Join-Path $PSScriptRoot 'MetasequoiaIME.ico') -Force
 # rime-ice is GPL-3.0 and requires attribution, and its content forms the bulk of msime.db, so the
 # notice has to reach the user's disk rather than only exist in the source repository.
@@ -213,6 +240,9 @@ Get-ChildItem -LiteralPath $settingsDist -Recurse -File -Include '*.js', '*.html
 
 $serverBinaryCount = @(Get-ChildItem -LiteralPath $targetServer -Recurse -File -Include '*.exe', '*.dll').Count
 $tsfBinaryCount = @(Get-ChildItem -LiteralPath $targetTsf -Recurse -File -Include '*.exe', '*.dll').Count
+$symbolCount = @(
+    Get-ChildItem -LiteralPath $targetServer, $targetTsf -Recurse -File -Filter '*.pdb'
+).Count
 $modeLabel = if ($Light) { '轻量' } else { '完整' }
 Write-Host "安装文件准备完成（$modeLabel）：$PSScriptRoot"
-Write-Host "版本：$TargetVersion；Server EXE/DLL：$serverBinaryCount 个；TSF EXE/DLL：$tsfBinaryCount 个。"
+Write-Host "版本：$TargetVersion；Server EXE/DLL：$serverBinaryCount 个；TSF EXE/DLL：$tsfBinaryCount 个；PDB：$symbolCount 个。"
