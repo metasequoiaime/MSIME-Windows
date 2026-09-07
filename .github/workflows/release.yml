@@ -155,6 +155,11 @@ jobs:
     needs: [prepare, dependencies]
     if: ${{ needs.prepare.outputs.should_publish == 'true' }}
     runs-on: [self-hosted, Windows, X64, msime-windows]
+    env:
+      # Each self-hosted runner has a different default vcpkg installation.
+      # Keep every matrix job aligned with the registry selected below even
+      # when GitHub schedules x64 and Win32 on different runner instances.
+      VCPKG_ROOT: ${{ matrix.vcpkg_root }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -188,9 +193,6 @@ jobs:
         shell: pwsh
         working-directory: windows
         run: |
-          # The self-hosted runner has a machine-level VCPKG_ROOT. Keep the
-          # matrix-selected registry and executable aligned for both targets.
-          $env:VCPKG_ROOT = '${{ matrix.vcpkg_root }}'
           & "$env:VCPKG_ROOT\\vcpkg.exe" install --triplet ${{ matrix.triplet }}
 
       # CMakePresets.json points at a developer machine's vcpkg, so the presets cannot be used
