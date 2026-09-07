@@ -203,7 +203,7 @@ jobs:
         run: |
           $expected = '${{ matrix.vcpkg_root }}'
           if ($env:VCPKG_ROOT -ne $expected) {
-            throw "VCPKG_ROOT is '$env:VCPKG_ROOT'; expected '$expected' for ${{ matrix.name }}"
+            throw "VCPKG_ROOT is '$env:VCPKG_ROOT'; expected '$expected' for ${{ matrix.name }} on runner '$env:RUNNER_NAME'"
           }
 
       - name: Configure
