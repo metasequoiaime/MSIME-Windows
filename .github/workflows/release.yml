@@ -255,10 +255,6 @@ jobs:
         shell: pwsh
         run: cmake --build server/build-release --config Release --parallel
 
-      - name: Embed the Server uiAccess manifest
-        shell: pwsh
-        run: ./scripts/ci/embed-server-manifest.ps1 -BuildDir server/build-release/bin/Release
-
       - name: Check the binaries the installer requires
         shell: pwsh
         run: ./scripts/ci/check-server-binaries.ps1 -BuildDir server/build-release/bin/Release
@@ -268,6 +264,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./scripts/ci/test-server.ps1 -ServerRoot server -StagingRoot "$env:RUNNER_TEMP/product-data" -BuildDir build-release
+
+      # A uiAccess=true binary cannot be launched from the non-interactive
+      # service session used by this runner. Test the normal build first, then
+      # embed the manifest before upload and signing.
+      - name: Embed the Server uiAccess manifest
+        shell: pwsh
+        run: ./scripts/ci/embed-server-manifest.ps1 -BuildDir server/build-release/bin/Release
+
+      - name: Verify the embedded Server uiAccess manifest
+        shell: pwsh
+        run: ./scripts/ci/check-server-binaries.ps1 -BuildDir server/build-release/bin/Release
 
       - name: Upload the Server build
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
