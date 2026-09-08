@@ -1,5 +1,5 @@
 name: Bug 反馈 / Bug Report
-description: 报告水杉输入法的错误或异常行为。Report a bug or unexpected behavior.
+description: 遇到出错、无法输入或显示异常？请描述现象，我们一起排查。Report something that is not working.
 title: "[Bug] "
 labels: ["bug"]
 type: Bug
@@ -16,7 +16,7 @@ body:
     id: component
     attributes:
       label: 相关组件 / Component
-      description: 问题主要出现在哪个部分？Which part is primarily affected?
+      description: 可选择多项。不知道属于哪个部分时，选“不确定”即可。Select all that apply; choose Not sure if unsure.
       multiple: true
       options:
         - 候选窗 / Candidate window
@@ -35,19 +35,19 @@ body:
     attributes:
       label: 问题与行为 / Problem & Actual behavior
       description: 发生了什么？What happened?
-      placeholder: |
-        简要说明问题现象与行为。
+      placeholder: |-
+        例如：打开记事本，切换到水杉输入法后，候选字显示成方框，无法辨认。其他软件中也会出现。
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
       label: 复现步骤 / Steps to Reproduce
-      description: 请尽量给出可复现步骤。Please provide reproducible steps.
-      placeholder: |
-        1. …
-        2. …
-        3. …
+      description: 按顺序写下你做了什么。偶尔出现、无法稳定重现也可以反馈，请写出当时的操作。Describe what you did, even if the issue only happens sometimes.
+      placeholder: |-
+        1. 打开一个文本编辑器，切换到水杉输入法
+        2. 输入测试拼音 nihao
+        3. 观察候选字是否正常显示
     validations:
       required: true
   - type: textarea
@@ -55,21 +55,22 @@ body:
     attributes:
       label: 预期行为 / Expected Behavior
       description: 正常情况下应该怎样？What should happen instead?
+      placeholder: 例如：候选字应正常显示为汉字，按数字键可以选中。
     validations:
       required: true
   - type: input
     id: version
     attributes:
       label: 版本 / Version
-      description: 安装包版本、Release 标签，或 commit hash。Installer version, release tag, or commit hash.
-      placeholder: e.g. 0.0.1 / v0.x.x / abc1234
+      description: 填写你安装的输入法版本号，可查看安装包文件名或下载记录。暂时找不到请填“不确定”。Use the installed version; enter Not sure if unavailable.
+      placeholder: 例如：安装包中的 vX.Y.Z；不知道请填“不确定”
     validations:
       required: true
   - type: input
     id: os
     attributes:
       label: 系统环境 / OS
-      description: Windows 版本与版本号。Windows edition and version.
+      description: Windows 版本与版本号。Windows edition and version. 知道多少写多少，不清楚的项目可写“不确定”。Include what you know; unknown details are OK.
       placeholder: e.g. Windows 11 Pro 24H2 / Windows 10 Pro 22H2
     validations:
       required: true
@@ -83,6 +84,8 @@ body:
         - 五笔 / Wubi
         - 其他 / Other
         - 不适用 / N/A
+        - 不确定 / Not sure
+      description: 选择当时使用的输入方式；不知道名称可以选“不确定”。Choose your input method, or Not sure.
     validations:
       required: true
   - type: dropdown

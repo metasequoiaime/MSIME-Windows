@@ -1,5 +1,5 @@
 name: 功能建议 / Feature Request
-description: 为水杉输入法提出新功能或改进建议。Propose a new feature or improvement.
+description: 希望增加功能或改善体验？说说你的使用场景。Suggest a feature or improvement.
 title: "[Feat] "
 labels: ["enhancement"]
 type: Feature
@@ -16,7 +16,7 @@ body:
     id: component
     attributes:
       label: 相关组件 / Component
-      description: 该功能主要涉及哪个部分？Which part does this mainly involve?
+      description: 可选择多项。不知道属于哪个部分时，选“不确定”即可。Select all that apply; choose Not sure if unsure.
       multiple: true
       options:
         - 候选窗 / Candidate window
@@ -34,18 +34,19 @@ body:
     id: problem
     attributes:
       label: 问题与动机 / Problem & Motivation
-      description: 当前缺少什么，或现有体验哪里不够好？What problem does this solve?
-      placeholder: |
-        例如：无法…… / 使用某功能时很麻烦……
+      description: 说说你在什么情况下遇到不便，以及它对你的影响。不需要了解技术实现。Describe your situation and the difficulty.
+      placeholder: |-
+        例如：在高分辨率屏幕上打字时，候选字太小，看清后才能选字，打字容易中断。
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
       label: 建议方案 / Proposal
-      description: 希望如何实现？可包含交互、快捷键、配置项等。Describe the desired behavior.
+      description: 描述你希望达到的效果即可，不用设计实现方案。还没想好可以跳过。Describe the result you would like; an implementation plan is not needed.
+      placeholder: 例如：希望能在设置里调大候选字，并立即看到调整效果。
     validations:
-      required: true
+      required: false
   - type: textarea
     id: alternatives
     attributes:
