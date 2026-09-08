@@ -331,17 +331,22 @@ bool NormalizePinyin(const std::string &mode, const std::string &input, quanpin:
 bool ValidateChineseEntry(const std::string &mode, const std::string &code, const std::string &word,
                           quanpin::Segments &segments, std::string &normalized, std::string &message)
 {
+    (void)mode;
     if (word.empty())
     {
         message = "词条不能为空";
         return false;
     }
-    if (!NormalizePinyin(mode, code, segments, normalized, message))
-        return false;
     const size_t han_count = HelpcodeUtils::count_han_chars(word);
-    if (han_count == 0 || han_count != segments.size())
+    if (!Validation::NormalizeFullPinyin(code, segments, normalized, han_count))
     {
-        message = "拼音音节数量必须与汉字数量一致";
+        message = "全拼必须由拼音表中的完整音节组成，不能使用简拼";
+        return false;
+    }
+    if (han_count != segments.size())
+    {
+        message = "拼音音节数量必须与汉字数量一致（词 " + std::to_string(han_count) + " 字，拼音 " +
+                  std::to_string(segments.size()) + " 音节）";
         return false;
     }
     return true;

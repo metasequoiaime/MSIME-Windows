@@ -1,4 +1,5 @@
 import { createDictionaryPager, DICTIONARY_PAGE_SIZE } from '../utils/dictionary-pagination';
+import { readDictionaryFile } from '../utils/dictionary-file';
 import { onHostMessage } from '../utils/host-messages';
 import type { SettingsMessage } from '../../../../shared/messages';
 type DictionaryRequest = Extract<SettingsMessage, { type: 'dictionaryRequest' }>['data'];
@@ -177,7 +178,7 @@ export function setupDictionary(): void {
     input.value = '';
     if (!file) return;
     try {
-      const content = await file.text();
+      const content = await readDictionaryFile(file);
       if (!content.trim()) { showToast('文件内容为空', false); return; }
       post('import', { content });
     } catch {
@@ -193,7 +194,7 @@ export function setupDictionary(): void {
     input.value = '';
     if (!file) return;
     try {
-      const content = await file.text();
+      const content = await readDictionaryFile(file);
       if (!content.trim()) { showToast('文件内容为空', false); return; }
       post('importHans', { content });
     } catch {

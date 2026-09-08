@@ -10,7 +10,8 @@
 
 namespace SettingsDictionary::Validation
 {
-bool NormalizeFullPinyin(const std::string &input, quanpin::Segments &segments, std::string &normalized)
+bool NormalizeFullPinyin(const std::string &input, quanpin::Segments &segments, std::string &normalized,
+                         std::size_t expected_syllables)
 {
     std::string source = input;
     source.erase(std::remove_if(source.begin(), source.end(), [](unsigned char ch) { return std::isspace(ch); }),
@@ -33,6 +34,15 @@ bool NormalizeFullPinyin(const std::string &input, quanpin::Segments &segments, 
         if (cuts.empty())
             return false;
         segments = cuts.front();
+        if (expected_syllables != 0 && segments.size() != expected_syllables)
+        {
+            const auto alternatives = quanpin::enumerate_complete_segmentations(quanpin::build_syllable_graph(source));
+            const auto match = std::find_if(
+                alternatives.begin(), alternatives.end(),
+                [expected_syllables](const quanpin::Segments &cut) { return cut.size() == expected_syllables; });
+            if (match != alternatives.end())
+                segments = *match;
+        }
     }
 
     const auto &valid = quanpin::intact_pinyin_set();
