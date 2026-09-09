@@ -17,6 +17,13 @@ enum class KeyEventSendResult
     DeliveryAmbiguous,
 };
 
+// Only a write that definitely did not reach Server may be handed to a local
+// fallback. DeliveryAmbiguous must go through the existing epoch recovery path.
+inline bool IsDefinitelyNotSent(KeyEventSendResult result) noexcept
+{
+    return result == KeyEventSendResult::DefinitelyNotSent;
+}
+
 int InitIpc();
 int InitNamedpipe();
 int ConnectToAllNamedpipe();
