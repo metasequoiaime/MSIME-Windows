@@ -2,6 +2,7 @@
 #include "Globals.h"
 #include "Private.h"
 #include "MetasequoiaIME.h"
+#include "ClientKeyRouter.h"
 #include <cstdint>
 #include <string>
 
@@ -45,6 +46,13 @@ typedef struct KeyHandlerEditSessionDTO
     uint64_t requestId;
     std::wstring prefetchedText;
 } KeyHandlerEditSessionDTO;
+
+inline ClientKeyEvent client_key_event(const KeyHandlerEditSessionDTO &dto,
+                                       ClientFocusLease lease,
+                                       uint32_t modifiers = 0,
+                                       bool ui_less = false) {
+    return {lease, dto.code, 0, modifiers, static_cast<char16_t>(dto.wch), ui_less};
+}
 
 class CKeyStateCategory
 {
