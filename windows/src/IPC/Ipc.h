@@ -1,5 +1,6 @@
 #pragma once
 
+#include "KeyEventSendResult.h"
 #include "VoiceCompositionPipe.h"
 #include <Windows.h>
 #include <atomic>
@@ -9,20 +10,6 @@
 #include <vector>
 
 #include "../../../vendor/MetasequoiaImeEngine/contracts/windows_ipc.h"
-
-enum class KeyEventSendResult
-{
-    Sent,
-    DefinitelyNotSent,
-    DeliveryAmbiguous,
-};
-
-// Only a write that definitely did not reach Server may be handed to a local
-// fallback. DeliveryAmbiguous must go through the existing epoch recovery path.
-inline bool IsDefinitelyNotSent(KeyEventSendResult result) noexcept
-{
-    return result == KeyEventSendResult::DefinitelyNotSent;
-}
 
 int InitIpc();
 int InitNamedpipe();
