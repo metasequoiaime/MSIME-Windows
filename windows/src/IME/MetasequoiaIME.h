@@ -15,6 +15,7 @@
 class CLangBarItemButton;
 class CCandidateListUIPresenter;
 class CCompositionProcessorEngine;
+class IClientKeyRouter;
 
 const DWORD WM_CheckGlobalCompartment = WM_USER;
 const DWORD WM_ConnectNamedpipe = WM_USER + 1;
@@ -77,6 +78,8 @@ class CMetasequoiaIME : public ITfTextInputProcessorEx,
   public:
     CMetasequoiaIME();
     ~CMetasequoiaIME();
+    void SetClientKeyRouter(IClientKeyRouter *router) noexcept { _clientKeyRouter = router; }
+    IClientKeyRouter *ClientKeyRouter() const noexcept { return _clientKeyRouter; }
 
     // IUnknown
     STDMETHODIMP QueryInterface(REFIID riid, _Outptr_ void **ppvObj);
@@ -469,6 +472,7 @@ class CMetasequoiaIME : public ITfTextInputProcessorEx,
     friend LRESULT CALLBACK CMetasequoiaIME_WindowProc(HWND wndHandle, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
   private:
+    IClientKeyRouter *_clientKeyRouter = nullptr; // borrowed; owner outlives IME
     ITfThreadMgr *_pThreadMgr;
     TfClientId _tfClientId;
     DWORD _dwActivateFlags;
