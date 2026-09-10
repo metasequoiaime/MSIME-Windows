@@ -1,0 +1,14 @@
+# Line endings are decided here rather than by each contributor's core.autocrlf. The repository is
+# already predominantly LF -- 382 text files against 50 -- and the stragglers are what break CI: an
+# edit made on macOS or Linux writes LF lines into one of the CRLF files, and clang-format rejects
+# the resulting mix. That is what took `quality / Workflow validation` red on KeyStateCategory.h,
+# where three lines out of a CRLF file had arrived as LF.
+* text=auto eol=lf
+
+# Declared rather than left to git's binary heuristic, which only samples the first 8000 bytes.
+# user_dict.dat is a 40-byte seed that is almost entirely NUL, so the heuristic does catch it today,
+# but a larger one written later would not be caught by a sample of its head.
+*.dat binary
+*.ico binary
+*.mp3 binary
+*.png binary
