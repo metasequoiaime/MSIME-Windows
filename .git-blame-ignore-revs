@@ -3,3 +3,6 @@
 
 # style: 用 .clang-format 重排 server / windows / ui / log
 42238a2af693fcd0dd80354b2b450c6647647dd2
+
+# chore: settle line endings in .gitattributes
+6a320d5d07f29a7757f5d066fc4e142cc521a300
