@@ -71,7 +71,9 @@ ctest --test-dir server/build-release -C Release --output-on-failure --no-tests=
 - `tests/includes/test_framework.h`
   - lightweight assertion helpers
 - `tests/src/test_shuangpin_scheme.cpp`
-  - shuangpin scheme unit tests
+  - shuangpin scheme unit tests, including Jiajia input and Microsoft's semicolon key
+- `tests/src/test_config_non_ascii_path.cpp`
+  - config persistence and reloading, including Jiajia candidates through the production session factory
 - `tests/src/test_quanpin_scheme.cpp`
   - quanpin scheme unit tests
 - `tests/src/test_shuangpin_query.cpp`

@@ -1,6 +1,7 @@
 #include "tests/includes/test_framework.h"
 
 #include "config/ime_config.h"
+#include "session/session_factory.h"
 
 #include <windows.h>
 
@@ -10,6 +11,7 @@
 #include <iterator>
 #include <string>
 #include <system_error>
+#include <utility>
 
 namespace
 {
@@ -66,6 +68,87 @@ std::string ReadText(const std::filesystem::path &path)
     return std::string((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
 }
 } // namespace
+
+TEST_CASE(shuangpin_config_round_trip_drives_the_product_session_factory)
+{
+    namespace fs = std::filesystem;
+    const fs::path unique_root = MakeProfileRoot() / L"shuangpin";
+    const fs::path local_app_data = unique_root / L"本地";
+    const fs::path data_dir = local_app_data / L"metasequoiaime";
+    SeedTemplate(data_dir);
+
+    {
+        ScopedEnv local_app_data_env(L"LOCALAPPDATA", local_app_data.wstring());
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredShuangpinSchema(), std::string("xiaohe"));
+        REQUIRE(SetConfiguredInputMode("chinese"));
+        REQUIRE(SetConfiguredInputScheme("shuangpin"));
+        REQUIRE(SetConfiguredShuangpinHelpcodeEnabled(false));
+
+        const auto input = [](IInputSession &session, const std::string &keys) {
+            for (const char ch : keys)
+            {
+                const UINT vk = ch == ';' ? VK_OEM_1 : static_cast<UINT>(ch - ('a' - 'A'));
+                session.handle_key(vk, 0, static_cast<WCHAR>(ch));
+            }
+        };
+
+        auto previous_session = CreateInputSessionFromConfig();
+        input(*previous_session, "nihc");
+        REQUIRE_EQ(previous_session->get_quanpin(), std::string("nihao"));
+
+        REQUIRE(SetConfiguredShuangpinSchema("jiajia"));
+        const auto saved = ReadText(data_dir / L"config.toml");
+        REQUIRE(saved.find("shuangpin_schema = \"jiajia\"") != std::string::npos);
+        REQUIRE(!SetConfiguredShuangpinSchema("unsupported"));
+        REQUIRE_EQ(GetConfiguredShuangpinSchema(), std::string("jiajia"));
+        REQUIRE_EQ(ReadText(data_dir / L"config.toml"), saved);
+
+        // This is the same factory that the ReloadInputSession task queued by
+        // ApplyConfiguredShuangpinSchema uses. Exercise real decoding/candidates,
+        // while HWND notifications and queue dispatch remain host integration tests.
+        auto session = CreateInputSessionFromConfig();
+        REQUIRE_EQ(session->current_scheme_type(), SchemeType::Shuangpin);
+        REQUIRE(session->get_pinyin_sequence().empty());
+        input(*session, "nihd");
+        REQUIRE_EQ(session->get_quanpin(), std::string("nihao"));
+        session->recompute_candidates();
+        const auto &candidates = session->get_candidates();
+        REQUIRE(std::any_of(candidates.begin(), candidates.end(),
+                            [](const auto &candidate) { return candidate.word == "你好"; }));
+
+        // Reload from disk after changing the in-memory choice via a real setter.
+        REQUIRE(SetConfiguredShuangpinSchema("microsoft"));
+        WriteText(data_dir / L"config.toml", saved);
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredShuangpinSchema(), std::string("jiajia"));
+        session = CreateInputSessionFromConfig();
+        input(*session, "nihd");
+        REQUIRE_EQ(session->get_quanpin(), std::string("nihao"));
+
+        // Existing persisted IDs must still construct their original profiles;
+        // switching away from Jiajia must also restore Microsoft's semicolon key.
+        const std::vector<std::pair<std::string, std::string>> cases{
+            {"xiaohe", "xl"},
+            {"ziranma", "xd"},
+            {"shoudao", "xx"},
+            {"microsoft", "m;"},
+        };
+        for (const auto &[schema, keys] : cases)
+        {
+            REQUIRE(SetConfiguredShuangpinSchema(schema));
+            InitImeConfig();
+            REQUIRE_EQ(GetConfiguredShuangpinSchema(), schema);
+            session = CreateInputSessionFromConfig();
+            input(*session, keys);
+            REQUIRE_EQ(session->get_quanpin(), schema == "microsoft" ? std::string("ming") : std::string("xiang"));
+        }
+        REQUIRE(SetConfiguredShuangpinSchema("xiaohe"));
+    }
+
+    std::error_code ec;
+    fs::remove_all(unique_root, ec);
+}
 
 TEST_CASE(config_round_trips_under_non_ascii_profile_path)
 {

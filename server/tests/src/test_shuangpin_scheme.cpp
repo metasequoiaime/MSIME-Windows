@@ -261,9 +261,33 @@ TEST_CASE(MicrosoftSchemeAcceptsSemicolonAsIngFinalOnlyInSecondPosition)
 
 TEST_CASE(ShuangpinProfileResolverSelectsNamedProfileAndFallsBackToXiaohe)
 {
+    REQUIRE_EQ(GetShuangpinProfile("jiajia").name, std::string("jiajia"));
     REQUIRE_EQ(GetShuangpinProfile("ziranma").name, std::string("ziranma"));
     REQUIRE_EQ(GetShuangpinProfile("shoudao").name, std::string("shoudao"));
     REQUIRE_EQ(GetShuangpinProfile("microsoft").name, std::string("microsoft"));
     REQUIRE_EQ(GetShuangpinProfile("xiaohe").name, std::string("xiaohe"));
     REQUIRE_EQ(GetShuangpinProfile("unknown").name, std::string("xiaohe"));
+}
+
+TEST_CASE(JiajiaSchemeUsesItsOwnFinalsAndKeepsManualSeparatorsAndBackspace)
+{
+    ShuangpinScheme scheme(GetShuangpinProfile("jiajia"));
+    InputKey(scheme, 'N', L'n');
+    InputKey(scheme, 'I', L'i');
+    InputKey(scheme, VK_OEM_7, L'\'');
+    InputKey(scheme, 'H', L'h');
+    InputKey(scheme, 'D', L'd');
+    REQUIRE_EQ(scheme.build_request().normalized_segmentation, std::string("ni'hao"));
+
+    InputKey(scheme, VK_BACK, 0);
+    REQUIRE_EQ(scheme.build_request().raw_input, std::string("ni'h"));
+    InputKey(scheme, 'D', L'd');
+    REQUIRE_EQ(scheme.build_request().normalized_segmentation, std::string("ni'hao"));
+
+    scheme.reset();
+    InputKey(scheme, VK_OEM_1, L';');
+    REQUIRE(!scheme.build_request().valid);
+    InputKey(scheme, 'M', L'm');
+    InputKey(scheme, VK_OEM_1, L';');
+    REQUIRE_EQ(scheme.build_request().raw_input, std::string("m"));
 }

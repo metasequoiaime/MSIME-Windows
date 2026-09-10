@@ -2019,7 +2019,7 @@ const std::string &GetConfiguredShuangpinSchema()
 
 bool SetConfiguredShuangpinSchema(const std::string &schema)
 {
-    if (schema != "xiaohe" && schema != "ziranma" && schema != "shoudao" && schema != "microsoft")
+    if (schema != "xiaohe" && schema != "ziranma" && schema != "shoudao" && schema != "microsoft" && schema != "jiajia")
     {
         return false;
     }
