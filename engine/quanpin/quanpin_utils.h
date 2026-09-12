@@ -40,12 +40,47 @@ std::vector<Segments> sparse_pinyin_fallback_segments(const Segments &segments);
 // independently toggleable (quanpin.autocorrect_transposition / autocorrect_neighbor).
 inline constexpr unsigned kAutocorrectTransposition = 1u << 0;
 inline constexpr unsigned kAutocorrectNeighbor = 1u << 1;
+// Deletion (one dropped letter) corrections. The server side wires this bit to
+// the two existing autocorrect switches (either one on also enables deletion,
+// design D2); it stays a separate bit so a future config key can gate it alone.
+inline constexpr unsigned kAutocorrectDeletion = 1u << 2;
+// Insertion (one extra letter, a repeated or QWERTY-neighbor key) corrections.
+// Same linkage model as deletion: the legacy switches carry this bit too (design
+// D4 of the insertion task); the bit stays independent for a future config key.
+inline constexpr unsigned kAutocorrectInsertion = 1u << 3;
+
+/**
+ * Integer correction-edge weights (patent CN 101133411 B, [0052]).
+ *
+ * The patent prescribes probability-weighted edit distances trained on user
+ * data (fig. 10); until such calibration data exists it explicitly allows
+ * estimated constants, which is what these are. The prior: transpositions are
+ * the most common typo, deletions slightly less, insertions next (real extra-key
+ * slips are rarer than drops, and the neighbor/double-tap constraint keeps the
+ * table small), neighbor substitutions carry the widest false-positive surface
+ * (largest table), so they cost the most.
+ * Calibration path: mine user_journal for corrected_from candidate hits.
+ *
+ * Ranking contract: the corrected-edge COUNT stays the primary sort key (the
+ * least-intrusive-correction semantics), weights only break ties between cuts
+ * with the same edge count. The engine never trades one extra correction for a
+ * lower total weight.
+ */
+inline constexpr int kAutocorrectTranspositionWeight = 10;
+inline constexpr int kAutocorrectDeletionWeight = 11;
+// Between deletion and neighbor: insertion slips are estimated rarer than
+// drops (patent [0052] estimated constant), but the constrained table yields
+// a narrower false-positive surface than neighbor substitutions.
+inline constexpr int kAutocorrectInsertionWeight = 12;
+inline constexpr int kAutocorrectNeighborWeight = 13;
 
 // One segment of an autocorrect-aware cut. syllable is the canonical (possibly
 // table-corrected) text used for dictionary lookups; raw_text/start describe the
 // original letters the segment consumed so the preedit can keep showing what the
-// user typed while separators follow the actual cut positions. Correction edges
-// preserve length, so raw_text is always the same width as syllable.
+// user typed while separators follow the actual cut positions. Deletion edges
+// consume one letter less, insertion edges one letter more, than the syllable
+// they produce, so raw_text may differ in length from syllable
+// ("zhng" -> zhang, "shangg" -> shang).
 struct AutocorrectCutSegment
 {
     std::string syllable;
@@ -65,14 +100,32 @@ struct AutocorrectCut
 };
 
 // Range-carrying variant of autocorrect_cut: identical gating (no type enabled,
-// manual delimiters, overlong input) and identical cost model, but every segment
-// also reports which raw letters it replaced.
+// manual delimiters, overlong input) and identical cost model (it is the k=1
+// projection of autocorrect_cut_kbest), but every segment also reports which raw
+// letters it replaced.
 AutocorrectCut autocorrect_cut_detail(const std::string &pinyin, unsigned autocorrect_types);
 
 // Cuts the input into syllables, allowing at most kMaxAutocorrectEdges correction
 // edges from the tables selected by autocorrect_types. Returns {} when no type is
 // enabled, the input contains a manual delimiter, or no correction path exists.
+// This is the k=1 projection of autocorrect_cut_kbest.
 Segments autocorrect_cut(const std::string &pinyin, unsigned autocorrect_types);
+
+// Up to k ranked correction cuts of the input: per-position top-k hypothesis
+// propagation (label-correcting left-to-right sweep) over the same syllable
+// graph and gating as autocorrect_cut, but keeping ambiguous table entries
+// alive as parallel hypotheses. Ranking key: (corrected edge count, summed
+// edge weight, generation order = table order); hypotheses explaining the same
+// syllable sequence are deduplicated, keeping the best-ranked one. Every
+// returned cut contains at least one corrected edge, so a fully legal input
+// with no correction reading yields an empty vector (the caller owns the plain
+// segmentation). This is the query-time disambiguation surface of CN 101133411
+// B: ambiguity survives the cut layer and is settled by dictionary frequency.
+// k is a policy knob: the production caller pins kAutocorrectCutKBest (see
+// quanpin_dictionary.cpp) tuned by evaluation; tests use the small default
+// below to keep their assertions focused.
+std::vector<AutocorrectCut> autocorrect_cut_kbest(const std::string &pinyin, unsigned autocorrect_types,
+                                                  std::size_t k = 3);
 
 // True when the input reads as one or more legal syllables plus at most one trailing
 // letter ("zheg" = zhe + g): a jianpin-intent shape the correction tables must not

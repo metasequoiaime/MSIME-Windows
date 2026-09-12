@@ -113,7 +113,7 @@ set(
     "../googlepinyinime-rev/src/share/utf16reader.cpp"
 )
 
-# imetest 的 main 在 test_pinyin.cpp；引擎源单独成变量，便于测试二进制之间复用。
+# imetest 的 main 在 test_pinyin.cpp；引擎源单独成变量供 eval 二进制复用。
 set(
     SOURCE_FILES
     "./src/test_pinyin.cpp"
@@ -123,3 +123,10 @@ set(
 add_executable(${MY_EXECUTABLE_NAME} ${SOURCE_FILES} )
 
 target_link_libraries(${MY_EXECUTABLE_NAME} fmt::fmt spdlog::spdlog unofficial::sqlite3::sqlite3 Boost::locale)
+
+# 全拼纠错评测独立二进制（任务 .trellis/tasks/09-12-quanpin-autocorrect-patent
+# 阶段 0 的基线采集载体）：采样真实 msime.db 注错测召回，只挂自己的 main，
+# 与 imetest 的测试装置互不依赖。
+add_executable(eval_quanpin_autocorrect "./src/eval_quanpin_autocorrect.cpp" ${ENGINE_SOURCE_FILES})
+
+target_link_libraries(eval_quanpin_autocorrect fmt::fmt spdlog::spdlog unofficial::sqlite3::sqlite3 Boost::locale)

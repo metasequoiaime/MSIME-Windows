@@ -153,10 +153,16 @@ std::string ResolveQuanpinCloudCacheKey(const QueryRequest &request)
     return quanpin::strip_active_helpcodes(request.raw_input, request.raw_input_with_cases);
 }
 
+// Same four-bit mapping as autocorrect_types_from_request (engine.cpp): the
+// request only carries the two legacy bools, and either one on also enables
+// deletion and insertion so the preedit rebuild sees the same correction space
+// as the query.
 unsigned QuanpinAutocorrectTypes(const QueryRequest &request)
 {
-    return (request.enable_quanpin_autocorrect_transposition ? quanpin::kAutocorrectTransposition : 0u) |
-           (request.enable_quanpin_autocorrect_neighbor ? quanpin::kAutocorrectNeighbor : 0u);
+    const unsigned legacy =
+        (request.enable_quanpin_autocorrect_transposition ? quanpin::kAutocorrectTransposition : 0u) |
+        (request.enable_quanpin_autocorrect_neighbor ? quanpin::kAutocorrectNeighbor : 0u);
+    return legacy == 0 ? 0u : legacy | quanpin::kAutocorrectDeletion | quanpin::kAutocorrectInsertion;
 }
 
 std::string QuanpinLettersWithoutDelimiters(const std::string &text)
@@ -191,6 +197,18 @@ std::string FoldQuanpinAutocorrectLetters(const std::string &text)
         folded.push_back(lower == 'v' ? 'u' : lower);
     }
     return folded;
+}
+
+// Folded letters of a cut's syllable sequence, for comparing the BFS reading
+// against the scheme segmentation reading.
+std::string CutSyllableLetters(const quanpin::AutocorrectCut &cut)
+{
+    std::string letters;
+    for (const auto &segment : cut.segments)
+    {
+        letters += segment.syllable;
+    }
+    return FoldQuanpinAutocorrectLetters(letters);
 }
 
 // Rebuilds the preedit from the cased input letters with separators at the raw
@@ -251,8 +269,25 @@ std::string BuildQuanpinAutocorrectDisplay(const QueryRequest &request)
         return base;
     }
 
+    // Jianpin guard, mirroring resolve_series_query in the dictionary layer: a
+    // legal syllable plus at most one trailing letter is user intent, never a
+    // typo. The deletion table explains shapes like "zheg" -> zheng, so without
+    // this guard the preedit would lose the scheme separators once the deletion
+    // bit rides along with the legacy switches.
+    if (quanpin::looks_like_syllable_with_jianpin_tail(request.raw_input))
+    {
+        return base;
+    }
+
     const auto cut = quanpin::autocorrect_cut_detail(folded_input, types);
-    if (!cut.empty())
+    // When the scheme rewrote the letters, the query resolved through the alias
+    // layer, so the preedit may only draw separators from the BFS when both
+    // layers explain the letters identically ("sahnghao" -> shang'hao).
+    // Otherwise the deletion bit would re-separate "sahng" as sa'hng while the
+    // candidates actually come from the alias reading shang -- the old code
+    // never noticed because the cut happened to be empty without it.
+    if (!cut.empty() && (!letters_rewritten || CutSyllableLetters(cut) == FoldQuanpinAutocorrectLetters(
+                                                                              QuanpinLettersWithoutDelimiters(base))))
     {
         return RebuildQuanpinDisplayFromCut(cased, cut);
     }
