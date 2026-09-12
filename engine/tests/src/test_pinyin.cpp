@@ -13,6 +13,7 @@
 #include <fmt/core.h>
 #include "fmt/base.h"
 #include "core/ime_session.h"
+#include "quanpin/autocorrect_table.h"
 #include "quanpin/quanpin_dictionary.h"
 #include "quanpin/quanpin_utils.h"
 #include "quanpin/word_lattice.h"
@@ -52,13 +53,21 @@ class ScopedLocalAppDataOverride
         fs::remove_all(root_);
         fs::create_directories(app_dir_);
 
+        // msime.db 是回归断言的主体，缺失即环境不完整；而当前产品布局已不再发布
+        // 整句解码器的两个数据文件（dict_pinyin.dat/user_dict.dat），引擎对它们
+        // 的缺失也是优雅降级（PinyinDecoder::sentence 直接返回空串），所以这里
+        // 仅在源目录存在时才拷贝，不把它们当硬依赖。
         for (const auto &file_name : {"msime.db", "dict_pinyin.dat", "user_dict.dat"})
         {
             const fs::path source = source_dir / file_name;
             const fs::path target = app_dir_ / file_name;
             if (!fs::exists(source))
             {
-                throw std::runtime_error(fmt::format("Expected test dependency '{}' to exist.", source.string()));
+                if (file_name == std::string_view("msime.db"))
+                {
+                    throw std::runtime_error(fmt::format("Expected test dependency '{}' to exist.", source.string()));
+                }
+                continue;
             }
             fs::copy_file(source, target, fs::copy_options::overwrite_existing);
         }

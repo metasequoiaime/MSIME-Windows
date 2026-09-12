@@ -13,6 +13,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 add_definitions(
     /D_UNICODE=1
     /DUNICODE=1
+    # Windows.h（经 data_path.h）默认定义的 min/max 宏会破坏引擎源里的
+    # std::min/std::max；正式构建（engine/CMakeLists.txt）同样公开定义
+    # NOMINMAX，这里保持一致。
+    /DNOMINMAX
 )
 
 # For utf8cpp, make it use C++11 and later
@@ -40,13 +44,29 @@ find_package(unofficial-sqlite3 CONFIG REQUIRED)
 
 include_directories("./includes/")
 include_directories("../")
+include_directories("../include")
 include_directories("../utfcpp/source/")
 
 set(MY_EXECUTABLE_NAME "imetest")
 set(
-    SOURCE_FILES
-    "./src/test_pinyin.cpp"
+    ENGINE_SOURCE_FILES
+    "../core/candidate_queries.cpp"
     "../core/ime_session.cpp"
+    "../core/input_session.cpp"
+    "../core/input_session_candidates.cpp"
+    "../core/input_session_composition.cpp"
+    "../core/input_session_editing.cpp"
+    "../core/nine_key_session.cpp"
+    "../core/pinyin_decoder.cpp"
+    "../core/punctuation_policy.cpp"
+    "../core/runtime_paths.cpp"
+    "../core/session.cpp"
+    "../local_modes/date_time_query.cpp"
+    "../local_modes/emoji_query.cpp"
+    "../local_modes/jianpin_query.cpp"
+    "../local_modes/kaomoji_query.cpp"
+    "../local_modes/quick_phrase_query.cpp"
+    "../local_modes/unicode_query.cpp"
     "../providers/pinyin_candidate_provider.cpp"
     "../providers/wubi_candidate_provider.cpp"
     "../providers/japanese_candidate_provider.cpp"
@@ -72,6 +92,8 @@ set(
     "../japanese/japanese_sentence_decoder.cpp"
     "../japanese/romaji_converter.cpp"
     "../user_dictionary/user_dictionary_journal.cpp"
+    "../user_dictionary/personal_dictionary.cpp"
+    "../user_dictionary/dictionary_state.cpp"
     # Google IME
     "../googlepinyinime-rev/src/share/dictbuilder.cpp"
     "../googlepinyinime-rev/src/share/dictlist.cpp"
@@ -89,6 +111,13 @@ set(
     "../googlepinyinime-rev/src/share/userdict.cpp"
     "../googlepinyinime-rev/src/share/utf16char.cpp"
     "../googlepinyinime-rev/src/share/utf16reader.cpp"
+)
+
+# imetest 的 main 在 test_pinyin.cpp；引擎源单独成变量，便于测试二进制之间复用。
+set(
+    SOURCE_FILES
+    "./src/test_pinyin.cpp"
+    ${ENGINE_SOURCE_FILES}
 )
 
 add_executable(${MY_EXECUTABLE_NAME} ${SOURCE_FILES} )
