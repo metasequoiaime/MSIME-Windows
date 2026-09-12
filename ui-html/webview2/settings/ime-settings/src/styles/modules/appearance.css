@@ -102,6 +102,22 @@
 }
 
 /**/
+/* 界面渲染 */
+/**/
+/* 两个选项的文字宽度不同，按钮得有个固定宽度，否则切换渲染方式时按钮会跟着变宽变窄。
+   宽度按最长的 "WebView2" 来定，只比它的自然宽度多留一点余量。 */
+#uiBackendBtn {
+  min-width: 120px;
+}
+
+/* 弹出菜单跟按钮一样宽：.dropdown 由按钮撑开，左右都贴住即可（同 .font-dropdown-menu）。 */
+#uiBackendMenu {
+  left: 0;
+  right: 0;
+  min-width: 0;
+}
+
+/**/
 /* 重启输入法进程 */
 /**/
 .restart-server-button {
