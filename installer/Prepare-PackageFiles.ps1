@@ -13,7 +13,12 @@ param(
     # the notice covers the whole product and lives at the root, one level above windows/, so where
     # to read it is no longer answered by where the tip is.
     [string]$NoticesDirectory = '.',
-    [switch]$Light
+    [switch]$Light,
+    # PDBs are ~140 MB against ~20 MB of actual binaries, and Inno Setup compresses them with solid
+    # LZMA2, so staging them is what makes a local packaging run take minutes. Symbols are therefore
+    # opt-in: the release job and test-symbols.ps1 pass this, everyday local runs do not. The
+    # assertions above still require the build to have produced matching PDBs either way.
+    [switch]$IncludeSymbols
 )
 
 $ErrorActionPreference = 'Stop'
@@ -179,26 +184,34 @@ Copy-DirectoryContents -Source (Join-Path $webviewRoot 'settings\ime-settings\di
     -Destination (Join-Path $targetWebview 'settings\ime-settings\dist')
 
 # Server Release 输出整体复制，但测试程序及其 PDB 绝不能进入安装包。
-# 其他 PDB 保留在对应 EXE 旁边，方便安装后直接进行崩溃分析。
+# 带 -IncludeSymbols 时其他 PDB 保留在对应 EXE 旁边，方便安装后直接进行崩溃分析。
 Reset-Directory -LiteralPath $targetServer
 Copy-DirectoryContents -Source $serverRelease -Destination $targetServer
 Get-ChildItem -LiteralPath $targetServer -Recurse -File -Filter '*Tests.exe' |
     Remove-Item -Force
-Get-ChildItem -LiteralPath $targetServer -Recurse -File -Filter '*Tests.pdb' |
-    Remove-Item -Force
 Get-ChildItem -LiteralPath $targetServer -Recurse -File -Filter 'test_*.exe' |
     Remove-Item -Force
-Get-ChildItem -LiteralPath $targetServer -Recurse -File -Filter 'test_*.pdb' |
-    Remove-Item -Force
+if ($IncludeSymbols) {
+    Get-ChildItem -LiteralPath $targetServer -Recurse -File -Filter '*Tests.pdb' |
+        Remove-Item -Force
+    Get-ChildItem -LiteralPath $targetServer -Recurse -File -Filter 'test_*.pdb' |
+        Remove-Item -Force
+}
+else {
+    Get-ChildItem -LiteralPath $targetServer -Recurse -File -Filter '*.pdb' |
+        Remove-Item -Force
+}
 
 Reset-Directory -LiteralPath $targetTsf
 $targetTsf32 = Join-Path $targetTsf '32'
 $targetTsf64 = Join-Path $targetTsf '64'
 New-Item -ItemType Directory -Path $targetTsf32, $targetTsf64 -Force | Out-Null
 Copy-Item -LiteralPath $tsf32Release -Destination $targetTsf32 -Force
-Copy-Item -LiteralPath $tsf32Pdb -Destination $targetTsf32 -Force
 Copy-Item -LiteralPath $tsf64Release -Destination $targetTsf64 -Force
-Copy-Item -LiteralPath $tsf64Pdb -Destination $targetTsf64 -Force
+if ($IncludeSymbols) {
+    Copy-Item -LiteralPath $tsf32Pdb -Destination $targetTsf32 -Force
+    Copy-Item -LiteralPath $tsf64Pdb -Destination $targetTsf64 -Force
+}
 Copy-Item -LiteralPath $appIcon -Destination (Join-Path $PSScriptRoot 'MetasequoiaIME.ico') -Force
 # rime-ice is GPL-3.0 and requires attribution, and its content forms the bulk of msime.db, so the
 # notice has to reach the user's disk rather than only exist in the source repository.
@@ -246,5 +259,6 @@ $symbolCount = @(
     Get-ChildItem -LiteralPath $targetServer, $targetTsf -Recurse -File -Filter '*.pdb'
 ).Count
 $modeLabel = if ($Light) { '轻量' } else { '完整' }
+if (-not $IncludeSymbols) { $modeLabel += '，不含符号' }
 Write-Host "安装文件准备完成（$modeLabel）：$PSScriptRoot"
 Write-Host "版本：$TargetVersion；Server EXE/DLL：$serverBinaryCount 个；TSF EXE/DLL：$tsfBinaryCount 个；PDB：$symbolCount 个。"

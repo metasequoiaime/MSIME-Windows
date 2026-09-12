@@ -45,7 +45,7 @@ try {
     $english = Join-Path $fixture 'MetasequoiaImeDict/out/english.db'
     python -c "import sqlite3,sys; sqlite3.connect(sys.argv[1]).execute('CREATE TABLE english_words(word TEXT,display TEXT,weight INTEGER,PRIMARY KEY(word,display))')" $english
     if ($LASTEXITCODE -ne 0) { throw 'Failed to create packaging fixture' }
-    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -TargetVersion '2026.9.1'
+    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -TargetVersion '2026.9.1' -IncludeSymbols
     foreach ($file in @('app_data/html/webview2/shared/runtime.js', 'app_data/dictionary-manifest.json',
                          'tsf_dll/32/MetasequoiaImeTsf.dll', 'tsf_dll/32/MetasequoiaImeTsf.pdb',
                          'tsf_dll/64/MetasequoiaImeTsf.dll', 'tsf_dll/64/MetasequoiaImeTsf.pdb',
@@ -61,6 +61,20 @@ try {
         'server_exe/test_webview_contract.pdb'
     )) {
         if (Test-Path (Join-Path $installer $testFile)) { throw "Packaged a test file: $testFile" }
+    }
+    # 默认不带符号：PDB 是安装包体积和打包耗时的大头，只有显式 -IncludeSymbols 才进包。
+    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -TargetVersion '2026.9.1'
+    foreach ($file in @('app_data/html/webview2/shared/runtime.js',
+                         'tsf_dll/32/MetasequoiaImeTsf.dll', 'tsf_dll/64/MetasequoiaImeTsf.dll',
+                         'server_exe/MetasequoiaImeServer.exe')) {
+        if (-not (Test-Path (Join-Path $installer $file))) { throw "Missing packaged file: $file" }
+    }
+    $stagedSymbols = @(
+        Get-ChildItem -LiteralPath (Join-Path $installer 'server_exe'), (Join-Path $installer 'tsf_dll') `
+            -Recurse -File -Filter '*.pdb'
+    )
+    if ($stagedSymbols.Count -gt 0) {
+        throw "Packaged symbols without -IncludeSymbols: $($stagedSymbols.Name -join ', ')"
     }
     $serverPdbFixture = Join-Path $fixture 'server/build-release/bin/Release/MetasequoiaImeServer.pdb'
     Remove-Item $serverPdbFixture -Force

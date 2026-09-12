@@ -81,7 +81,8 @@ try {
     New-Item -ItemType Directory -Force $installer | Out-Null
     [IO.File]::WriteAllText((Join-Path $installer 'Prepare-PackageFiles.ps1'), "throw 'Reached package staging after failure'")
     function global:pnpm { $global:LASTEXITCODE = 23 }
-    foreach ($entry in @('test.ps1', 'test-light.ps1')) {
+    Copy-Item (Join-Path $source 'installer/Invoke-LocalTest.ps1') $installer
+    foreach ($entry in @('test.ps1', 'test-light.ps1', 'test-symbols.ps1')) {
         Copy-Item (Join-Path $source "installer/$entry") $installer
         $rejected = $false
         try { & (Join-Path $installer $entry) }

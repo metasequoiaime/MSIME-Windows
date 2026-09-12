@@ -31,6 +31,9 @@ IPC 线格式、opcode 和语音分帧的唯一实现位于 `../engine/contracts
 改了协议或候选逻辑，正常构建并备好数据之后自己跑一次：
 
 ```powershell
+# scripts/lcompile-release.ps1 默认只构建 MetasequoiaImeServer 目标（打包用的那一套），
+# 不含测试可执行文件。要跑 ctest 就得显式构建全部：
+.\scripts\lcompile-release.ps1 -Target ALL_BUILD
 ctest --test-dir build-release -C Release --output-on-failure
 ```
 

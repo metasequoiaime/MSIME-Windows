@@ -36,7 +36,7 @@ pwsh -File ./Prepare-PackageFiles.ps1 -TargetVersion 1.2.3 -RepoRoot .. `
 - Windows 10/11，PowerShell 7（`pwsh`）
 - [Inno Setup](https://jrsoftware.org/isinfo.php) 6.6 或更高版本
 - Windows SDK（提供 `signtool.exe`）
-- 先初始化本仓 submodule，并完成 `windows/`、`server/` 的 Release 编译以及 `ui-html/` 设置页构建。Release 构建必须生成同目录 PDB；打包脚本会拒绝缺少匹配符号的产物。
+- 先初始化本仓 submodule，并完成 `windows/`、`server/` 的 Release 编译以及 `ui-html/` 设置页构建。Release 构建必须生成同目录 PDB；打包脚本会拒绝缺少匹配符号的产物（符号是否随包安装是另一回事，由 `-IncludeSymbols` 决定）。
 - 在仓库根目录运行 `python scripts/product_lock.py fetch-dictionaries --staging-root .`，下载并验证产品锁中的词库。
 - `engine/helpcode/helpcodes/` 是本仓的目录，普通检出即有，无需旧 HelpCode 仓库，也无需初始化 submodule。
 
@@ -56,13 +56,35 @@ pwsh -File .\test.ps1
 `test.ps1` 会按顺序做这些事：
 
 1. 编译本仓 TSF、Server，并构建设置页；缺少组件入口则失败
-2. `Prepare-PackageFiles.ps1` — 收集 `server_exe\`、`tsf_dll\`、`app_data\` 及匹配的 PDB，并把 `msime_setup.iss` 的版本写成 `0.0.1`
+2. `Prepare-PackageFiles.ps1` — 收集 `server_exe\`、`tsf_dll\`、`app_data\`，并把 `msime_setup.iss` 的版本写成 `0.0.1`
 3. `Sign-PackageBinaries-Local.ps1` — 本机自签名包内 EXE/DLL
 4. `Compile-Installer.ps1` — 编译出 `Output\MetasequoiaIME_Setup_v0.0.1.exe`
 5. `Sign-Installer-Local.ps1` — 本机自签名安装包
 6. `Install.ps1` — 启动安装程序
 
 也可以按上面的顺序逐步运行。
+
+### 三个入口的区别
+
+三个入口都是 `Invoke-LocalTest.ps1` 的薄包装，只是开关不同：
+
+| 脚本 | 词库 | PDB |
+| --- | --- | --- |
+| `test.ps1` | 含 | 不含 |
+| `test-light.ps1` | 不含 | 不含 |
+| `test-symbols.ps1`（加 `-Full` 则含词库） | 默认不含 | 含 |
+
+**PDB 默认不进本地安装包。** 它们有 ~140 MB，而真正的 EXE/DLL 只有 ~20 MB，Inno Setup 还要对它们做固实 LZMA2 压缩，是本地打包耗时的大头。只有需要在装好的机器上直接做崩溃分析时才用 `test-symbols.ps1`。正式发布仍然带符号：`release.yml` 显式传 `-IncludeSymbols`。
+
+### 增量编译
+
+`Invoke-LocalTest.ps1` 调用的 `lcompile-release*.ps1` 是增量的：
+
+- `build-release` / `build{32,64}-release` 已有 CMake 缓存时不再重跑 configure。Visual Studio 生成器把 ZERO_CHECK 接进了每个目标，`CMakeLists.txt` 变化时构建会自己重新生成。改了 preset 或换了工具链，用 `-Reconfigure` 强制重跑
+- 只构建打包用的目标（`MetasequoiaImeServer` / `MetasequoiaImeTsf`），不构建那些打完包又被删掉的测试可执行文件。要连测试一起构建（比如为了跑 ctest）传 `-Target ALL_BUILD`
+- `cmake --build` 带 `--parallel`
+
+没有改动时整轮编译约 15 秒；如果比这慢很多，慢的多半是打包而不是编译。
 
 ## 本机测试证书
 

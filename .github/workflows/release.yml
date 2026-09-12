@@ -477,6 +477,9 @@ jobs:
           CERTIFICATE_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_CERTIFICATE_THUMBPRINT }}
         run: ./scripts/ci/detect-release-signing.ps1
 
+      # -IncludeSymbols is what makes the published installer carry the PDBs matching its binaries.
+      # Staging symbols is opt-in because they are ~140 MB against ~20 MB of binaries and Inno Setup
+      # compresses them with solid LZMA2, which is why the local test scripts leave them out.
       - name: Collect the installer payload
         shell: pwsh
         working-directory: installer
@@ -486,7 +489,7 @@ jobs:
           pwsh -File ./Prepare-PackageFiles.ps1 -TargetVersion $env:TARGET_VERSION
           -RepoRoot (Resolve-Path '..').Path
           -TsfDirectory windows -ServerDirectory server -UiHtmlDirectory ui-html -NoticesDirectory .
-          -HelpCodeDirectory engine/helpcode
+          -HelpCodeDirectory engine/helpcode -IncludeSymbols
 
       - name: Embed the exact product dependency manifest
         env:

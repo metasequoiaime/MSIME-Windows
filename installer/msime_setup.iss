@@ -15,6 +15,7 @@
 ; 也可以直接运行 .\test.ps1 走完整测试流程。
 ; 只改 TSF / Server / HTML 时用 .\test-light.ps1：ISCC /DLightPackage=1，
 ; 打出不含词库的轻量包，安装时也不会删本机已有词库。
+; 上面两条都不把 PDB 打进包；要带符号用 .\test-symbols.ps1。
 ; 本仓库不包含任何预置代码签名证书。
 
 #define MyAppName      "Metasequoia IME 水杉输入法"
@@ -99,6 +100,8 @@ Source: "{#MySourceRoot}\LICENSE.txt"; \
 
 ; TSF DLL 使用版本独立目录，避免升级时覆盖仍被进程加载的 DLL。
 ; PDB 与对应 DLL 放在同一目录，调试器可按二进制的内嵌路径自动找到符号。
+; 只有 Prepare-PackageFiles.ps1 -IncludeSymbols 才会把 PDB 放进 tsf_dll\；默认本地打包不含符号，
+; 所以这两条必须带 skipifsourcedoesntexist，否则通配符匹配不到文件时 ISCC 会直接报错。
 Source: "{#MySourceRoot}\tsf_dll\32\*.dll"; \
     DestDir: "{commonpf32}\metasequoiaime\{code:GetVersionDir}"; \
     Flags: ignoreversion regserver 32bit
@@ -109,11 +112,11 @@ Source: "{#MySourceRoot}\tsf_dll\64\*.dll"; \
 
 Source: "{#MySourceRoot}\tsf_dll\32\*.pdb"; \
     DestDir: "{commonpf32}\metasequoiaime\{code:GetVersionDir}"; \
-    Flags: ignoreversion
+    Flags: ignoreversion skipifsourcedoesntexist
 
 Source: "{#MySourceRoot}\tsf_dll\64\*.pdb"; \
     DestDir: "{commonpf64}\metasequoiaime\{code:GetVersionDir}"; \
-    Flags: ignoreversion
+    Flags: ignoreversion skipifsourcedoesntexist
 
 Source: "{#MySourceRoot}\server_exe\*"; \
     DestDir: "{commonpf64}\metasequoiaime\server"; \
