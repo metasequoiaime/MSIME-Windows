@@ -70,6 +70,7 @@ void ApplyConfiguredFloatingToolbarSize();
 void ReconcileFloatingToolbarVisibilityAfterReady(const wchar_t *reason);
 void ApplyConfiguredInputScheme();
 void ApplyConfiguredShuangpinSchema();
+void BroadcastLowercaseNumberModeToTsf();
 bool EnsureSmallWindowsTopmost(const wchar_t *reason);
 void UpdateSmallWindowWebviewVisibility(HWND hwnd, bool visible);
 void SetCandidateHostCloaked(bool cloaked);
@@ -4223,6 +4224,15 @@ HRESULT OnControllerCreatedSettingsWnd(            //
                                     PostSettingsConfig();
                                 }
                             }
+                            else if (path == "utility.number_mode")
+                            {
+                                const bool value = json::value_to<bool>(data.at("value"));
+                                if (SetConfiguredNumberModeEnabled(value))
+                                {
+                                    BroadcastLowercaseNumberModeToTsf();
+                                    PostSettingsConfig();
+                                }
+                            }
                             else if (path == "utility.r_mode")
                             {
                                 const bool value = json::value_to<bool>(data.at("value"));
@@ -4546,6 +4556,7 @@ void PostSettingsConfig()
             {"kaomoji_mode", GetConfiguredKaomojiModeEnabled()},
             {"jianpin_mode", GetConfiguredJianpinModeEnabled()},
             {"y_mode", GetConfiguredYModeEnabled()},
+            {"number_mode", GetConfiguredNumberModeEnabled()},
             {"r_mode", GetConfiguredRModeEnabled()}}},
           {"appearance",
            {{"ui_backend", GetConfiguredUiBackend()},

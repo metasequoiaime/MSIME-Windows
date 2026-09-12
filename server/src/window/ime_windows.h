@@ -44,3 +44,5 @@ std::wstring DescribeTrayMenuHostState();
 void ApplyConfiguredFloatingToolbarSize();
 void ApplyConfiguredInputScheme();
 void ApplyConfiguredShuangpinSchema();
+// Tells every TSF client whether a bare lowercase v now starts number mode.
+void BroadcastLowercaseNumberModeToTsf();

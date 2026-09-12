@@ -67,6 +67,16 @@ class CCompositionProcessorEngine
     WCHAR GetVirtualKey(DWORD_PTR dwIndex);
     // Shift+U unicode input: composition buffer starts with 'U'.
     BOOL IsUnicodeModeComposition() const;
+    // V-mode number input: composition buffer is a V (or a lowercase v when the
+    // Server enabled that for quanpin) followed only by digits and at most one point.
+    BOOL IsNumberModeComposition() const;
+    // U-mode and V-mode both own bare digits as composition input.
+    BOOL IsDigitModeComposition() const;
+    // A decimal point extends a V-mode number that already has a digit and no point.
+    BOOL IsNumberPointKeystroke(UINT uCode, const WCHAR *pwch) const;
+    // Shared with the deferred-key shadow in KeyEventSink, which mirrors the buffer.
+    static bool IsNumberModeKeystrokes(const WCHAR *buffer, size_t length);
+    static bool IsNumberPointKeystroke(const WCHAR *buffer, size_t length, UINT uCode, const WCHAR *pwch);
 
     void GetReadingStrings(                                          //
         _Inout_ CMetasequoiaImeArray<CStringRange> *pReadingStrings, //

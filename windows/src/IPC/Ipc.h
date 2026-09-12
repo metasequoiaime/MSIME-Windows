@@ -171,6 +171,8 @@ inline std::atomic_bool SmartPunctuationRepeatToChineseEnabled{true};
 // Default on until the Server sends the persisted setting.
 inline std::atomic_bool PairedPunctuationEnabled{true};
 inline std::atomic_bool MicrosoftShuangpinEnabled{false};
+// Whether a leading lowercase v starts V-mode (quanpin only). Server is the source of truth.
+inline std::atomic_bool LowercaseNumberModeEnabled{false};
 inline std::atomic_bool JapaneseInputModeEnabled{false};
 inline std::atomic_bool CapsLockEnabled{false};
 inline std::atomic_bool TsfDiagnosticLogEnabled{false};

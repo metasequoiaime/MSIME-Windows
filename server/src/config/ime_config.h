@@ -253,6 +253,8 @@ bool GetConfiguredJianpinModeEnabled();
 bool SetConfiguredJianpinModeEnabled(bool enabled);
 bool GetConfiguredYModeEnabled();
 bool SetConfiguredYModeEnabled(bool enabled);
+bool GetConfiguredNumberModeEnabled();
+bool SetConfiguredNumberModeEnabled(bool enabled);
 bool GetConfiguredRModeEnabled();
 bool SetConfiguredRModeEnabled(bool enabled);
 bool GetConfiguredClipboardHistoryEnabled();
@@ -266,6 +268,9 @@ bool SetConfiguredPagingBracketsEnabled(bool enabled);
 // Worker payload for PagingCommaPeriodChanged: "0|raw" / "1|pinyin" / "0|empty".
 // Legacy TSF only reads data[0] as the paging flag and ignores the rest.
 std::wstring FormatPagingCommaPeriodWorkerPayload();
+// Worker payload for LowercaseNumberModeChanged: "1" when a leading lowercase v
+// starts number mode. Only quanpin qualifies; shuangpin uses v as an initial.
+std::wstring FormatLowercaseNumberModeWorkerPayload();
 bool GetConfiguredPagingTabEnabled();
 bool SetConfiguredPagingTabEnabled(bool enabled);
 bool GetConfiguredPagingPageUpDownEnabled();

@@ -48,6 +48,7 @@ set(METASEQUOIA_IME_ENGINE_SOURCES
     local_modes/emoji_query.cpp
     local_modes/jianpin_query.cpp
     local_modes/kaomoji_query.cpp
+    local_modes/number_query.cpp
     local_modes/quick_phrase_query.cpp
     local_modes/unicode_query.cpp
     providers/japanese_candidate_provider.cpp

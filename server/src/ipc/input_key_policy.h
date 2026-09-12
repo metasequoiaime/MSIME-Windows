@@ -74,9 +74,9 @@ constexpr bool InputSessionMatchesConfig(bool configured_scheme_matches, bool te
 
 constexpr bool ShouldSendCompositionReply(bool is_alpha_key, bool is_manual_pinyin_separator,
                                           bool is_microsoft_shuangpin_ing_key, bool is_unicode_hex_digit,
-                                          bool is_unicode_plus)
+                                          bool is_unicode_plus, bool is_number_point)
 {
     return is_alpha_key || is_manual_pinyin_separator || is_microsoft_shuangpin_ing_key || is_unicode_hex_digit ||
-           is_unicode_plus;
+           is_unicode_plus || is_number_point;
 }
 } // namespace FanyImeIpc

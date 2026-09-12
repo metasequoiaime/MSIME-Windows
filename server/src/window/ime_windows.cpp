@@ -1869,6 +1869,14 @@ void ApplyConfiguredInputScheme()
     UpdateFtbInputModeState(::webviewFtbWnd, GetConfiguredInputMode() == "japanese" ? 1 : 0);
     BroadcastToTsfWorkerThreadViaNamedpipe(Global::DataFromServerMsgTypeToTsfWorkerThread::InputModeChanged,
                                            GetConfiguredInputMode() == "japanese" ? L"1" : L"0");
+    // Whether a bare v starts number mode depends on the scheme, so resend it.
+    BroadcastLowercaseNumberModeToTsf();
+}
+
+void BroadcastLowercaseNumberModeToTsf()
+{
+    BroadcastToTsfWorkerThreadViaNamedpipe(Global::DataFromServerMsgTypeToTsfWorkerThread::LowercaseNumberModeChanged,
+                                           FormatLowercaseNumberModeWorkerPayload());
 }
 
 void ApplyConfiguredShuangpinSchema()
@@ -2628,6 +2636,7 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
             const int previous_floating_toolbar_font_size = GetConfiguredFloatingToolbarFontSize();
             const bool previous_cloud_candidates = GetConfiguredCloudCandidatesEnabled();
             const bool previous_comma_period = GetConfiguredPagingCommaPeriodEnabled();
+            const bool previous_number_mode = GetConfiguredNumberModeEnabled();
             const bool previous_smart_punctuation = GetConfiguredSmartPunctuationEnabled();
             const bool previous_smart_punctuation_repeat_to_chinese =
                 GetConfiguredSmartPunctuationRepeatToChineseEnabled();
@@ -2716,6 +2725,10 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
                     BroadcastToTsfWorkerThreadViaNamedpipe(
                         Global::DataFromServerMsgTypeToTsfWorkerThread::PagingCommaPeriodChanged,
                         FormatPagingCommaPeriodWorkerPayload());
+                }
+                if (previous_number_mode != GetConfiguredNumberModeEnabled())
+                {
+                    BroadcastLowercaseNumberModeToTsf();
                 }
                 if (previous_smart_punctuation != GetConfiguredSmartPunctuationEnabled())
                 {
@@ -3314,6 +3327,7 @@ LRESULT CALLBACK WndProcSettingsWindow(HWND hwnd, UINT message, WPARAM wParam, L
             const int previous_floating_toolbar_font_size = GetConfiguredFloatingToolbarFontSize();
             const bool previous_cloud_candidates = GetConfiguredCloudCandidatesEnabled();
             const bool previous_comma_period = GetConfiguredPagingCommaPeriodEnabled();
+            const bool previous_number_mode = GetConfiguredNumberModeEnabled();
             const bool previous_smart_punctuation = GetConfiguredSmartPunctuationEnabled();
             const bool previous_smart_punctuation_repeat_to_chinese =
                 GetConfiguredSmartPunctuationRepeatToChineseEnabled();
@@ -3391,6 +3405,10 @@ LRESULT CALLBACK WndProcSettingsWindow(HWND hwnd, UINT message, WPARAM wParam, L
                     BroadcastToTsfWorkerThreadViaNamedpipe(
                         Global::DataFromServerMsgTypeToTsfWorkerThread::PagingCommaPeriodChanged,
                         FormatPagingCommaPeriodWorkerPayload());
+                }
+                if (previous_number_mode != GetConfiguredNumberModeEnabled())
+                {
+                    BroadcastLowercaseNumberModeToTsf();
                 }
                 if (previous_smart_punctuation != GetConfiguredSmartPunctuationEnabled())
                 {

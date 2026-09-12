@@ -363,6 +363,7 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
             {"kaomoji_mode", GetConfiguredKaomojiModeEnabled()},
             {"jianpin_mode", GetConfiguredJianpinModeEnabled()},
             {"y_mode", GetConfiguredYModeEnabled()},
+            {"number_mode", GetConfiguredNumberModeEnabled()},
             {"r_mode", GetConfiguredRModeEnabled()},
             {"clipboard_history", GetConfiguredClipboardHistoryEnabled()}}},
           {"appearance",
@@ -645,6 +646,8 @@ bool ApplyConfigUpdate(const json::object &data)
         return SetConfiguredJianpinModeEnabled(json::value_to<bool>(data.at("value")));
     if (path == "utility.y_mode")
         return SetConfiguredYModeEnabled(json::value_to<bool>(data.at("value")));
+    if (path == "utility.number_mode")
+        return SetConfiguredNumberModeEnabled(json::value_to<bool>(data.at("value")));
     if (path == "utility.r_mode")
         return SetConfiguredRModeEnabled(json::value_to<bool>(data.at("value")));
     if (path == "utility.clipboard_history")

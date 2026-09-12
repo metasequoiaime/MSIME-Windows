@@ -149,6 +149,9 @@ function applyConfigData(data: Record<string, any>, target?: string): void {
   if (typeof data?.utility?.unicode_mode === 'boolean') {
     applyToggleState('unicodeModeToggleBtn', data.utility.unicode_mode);
   }
+  if (typeof data?.utility?.number_mode === 'boolean') {
+    applyToggleState('numberModeToggleBtn', data.utility.number_mode);
+  }
   if (typeof data?.utility?.quick_phrase === 'boolean') {
     applyToggleState('quickPhraseToggleBtn', data.utility.quick_phrase);
   }

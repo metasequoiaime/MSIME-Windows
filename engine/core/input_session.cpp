@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
 #include <iterator>
 #include <unordered_set>
 #include <utility>
@@ -40,6 +41,9 @@ const char *frequency_mode_name(FrequencyAdjustmentMode mode)
     }
     return nullptr;
 }
+
+// "V" plus a 16-digit integer, a point and two fraction digits.
+constexpr std::size_t kMaxNumberPreeditLength = 20;
 
 std::string online_identity(const QueryRequest &request)
 {
@@ -97,6 +101,26 @@ KeyResult InputSession::handle_character(char character, bool shift_only)
     {
         local_input_mode_ = LocalInputMode::Unicode;
         local_preedit_ = "U";
+        local_candidates_.clear();
+        return {true, std::nullopt, std::nullopt};
+    }
+    if (shift_only && character == 'V' && local_mode_options_.number && !has_composition() &&
+        (scheme() == SchemeType::Quanpin || scheme() == SchemeType::Shuangpin))
+    {
+        local_input_mode_ = LocalInputMode::Number;
+        local_preedit_ = "V";
+        local_candidates_.clear();
+        return {true, std::nullopt, std::nullopt};
+    }
+    // Quanpin never begins a syllable with v (ü only follows l/n/j/q/x/y), so a
+    // bare leading v can start number mode without Shift, matching the v123
+    // habit of other IMEs. Shuangpin keeps v as an initial (zh in Xiaohe) and
+    // enters only through Shift+V.
+    if (!shift_only && character == 'v' && local_mode_options_.number && !has_composition() &&
+        scheme() == SchemeType::Quanpin)
+    {
+        local_input_mode_ = LocalInputMode::Number;
+        local_preedit_ = "v";
         local_candidates_.clear();
         return {true, std::nullopt, std::nullopt};
     }
@@ -428,7 +452,8 @@ void InputSession::set_local_mode_options(LocalModeOptions options)
         (local_input_mode_ == LocalInputMode::Kaomoji && !local_mode_options_.kaomoji) ||
         (local_input_mode_ == LocalInputMode::SuperJianpin && !local_mode_options_.super_jianpin) ||
         (local_input_mode_ == LocalInputMode::TemporaryEnglish && !local_mode_options_.temporary_english) ||
-        (local_input_mode_ == LocalInputMode::TemporaryJapanese && !local_mode_options_.temporary_japanese))
+        (local_input_mode_ == LocalInputMode::TemporaryJapanese && !local_mode_options_.temporary_japanese) ||
+        (local_input_mode_ == LocalInputMode::Number && !local_mode_options_.number))
     {
         reset_composition();
     }
@@ -778,6 +803,19 @@ KeyResult InputSession::handle_local_character(char character)
     if (local_input_mode_ == LocalInputMode::DateTime)
     {
         if (character < 'a' || character > 'z')
+        {
+            return {true, std::nullopt, std::nullopt};
+        }
+        local_preedit_.push_back(character);
+        return {true, std::nullopt, update_local_candidates()};
+    }
+    if (local_input_mode_ == LocalInputMode::Number)
+    {
+        // Digits extend the number; a single decimal point starts the fraction.
+        // Everything else is swallowed so it cannot leak into the host as text.
+        const bool digit = character >= '0' && character <= '9';
+        const bool first_point = character == '.' && local_preedit_.find('.') == std::string::npos;
+        if ((!digit && !first_point) || local_preedit_.size() >= kMaxNumberPreeditLength)
         {
             return {true, std::nullopt, std::nullopt};
         }

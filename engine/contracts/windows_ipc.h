@@ -251,7 +251,10 @@ constexpr std::uint32_t CapsLockChanged = 19;
 constexpr std::uint32_t TsfDiagnosticLogChanged = 20;
 // Payload "0" follow IME, "1" always Chinese punctuation, "2" always English punctuation.
 constexpr std::uint32_t PunctuationLockChanged = 21;
-constexpr std::uint32_t MaxKnown = PunctuationLockChanged;
+// Payload "1" when a leading lowercase v starts number mode (quanpin with
+// V-mode enabled), so the TSF side composes the digits instead of selecting.
+constexpr std::uint32_t LowercaseNumberModeChanged = 22;
+constexpr std::uint32_t MaxKnown = LowercaseNumberModeChanged;
 // Source compatibility for the Server's historical spellings.
 constexpr std::uint32_t SwitchToEn = SwitchToEnglish;
 constexpr std::uint32_t SwitchToCn = SwitchToChinese;

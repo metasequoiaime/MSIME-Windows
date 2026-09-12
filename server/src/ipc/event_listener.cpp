@@ -53,6 +53,7 @@
 #include "engine/local_modes/emoji_query.h"
 #include "engine/local_modes/kaomoji_query.h"
 #include "engine/local_modes/jianpin_query.h"
+#include "engine/local_modes/number_query.h"
 #include "engine/shuangpin/shuangpin_profile.h"
 #include "emoji/emoji_ime.h"
 #include "kaomoji/kaomoji_ime.h"
@@ -84,6 +85,7 @@ std::string BuildCurrentCandidatePage();
 void PrepareCandidateTranslationRequest();
 bool g_quick_phrase_triggered = false;
 bool g_unicode_mode_triggered = false;
+bool g_number_mode_triggered = false;
 bool g_date_time_mode_triggered = false;
 bool g_emoji_mode_triggered = false;
 bool g_kaomoji_mode_triggered = false;
@@ -270,6 +272,32 @@ bool IsUnicodeInput(const std::string &raw)
     return index < raw.size();
 }
 
+// The prefix is V after Shift+V, or v when quanpin let a bare v start the mode.
+bool IsNumberCompositionActive(const std::string &raw)
+{
+    return g_number_mode_triggered && !raw.empty() && (raw.front() == 'V' || raw.front() == 'v') &&
+           (raw.size() == 1 || metasequoia::local_modes::is_number_text(raw.substr(1)));
+}
+
+bool IsNumberInput(const std::string &raw)
+{
+    return IsNumberCompositionActive(raw) && raw.size() > 1;
+}
+
+// U-mode and V-mode both own bare digits as composition input; Shift+1..9
+// selects candidates in either.
+bool IsDigitCompositionActive(const std::string &raw)
+{
+    return IsUnicodeCompositionActive(raw) || IsNumberCompositionActive(raw);
+}
+
+// V-mode accepts one decimal point once at least one digit has been typed.
+bool IsNumberPointKey(const std::string &raw, UINT keycode, WCHAR wch)
+{
+    return IsNumberCompositionActive(raw) && keycode == VK_OEM_PERIOD && wch == L'.' && raw.size() > 1 &&
+           raw.find('.') == std::string::npos;
+}
+
 bool IsDateTimeCompositionActive(const std::string &raw)
 {
     return g_date_time_mode_triggered && !raw.empty() && raw.front() == 'T' &&
@@ -335,15 +363,16 @@ bool IsYModeInput(const std::string &raw)
 
 bool IsShiftLetterSpecialModeTriggered()
 {
-    return g_quick_phrase_triggered || g_unicode_mode_triggered || g_date_time_mode_triggered ||
-           g_emoji_mode_triggered || g_kaomoji_mode_triggered || g_jianpin_mode_triggered || g_y_mode_triggered ||
-           g_r_mode_triggered;
+    return g_quick_phrase_triggered || g_unicode_mode_triggered || g_number_mode_triggered ||
+           g_date_time_mode_triggered || g_emoji_mode_triggered || g_kaomoji_mode_triggered ||
+           g_jianpin_mode_triggered || g_y_mode_triggered || g_r_mode_triggered;
 }
 
 void ClearSpecialModeTriggers()
 {
     g_quick_phrase_triggered = false;
     g_unicode_mode_triggered = false;
+    g_number_mode_triggered = false;
     g_date_time_mode_triggered = false;
     g_emoji_mode_triggered = false;
     g_kaomoji_mode_triggered = false;
@@ -352,14 +381,14 @@ void ClearSpecialModeTriggers()
     g_r_mode_triggered = false;
 }
 
-// True whenever a K/U/T/E/M/J/Y special-mode composition is in progress, even when the
-// typed text is not yet a complete keyword/hex sequence. Such input must never
+// True whenever a K/U/V/T/E/M/J/Y special-mode composition is in progress, even when the
+// typed text is not yet a complete keyword/hex/number sequence. Such input must never
 // be interpreted as normal pinyin.
 bool IsSpecialModeCompositionActive(const std::string &raw)
 {
-    return IsQuickPhraseCompositionActive(raw) || IsUnicodeCompositionActive(raw) || IsDateTimeCompositionActive(raw) ||
-           IsEmojiCompositionActive(raw) || IsKaomojiCompositionActive(raw) || IsJianpinCompositionActive(raw) ||
-           IsYModeCompositionActive(raw);
+    return IsQuickPhraseCompositionActive(raw) || IsUnicodeCompositionActive(raw) || IsNumberCompositionActive(raw) ||
+           IsDateTimeCompositionActive(raw) || IsEmojiCompositionActive(raw) || IsKaomojiCompositionActive(raw) ||
+           IsJianpinCompositionActive(raw) || IsYModeCompositionActive(raw);
 }
 
 constexpr auto kPipeHelloTimeout = std::chrono::seconds(2);
@@ -773,9 +802,9 @@ bool IsSelectionKey(UINT keycode)
     if (keycode >= '0' && keycode <= '9')
     {
         const std::string raw = g_inputSession ? g_inputSession->get_pinyin_sequence_with_cases() : std::string{};
-        if (IsUnicodeCompositionActive(raw))
+        if (IsDigitCompositionActive(raw))
         {
-            // U-mode: bare digits compose hex; Shift+1..9 selects candidates.
+            // U-mode / V-mode: bare digits compose; Shift+1..9 selects candidates.
             const bool shift_only = (Global::ModifiersDown & 0b00000111u) == 0b00000001u;
             return shift_only && keycode >= '1' && keycode <= '9';
         }
@@ -858,13 +887,17 @@ bool ApplyCompositionEditKey(UINT keycode, WCHAR wch)
         {
             input = ';';
         }
-        else if (IsUnicodeCompositionActive(raw) && keycode >= '0' && keycode <= '9')
+        else if (IsDigitCompositionActive(raw) && keycode >= '0' && keycode <= '9')
         {
             input = static_cast<char>(keycode);
         }
         else if (IsUnicodeCompositionActive(raw) && keycode == VK_OEM_PLUS && wch == L'+' && raw == "U")
         {
             input = '+';
+        }
+        else if (IsNumberPointKey(raw, keycode, wch))
+        {
+            input = '.';
         }
         else
         {
@@ -2858,6 +2891,9 @@ void RegisteredPipeMonitorThread(HANDLE clientPipe, UINT pipeRole, uint64_t hand
             SendToTsfWorkerThreadClientViaNamedpipe(
                 hello.client_id, Global::DataFromServerMsgTypeToTsfWorkerThread::MicrosoftShuangpinChanged,
                 GetConfiguredShuangpinSchema() == "microsoft" ? L"1" : L"0");
+            SendToTsfWorkerThreadClientViaNamedpipe(
+                hello.client_id, Global::DataFromServerMsgTypeToTsfWorkerThread::LowercaseNumberModeChanged,
+                FormatLowercaseNumberModeWorkerPayload());
             SendToTsfWorkerThreadClientViaNamedpipe(hello.client_id,
                                                     Global::DataFromServerMsgTypeToTsfWorkerThread::InputModeChanged,
                                                     GetConfiguredInputMode() == "japanese" ? L"1" : L"0");
@@ -3193,6 +3229,10 @@ void PrepareCandidateList(uint64_t client_id, uint64_t activation_epoch)
     {
         items = metasequoia::local_modes::query_unicode(current_input.substr(1));
     }
+    else if (IsNumberInput(current_input))
+    {
+        items = metasequoia::local_modes::query_number(current_input.substr(1));
+    }
     else if (IsQuickPhraseInput(current_input))
     {
         items = metasequoia::local_modes::query_quick_phrases(current_input.substr(1)).candidates;
@@ -3234,8 +3274,8 @@ void PrepareCandidateList(uint64_t client_id, uint64_t activation_epoch)
     }
     else if (IsSpecialModeCompositionActive(current_input))
     {
-        // A K/U/T/E/M/J/Y special-mode prefix that is not yet a complete input (e.g.
-        // "K", "U", "U+", "Tw", "Txin", "E", "M", "J", "Y"): do not translate it into
+        // A K/U/V/T/E/M/J/Y special-mode prefix that is not yet a complete input (e.g.
+        // "K", "U", "U+", "V", "Tw", "Txin", "E", "M", "J", "Y"): do not translate it into
         // normal pinyin candidates. Leave items empty so only the raw typed text
         // shows as the fallback.
     }
@@ -3706,6 +3746,16 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
     if (chinese_scheme && !g_english_input_mode && GetConfiguredUnicodeModeEnabled() && input_before_key.empty() &&
         Global::Keycode == 'U' && Global::Wch == L'U' && shift_only)
         g_unicode_mode_triggered = true;
+    if (chinese_scheme && !g_english_input_mode && GetConfiguredNumberModeEnabled() && input_before_key.empty() &&
+        Global::Keycode == 'V' && Global::Wch == L'V' && shift_only)
+        g_number_mode_triggered = true;
+    // Quanpin never begins a syllable with v, so a bare v may start number mode
+    // without Shift (v123). Shuangpin keeps v as an initial and needs Shift+V.
+    const bool no_modifiers = (Global::ModifiersDown & 0b00000111u) == 0;
+    if (chinese_scheme && !g_english_input_mode && GetConfiguredNumberModeEnabled() && input_before_key.empty() &&
+        g_inputSession->current_scheme_type() == SchemeType::Quanpin && Global::Keycode == 'V' && Global::Wch == L'v' &&
+        no_modifiers)
+        g_number_mode_triggered = true;
     if (chinese_scheme && !g_english_input_mode && GetConfiguredDateTimeModeEnabled() && input_before_key.empty() &&
         Global::Keycode == 'T' && Global::Wch == L'T' && shift_only)
         g_date_time_mode_triggered = true;
@@ -3741,7 +3791,7 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
         return;
     }
 
-    const bool unicode_composition_active = IsUnicodeCompositionActive(input_before_key);
+    const bool digit_composition_active = IsDigitCompositionActive(input_before_key);
     const bool is_paging_key = IsPagingKey(Global::Keycode);
     const bool is_manual_pinyin_separator = IsManualPinyinSeparatorKey(Global::Keycode, Global::Wch);
     const bool is_microsoft_shuangpin_ing_key =
@@ -3754,15 +3804,19 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
         (!is_manual_pinyin_separator && !is_microsoft_shuangpin_ing_key &&
          IsCommitWithHighlightedCandidatePunctuationInCandidateMode(Global::Keycode, Global::Wch));
     const bool is_selection_key = IsSelectionKey(Global::Keycode);
+    // U-mode and V-mode share the digit rules: bare digits compose, Shift+1..9 selects.
     const bool is_unicode_shift_digit_selection =
-        unicode_composition_active && shift_only && Global::Keycode >= '1' && Global::Keycode <= '9';
-    const bool is_unicode_hex_digit = unicode_composition_active && !is_unicode_shift_digit_selection &&
+        digit_composition_active && shift_only && Global::Keycode >= '1' && Global::Keycode <= '9';
+    const bool is_unicode_hex_digit = digit_composition_active && !is_unicode_shift_digit_selection &&
                                       Global::Keycode >= '0' && Global::Keycode <= '9';
-    const bool is_unicode_plus = unicode_composition_active && Global::Keycode == VK_OEM_PLUS && Global::Wch == L'+';
-    const bool is_composition_edit_key =
-        Global::Keycode == VK_LEFT || Global::Keycode == VK_RIGHT || Global::Keycode == VK_BACK ||
-        Global::Keycode == VK_DELETE || (Global::Keycode >= 'A' && Global::Keycode <= 'Z') ||
-        is_manual_pinyin_separator || is_microsoft_shuangpin_ing_key || is_unicode_hex_digit || is_unicode_plus;
+    const bool is_unicode_plus =
+        IsUnicodeCompositionActive(input_before_key) && Global::Keycode == VK_OEM_PLUS && Global::Wch == L'+';
+    const bool is_number_point = IsNumberPointKey(input_before_key, Global::Keycode, Global::Wch);
+    const bool is_composition_edit_key = Global::Keycode == VK_LEFT || Global::Keycode == VK_RIGHT ||
+                                         Global::Keycode == VK_BACK || Global::Keycode == VK_DELETE ||
+                                         (Global::Keycode >= 'A' && Global::Keycode <= 'Z') ||
+                                         is_manual_pinyin_separator || is_microsoft_shuangpin_ing_key ||
+                                         is_unicode_hex_digit || is_unicode_plus || is_number_point;
     const bool should_forward_key_to_session = !is_commit_with_highlighted_candidate_punctuation && !is_selection_key &&
                                                !is_paging_key && !is_composition_edit_key;
 
@@ -3842,6 +3896,11 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
         // Keep preedit identical to the typed U/+hex sequence.
         GlobalIme::composition.segmented_pinyin = GlobalIme::composition.raw_input_with_cases;
     }
+    if (!g_english_input_mode && IsNumberCompositionActive(GlobalIme::composition.raw_input_with_cases))
+    {
+        // Keep preedit identical to the typed V-prefixed number.
+        GlobalIme::composition.segmented_pinyin = GlobalIme::composition.raw_input_with_cases;
+    }
     if (!g_english_input_mode && IsDateTimeCompositionActive(GlobalIme::composition.raw_input_with_cases))
     {
         GlobalIme::composition.segmented_pinyin = GlobalIme::composition.raw_input_with_cases;
@@ -3906,7 +3965,7 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
     //
     if (FanyImeIpc::ShouldSendCompositionReply(Global::Keycode >= 'A' && Global::Keycode <= 'Z',
                                                is_manual_pinyin_separator, is_microsoft_shuangpin_ing_key,
-                                               is_unicode_hex_digit, is_unicode_plus))
+                                               is_unicode_hex_digit, is_unicode_plus, is_number_point))
     {
         if (IsUiLessMode())
         {
@@ -3967,9 +4026,9 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
     // 空格和数字键可能会触发造词，如果数字键上屏的汉字字符串所对应的拼音比实际的拼音要短的话，
     // 那么，就可能会触发造词事件，那么，就要适时改变候选框的状态
     //
-    /* VK_SPACE, Digits (U-mode: Shift+1..9) */
+    /* VK_SPACE, Digits (U-mode / V-mode: Shift+1..9) */
     if (Global::Keycode == VK_SPACE || is_unicode_shift_digit_selection ||
-        (!IsUnicodeCompositionActive(GlobalIme::composition.raw_input_with_cases) && Global::Keycode > '0' &&
+        (!IsDigitCompositionActive(GlobalIme::composition.raw_input_with_cases) && Global::Keycode > '0' &&
          Global::Keycode <= '9'))
     {
         ProcessSelectionKey(Global::Keycode, client_id, activation_epoch);
@@ -3987,7 +4046,7 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
             RefreshCandidatePageUi(true);
         }
     }
-    else if (IsCandidateNavigationKey(Global::Keycode) && !is_unicode_plus)
+    else if (IsCandidateNavigationKey(Global::Keycode) && !is_unicode_plus && !is_number_point)
     {
         auto &ui = Global::candidate_ui;
         UINT result = Global::DataFromServerMsgType::NavigationIgnored;

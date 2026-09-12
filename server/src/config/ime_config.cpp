@@ -96,6 +96,7 @@ bool g_emoji_mode_enabled = true;
 bool g_kaomoji_mode_enabled = true;
 bool g_jianpin_mode_enabled = true;
 bool g_y_mode_enabled = true;
+bool g_number_mode_enabled = true;
 bool g_r_mode_enabled = true;
 bool g_clipboard_history_enabled = false;
 bool g_paging_minus_equal_enabled = true;
@@ -913,6 +914,7 @@ bool LoadImeConfig()
         g_kaomoji_mode_enabled = tbl["utility"]["kaomoji_mode"].value_or(true);
         g_jianpin_mode_enabled = tbl["utility"]["jianpin_mode"].value_or(true);
         g_y_mode_enabled = tbl["utility"]["y_mode"].value_or(true);
+        g_number_mode_enabled = tbl["utility"]["number_mode"].value_or(true);
         g_r_mode_enabled = tbl["utility"]["r_mode"].value_or(true);
         {
             const bool previous_clipboard_history = g_clipboard_history_enabled;
@@ -3162,6 +3164,28 @@ bool SetConfiguredYModeEnabled(bool enabled)
     }
     g_y_mode_enabled = enabled;
     return true;
+}
+
+bool GetConfiguredNumberModeEnabled()
+{
+    return g_number_mode_enabled;
+}
+
+bool SetConfiguredNumberModeEnabled(bool enabled)
+{
+    if (!WriteConfiguredValue("utility", "number_mode", enabled ? "true" : "false"))
+    {
+        return false;
+    }
+    g_number_mode_enabled = enabled;
+    return true;
+}
+
+std::wstring FormatLowercaseNumberModeWorkerPayload()
+{
+    const bool lowercase_v_starts_number_mode =
+        g_number_mode_enabled && GetConfiguredActiveInputScheme() == SchemeType::Quanpin;
+    return lowercase_v_starts_number_mode ? L"1" : L"0";
 }
 
 bool GetConfiguredRModeEnabled()

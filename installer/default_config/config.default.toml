@@ -332,6 +332,7 @@ kaomoji_mode = true # Shift+M 进入颜文字快捷输入模式（支持全拼/�
 jianpin_mode = true # Shift+J 进入超级简拼模式（每个字母作为简拼；双拼按方案转换 zh/ch/sh）
 y_mode = true # Shift+Y 进入临时英文模式（中文状态下直接打英文，上屏后回到中文）
 r_mode = true # Shift+R 进入临时日语模式（中文状态下使用罗马字输入日语，上屏后回到中文）
+number_mode = true # 数字转换模式：全拼下直接 v+数字 或 Shift+V，双拼只能 Shift+V（人民币大写金额、中文大写 / 小写读法、分节写法）
 
 #
 # AI Assistant

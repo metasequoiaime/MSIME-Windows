@@ -865,6 +865,87 @@ int run_test()
     require(!plain_uppercase.handle_character('U').handled && !plain_uppercase.has_composition() &&
                 plain_uppercase.local_input_mode() == metasequoia::LocalInputMode::None,
             "An uppercase character without Shift-only was swallowed.");
+
+    metasequoia::InputSession number_session(SchemeType::Quanpin);
+    require(number_session.handle_character('V', true).handled &&
+                number_session.local_input_mode() == metasequoia::LocalInputMode::Number &&
+                number_session.preedit() == "V" && number_session.candidates().empty(),
+            "Shift+V did not enter an empty number composition.");
+    require(number_session.handle_character('a').handled && number_session.preedit() == "V" &&
+                number_session.candidates().empty(),
+            "Number mode accepted or forwarded a letter.");
+    for (const char character : std::string("1234.5"))
+    {
+        require(number_session.handle_character(character).handled, "Number mode rejected a digit or the point.");
+    }
+    require(number_session.handle_character('.').handled && number_session.preedit() == "V1234.5",
+            "Number mode accepted a second decimal point.");
+    require(number_session.candidates().size() == 6 && number_session.candidates().back().word == "1,234.5" &&
+                number_session.candidates().front().word == "壹仟贰佰叁拾肆元伍角整" &&
+                number_session.candidates().front().source == CandidateSource::Generated &&
+                number_session.candidates()[2].word == "一千二百三十四点五",
+            "Number mode did not produce the financial amount first.");
+    const auto number_commit = number_session.select_candidate(0);
+    require(number_commit.handled && number_commit.commit == "壹仟贰佰叁拾肆元伍角整" &&
+                !number_session.has_composition() &&
+                number_session.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Committing a number candidate did not leave the local mode.");
+
+    require(number_session.handle_character('V', true).handled && number_session.handle_character('1').handled &&
+                number_session.handle_character('2').handled &&
+                number_session.handle_command(metasequoia::Command::MoveLeft).handled &&
+                number_session.handle_character('3').handled && number_session.preedit() == "V132" &&
+                number_session.handle_character('.').handled && number_session.preedit() == "V13.2" &&
+                !number_session.handle_character('.').handled && number_session.preedit() == "V13.2" &&
+                !number_session.handle_character('x').handled && number_session.preedit() == "V13.2" &&
+                number_session.candidates().front().word == "壹拾叁元贰角整",
+            "Caret editing inside a number composition did not follow the digit rules.");
+    require(number_session.handle_command(metasequoia::Command::Cancel).handled && !number_session.has_composition(),
+            "Cancel did not leave number mode.");
+    require(number_session.handle_character('V', true).handled &&
+                number_session.handle_command(metasequoia::Command::Backspace).handled &&
+                !number_session.has_composition() &&
+                number_session.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Backspace on a bare number prefix did not leave the mode.");
+    require(!plain_uppercase.handle_character('V').handled && !plain_uppercase.has_composition(),
+            "An uppercase V without Shift-only was swallowed.");
+    metasequoia::InputSession lowercase_v(SchemeType::Quanpin);
+    require(lowercase_v.handle_character('l').handled && lowercase_v.handle_character('v').handled &&
+                lowercase_v.has_composition() && lowercase_v.local_input_mode() == metasequoia::LocalInputMode::None,
+            "A lowercase v after a letter stopped acting as pinyin ü.");
+    require(lowercase_v.handle_command(metasequoia::Command::Cancel).handled &&
+                lowercase_v.handle_character('v').handled &&
+                lowercase_v.local_input_mode() == metasequoia::LocalInputMode::Number && lowercase_v.preedit() == "v",
+            "A bare lowercase v did not start number mode in quanpin.");
+    for (const char character : std::string("123456.78"))
+    {
+        require(lowercase_v.handle_character(character).handled, "Bare-v number mode rejected a digit.");
+    }
+    require(lowercase_v.preedit() == "v123456.78" &&
+                lowercase_v.candidates().front().word == "壹拾贰万叁仟肆佰伍拾陆元柒角捌分",
+            "Bare-v number mode did not render the financial amount.");
+    const auto lowercase_commit = lowercase_v.select_candidate(0);
+    require(lowercase_commit.handled && lowercase_commit.commit == "壹拾贰万叁仟肆佰伍拾陆元柒角捌分" &&
+                lowercase_v.local_input_mode() == metasequoia::LocalInputMode::None,
+            "Committing a bare-v number candidate did not leave the local mode.");
+    metasequoia::InputSession shuangpin_v(SchemeType::Shuangpin);
+    require(shuangpin_v.handle_character('v').handled && shuangpin_v.has_composition() &&
+                shuangpin_v.local_input_mode() == metasequoia::LocalInputMode::None,
+            "A lowercase v in shuangpin was hijacked by number mode.");
+    require(shuangpin_v.handle_command(metasequoia::Command::Cancel).handled &&
+                shuangpin_v.handle_character('V', true).handled &&
+                shuangpin_v.local_input_mode() == metasequoia::LocalInputMode::Number,
+            "Shift+V did not start number mode in shuangpin.");
+    metasequoia::LocalModeOptions disabled_number_mode;
+    disabled_number_mode.number = false;
+    metasequoia::InputSession disabled_number(SchemeType::Quanpin);
+    disabled_number.set_local_mode_options(disabled_number_mode);
+    require(!disabled_number.handle_character('V', true).handled && !disabled_number.has_composition() &&
+                disabled_number.local_input_mode() == metasequoia::LocalInputMode::None,
+            "A disabled number shortcut swallowed Shift+V.");
+    require(disabled_number.handle_character('v').handled && disabled_number.has_composition() &&
+                disabled_number.local_input_mode() == metasequoia::LocalInputMode::None,
+            "A disabled number shortcut still hijacked a bare lowercase v.");
     metasequoia::LocalModeOptions disabled_local_modes;
     disabled_local_modes.unicode = false;
     metasequoia::InputSession disabled_unicode(SchemeType::Quanpin);

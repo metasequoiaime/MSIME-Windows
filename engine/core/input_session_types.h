@@ -66,6 +66,7 @@ enum class LocalInputMode
     SuperJianpin,
     TemporaryEnglish,
     TemporaryJapanese,
+    Number,
 };
 
 struct LocalModeOptions
@@ -78,6 +79,7 @@ struct LocalModeOptions
     bool super_jianpin = true;
     bool temporary_english = true;
     bool temporary_japanese = true;
+    bool number = true;
 };
 
 struct EnglishInputOptions

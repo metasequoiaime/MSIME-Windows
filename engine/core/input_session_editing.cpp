@@ -82,6 +82,10 @@ KeyResult InputSession::insert_at_caret(char character)
         case LocalInputMode::DateTime:
             accepted = false;
             break;
+        case LocalInputMode::Number:
+            accepted =
+                (character >= '0' && character <= '9') || (character == '.' && text.find('.') == std::string::npos);
+            break;
         case LocalInputMode::None:
             accepted = lower || (upper && ((scheme() == SchemeType::Quanpin && quanpin_helpcode_enabled_) ||
                                            (scheme() == SchemeType::Shuangpin && shuangpin_helpcode_enabled_)));

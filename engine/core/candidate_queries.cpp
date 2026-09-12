@@ -4,6 +4,7 @@
 #include "../local_modes/emoji_query.h"
 #include "../local_modes/jianpin_query.h"
 #include "../local_modes/kaomoji_query.h"
+#include "../local_modes/number_query.h"
 #include "../local_modes/quick_phrase_query.h"
 #include "../local_modes/unicode_query.h"
 #include <algorithm>
@@ -23,6 +24,9 @@ local_modes::LocalQueryResult CandidateQueries::local(LocalInputMode mode, const
     {
     case LocalInputMode::Unicode:
         result.candidates = local_modes::query_unicode(preedit.substr(1));
+        return result;
+    case LocalInputMode::Number:
+        result.candidates = local_modes::query_number(preedit.substr(1));
         return result;
     case LocalInputMode::DateTime: {
         const local_modes::LocalDateTime now = clock ? clock() : local_modes::current_local_date_time();

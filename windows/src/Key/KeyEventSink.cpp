@@ -1321,15 +1321,22 @@ bool CMetasequoiaIME::_ClassifyDeferredKeyDown(_In_ ITfContext *pContext, WPARAM
             {
                 return setKeyState(CATEGORY_COMPOSING, FUNCTION_INPUT);
             }
+            if (CCompositionProcessorEngine::IsNumberPointKeystroke(shadow.rawInput.data(), shadow.rawInput.size(),
+                                                                    *classifiedCode, classifiedWch))
+            {
+                return setKeyState(CATEGORY_COMPOSING, FUNCTION_INPUT);
+            }
             return setKeyState(CATEGORY_CANDIDATE, FUNCTION_SERVER_CANDIDATE_KEY);
         default:
             break;
         }
 
+        const bool digitComposition = shadow.unicodeMode || CCompositionProcessorEngine::IsNumberModeKeystrokes(
+                                                                shadow.rawInput.data(), shadow.rawInput.size());
         if (*classifiedCode >= L'1' && *classifiedCode <= L'9')
         {
-            // U-mode: bare digits compose hex; Shift+1..9 selects candidates.
-            if (shadow.unicodeMode)
+            // U-mode / V-mode: bare digits compose; Shift+1..9 selects candidates.
+            if (digitComposition)
             {
                 const bool shift_only = (capturedModifiers & 0b00000111u) == 0b00000001u;
                 if (shift_only)
@@ -1340,7 +1347,7 @@ bool CMetasequoiaIME::_ClassifyDeferredKeyDown(_In_ ITfContext *pContext, WPARAM
             }
             return setKeyState(CATEGORY_CANDIDATE, FUNCTION_SELECT_BY_NUMBER);
         }
-        if (*classifiedCode == L'0' && shadow.unicodeMode)
+        if (*classifiedCode == L'0' && digitComposition)
         {
             return setKeyState(CATEGORY_COMPOSING, FUNCTION_INPUT);
         }

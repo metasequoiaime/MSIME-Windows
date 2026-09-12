@@ -46,7 +46,8 @@ TEST_CASE(ipc_pipe_ready_is_a_distinct_server_reply)
     REQUIRE_EQ(Global::DataFromServerMsgTypeToTsfWorkerThread::CapsLockChanged, 19u);
     REQUIRE_EQ(Global::DataFromServerMsgTypeToTsfWorkerThread::TsfDiagnosticLogChanged, 20u);
     REQUIRE_EQ(Global::DataFromServerMsgTypeToTsfWorkerThread::PunctuationLockChanged, 21u);
-    REQUIRE_EQ(Global::DataFromServerMsgTypeToTsfWorkerThread::MaxKnown, 21u);
+    REQUIRE_EQ(Global::DataFromServerMsgTypeToTsfWorkerThread::LowercaseNumberModeChanged, 22u);
+    REQUIRE_EQ(Global::DataFromServerMsgTypeToTsfWorkerThread::MaxKnown, 22u);
     REQUIRE(Global::DataFromServerMsgTypeToTsfWorkerThread::FocusSessionReady >
             Global::DataFromServerMsgTypeToTsfWorkerThread::PagingCommaPeriodChanged);
     REQUIRE(Global::DataFromServerMsgTypeToTsfWorkerThread::PipeReady >
@@ -75,8 +76,10 @@ TEST_CASE(ipc_pipe_ready_is_a_distinct_server_reply)
             Global::DataFromServerMsgTypeToTsfWorkerThread::CapsLockChanged);
     REQUIRE(Global::DataFromServerMsgTypeToTsfWorkerThread::PunctuationLockChanged >
             Global::DataFromServerMsgTypeToTsfWorkerThread::TsfDiagnosticLogChanged);
+    REQUIRE(Global::DataFromServerMsgTypeToTsfWorkerThread::LowercaseNumberModeChanged >
+            Global::DataFromServerMsgTypeToTsfWorkerThread::PunctuationLockChanged);
     REQUIRE_EQ(Global::DataFromServerMsgTypeToTsfWorkerThread::MaxKnown,
-               Global::DataFromServerMsgTypeToTsfWorkerThread::PunctuationLockChanged);
+               Global::DataFromServerMsgTypeToTsfWorkerThread::LowercaseNumberModeChanged);
 }
 
 TEST_CASE(ipc_client_suspension_is_a_distinct_nonterminal_route_reset)

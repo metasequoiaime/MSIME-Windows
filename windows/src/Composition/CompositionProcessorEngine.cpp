@@ -266,6 +266,74 @@ BOOL CCompositionProcessorEngine::IsUnicodeModeComposition() const
     return _keystrokeBuffer.GetLength() > 0 && _keystrokeBuffer.Get() && _keystrokeBuffer.Get()[0] == L'U';
 }
 
+bool CCompositionProcessorEngine::IsNumberModeKeystrokes(const WCHAR *buffer, size_t length)
+{
+    if (buffer == nullptr || length == 0)
+    {
+        return false;
+    }
+    const bool lowercasePrefixAllowed = Global::LowercaseNumberModeEnabled.load(std::memory_order_relaxed);
+    if (buffer[0] != L'V' && !(buffer[0] == L'v' && lowercasePrefixAllowed))
+    {
+        return false;
+    }
+    bool pointSeen = false;
+    for (size_t index = 1; index < length; ++index)
+    {
+        const WCHAR ch = buffer[index];
+        if (ch == L'.')
+        {
+            if (pointSeen)
+            {
+                return false;
+            }
+            pointSeen = true;
+        }
+        else if (ch < L'0' || ch > L'9')
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool CCompositionProcessorEngine::IsNumberPointKeystroke(const WCHAR *buffer, size_t length, UINT uCode,
+                                                         const WCHAR *pwch)
+{
+    if (uCode != VK_OEM_PERIOD || pwch == nullptr || *pwch != L'.' || length < 2 ||
+        !IsNumberModeKeystrokes(buffer, length))
+    {
+        return false;
+    }
+    for (size_t index = 1; index < length; ++index)
+    {
+        if (buffer[index] == L'.')
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+BOOL CCompositionProcessorEngine::IsNumberModeComposition() const
+{
+    return IsNumberModeKeystrokes(_keystrokeBuffer.Get(), static_cast<size_t>(_keystrokeBuffer.GetLength())) ? TRUE
+                                                                                                             : FALSE;
+}
+
+BOOL CCompositionProcessorEngine::IsDigitModeComposition() const
+{
+    return IsUnicodeModeComposition() || IsNumberModeComposition();
+}
+
+BOOL CCompositionProcessorEngine::IsNumberPointKeystroke(UINT uCode, const WCHAR *pwch) const
+{
+    return IsNumberPointKeystroke(_keystrokeBuffer.Get(), static_cast<size_t>(_keystrokeBuffer.GetLength()), uCode,
+                                  pwch)
+               ? TRUE
+               : FALSE;
+}
+
 BOOL CCompositionProcessorEngine::AddVirtualKey(WCHAR wch)
 {
     if (!wch)
@@ -2044,8 +2112,8 @@ BOOL CCompositionProcessorEngine::IsVirtualKeyNeed( //
         return TRUE;
     }
 
-    // U-mode: bare digits compose hex; Shift+1..9 selects candidates.
-    if (IsUnicodeModeComposition() && uCode >= L'0' && uCode <= L'9')
+    // U-mode / V-mode: bare digits compose; Shift+1..9 selects candidates.
+    if (IsDigitModeComposition() && uCode >= L'0' && uCode <= L'9')
     {
         const bool shift_down = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
         const bool ctrl_down = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
@@ -2069,6 +2137,16 @@ BOOL CCompositionProcessorEngine::IsVirtualKeyNeed( //
     }
     if (IsUnicodeModeComposition() && _keystrokeBuffer.GetLength() == 1 && uCode == VK_OEM_PLUS && pwch &&
         *pwch == L'+')
+    {
+        if (pKeyState)
+        {
+            pKeyState->Category = CATEGORY_COMPOSING;
+            pKeyState->Function = FUNCTION_INPUT;
+        }
+        return TRUE;
+    }
+    // V-mode: the period is the decimal point, not a paging or punctuation key.
+    if (IsNumberPointKeystroke(uCode, pwch))
     {
         if (pKeyState)
         {
@@ -2742,8 +2820,8 @@ BOOL CCompositionProcessorEngine::IsKeystrokeRange(UINT uCode, _Out_ _KEYSTROKE_
     pKeyState->Category = CATEGORY_NONE;
     pKeyState->Function = FUNCTION_NONE;
 
-    // U-mode owns 0-9 as hex composition input.
-    if (IsUnicodeModeComposition() && uCode >= L'0' && uCode <= L'9')
+    // U-mode and V-mode own 0-9 as composition input.
+    if (IsDigitModeComposition() && uCode >= L'0' && uCode <= L'9')
     {
         return FALSE;
     }

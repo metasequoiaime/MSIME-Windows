@@ -1747,7 +1747,8 @@ void CMetasequoiaIME::IpcWorkerThread(CMetasequoiaIME *pIME)
              buf.msg_type == Global::DataToTsfWorkerThreadMsgType::MicrosoftShuangpinChanged ||
              buf.msg_type == Global::DataToTsfWorkerThreadMsgType::InputModeChanged ||
              buf.msg_type == Global::DataToTsfWorkerThreadMsgType::CapsLockChanged ||
-             buf.msg_type == Global::DataToTsfWorkerThreadMsgType::TsfDiagnosticLogChanged))
+             buf.msg_type == Global::DataToTsfWorkerThreadMsgType::TsfDiagnosticLogChanged ||
+             buf.msg_type == Global::DataToTsfWorkerThreadMsgType::LowercaseNumberModeChanged))
         {
             bool hasTerminator = false;
             for (const wchar_t ch : buf.data)
@@ -1827,6 +1828,7 @@ void CMetasequoiaIME::IpcWorkerThread(CMetasequoiaIME *pIME)
                 buf.msg_type == Global::DataToTsfWorkerThreadMsgType::CapsLockChanged ||
                 buf.msg_type == Global::DataToTsfWorkerThreadMsgType::TsfDiagnosticLogChanged ||
                 buf.msg_type == Global::DataToTsfWorkerThreadMsgType::PunctuationLockChanged ||
+                buf.msg_type == Global::DataToTsfWorkerThreadMsgType::LowercaseNumberModeChanged ||
                 buf.msg_type == Global::DataToTsfWorkerThreadMsgType::PipeReady ||
                 buf.msg_type == Global::DataToTsfWorkerThreadMsgType::FocusSessionReady ||
                 buf.msg_type == Global::DataToTsfWorkerThreadMsgType::UpdateVoiceComposition ||
@@ -1915,6 +1917,10 @@ void CMetasequoiaIME::IpcWorkerThread(CMetasequoiaIME *pIME)
         else if (buf.msg_type == Global::DataToTsfWorkerThreadMsgType::MicrosoftShuangpinChanged)
         {
             Global::MicrosoftShuangpinEnabled.store(buf.data[0] == L'1', std::memory_order_relaxed);
+        }
+        else if (buf.msg_type == Global::DataToTsfWorkerThreadMsgType::LowercaseNumberModeChanged)
+        {
+            Global::LowercaseNumberModeEnabled.store(buf.data[0] == L'1', std::memory_order_relaxed);
         }
         else if (buf.msg_type == Global::DataToTsfWorkerThreadMsgType::InputModeChanged)
         {

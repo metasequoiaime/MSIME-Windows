@@ -1,6 +1,7 @@
 #include "../../local_modes/date_time_query.h"
 #include "../../local_modes/emoji_query.h"
 #include "../../local_modes/kaomoji_query.h"
+#include "../../local_modes/number_query.h"
 #include "../../local_modes/quick_phrase_query.h"
 #include "../../core/data_path.h"
 
@@ -145,6 +146,62 @@ int main()
                 metasequoia::local_modes::query_date_time("rq", &now, -1).empty() &&
                 metasequoia::local_modes::query_date_time("rq", &now, 3).size() == 3,
             "Date/time query limit or unknown-keyword handling was incorrect.");
+
+    using metasequoia::local_modes::is_number_text;
+    using metasequoia::local_modes::query_number;
+    require(is_number_text("123") && is_number_text("12.") && is_number_text("12.5") && is_number_text("0.05") &&
+                !is_number_text("") && !is_number_text(".") && !is_number_text(".5") && !is_number_text("1.2.3") &&
+                !is_number_text("a1") && !is_number_text("1a") && !is_number_text("1,000"),
+            "Number text validation diverged from the composition rules.");
+    require_words(query_number("123456"),
+                  std::array<const char *, 7>{"壹拾贰万叁仟肆佰伍拾陆元整", "壹拾贰万叁仟肆佰伍拾陆",
+                                              "十二万三千四百五十六", "壹贰叁肆伍陆", "一二三四五六", "123,456",
+                                              "12,3456"},
+                  "An integer amount was not rendered in every reading.");
+    require_words(query_number("1234.5"),
+                  std::array<const char *, 6>{"壹仟贰佰叁拾肆元伍角整", "壹仟贰佰叁拾肆点伍", "一千二百三十四点五",
+                                              "壹贰叁肆点伍", "一二三四点五", "1,234.5"},
+                  "An amount with 角 was not rendered in every reading.");
+    require_words(
+        query_number("16.05"),
+        std::array<const char *, 5>{"壹拾陆元零伍分", "壹拾陆点零伍", "十六点零五", "壹陆点零伍", "一六点零五"},
+        "A zero 角 before 分 was not written as 零.");
+    require_words(query_number("12.50"),
+                  std::array<const char *, 5>{"壹拾贰元伍角整", "壹拾贰点伍", "十二点五", "壹贰点伍零", "一二点五零"},
+                  "A trailing fraction zero was not trimmed from the readings.");
+    require_words(query_number("100001"),
+                  std::array<const char *, 7>{"壹拾万零壹元整", "壹拾万零壹", "十万零一", "壹零零零零壹",
+                                              "一零零零零一", "100,001", "10,0001"},
+                  "Zeros across a 万 group were not collapsed into one 零.");
+    require_words(query_number("1005000"),
+                  std::array<const char *, 7>{"壹佰万零伍仟元整", "壹佰万零伍仟", "一百万零五千", "壹零零伍零零零",
+                                              "一零零五零零零", "1,005,000", "100,5000"},
+                  "A zero between 万 and 仟 was not written.");
+    require_words(query_number("100000000"),
+                  std::array<const char *, 7>{"壹亿元整", "壹亿", "一亿", "壹零零零零零零零零", "一零零零零零零零零",
+                                              "100,000,000", "1,0000,0000"},
+                  "亿 was not rendered without trailing zero groups.");
+    require_words(query_number("20010"),
+                  std::array<const char *, 7>{"贰万零壹拾元整", "贰万零壹拾", "二万零一十", "贰零零壹零", "二零零一零",
+                                              "20,010", "2,0010"},
+                  "壹拾 inside a number was reduced to 拾.");
+    require_words(query_number("10"), std::array<const char *, 5>{"壹拾元整", "壹拾", "十", "壹零", "一零"},
+                  "A leading 一十 was not read as 十.");
+    require_words(query_number("0"), std::array<const char *, 2>{"零元整", "零"}, "Zero produced duplicate readings.");
+    require_words(query_number("0.5"), std::array<const char *, 3>{"零元伍角整", "零点伍", "零点五"},
+                  "A sub-yuan amount was not rendered as 零元.");
+    require_words(query_number("12."), std::array<const char *, 5>{"壹拾贰元整", "壹拾贰", "十二", "壹贰", "一二"},
+                  "A trailing decimal point was not treated as an integer.");
+    require_words(query_number("0012"),
+                  std::array<const char *, 6>{"壹拾贰元整", "壹拾贰", "十二", "零零壹贰", "零零一二", "12"},
+                  "Leading zeros were not stripped from the positional readings.");
+    require_words(query_number("1.234"), std::array<const char *, 2>{"壹点贰叁肆", "一点二三四"},
+                  "A fraction longer than 分 still produced a financial amount.");
+    require(query_number("1234").size() == 6 && query_number("1234").back().word == "1,234",
+            "A four-digit number repeated itself as the 万-grouped form.");
+    require(query_number("12345678901234567").empty() && query_number("").empty() && query_number("x").empty() &&
+                query_number("123456", 0).empty() && query_number("123456", 2).size() == 2,
+            "Number query limit or overflow handling was incorrect.");
 
     const auto suffix = std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count());
     const std::filesystem::path quick_phrase_directory =
