@@ -733,7 +733,11 @@ int ShuangpinDictionary::update_weight_by_word(string word)
 int ShuangpinDictionary::update_weight_by_pinyin_and_word(string pinyin, string word)
 {
     const auto direct_cuts = quanpin::cut_pinyin_by_mode(remove_delimiters(pinyin), "correction");
-    if (direct_cuts.empty() ||
+    // 只有“完整合法拼读”的直切才可信：correction 模式的 greedy 后备允许单声母
+    // 等不完整段，会把双拼原始串（如 qbtmuo → q'b't'mu'o）切成恰好能拼回原串
+    // 的碎片，导致归一化被跳过、置顶更新落在错误 key 上静默失败（0 行更新
+    // 仍返回 OK）。完整拼读检查与 delete 路径的段数-字数比对语义一致。
+    if (direct_cuts.empty() || !quanpin::has_only_complete_pinyin_segments(direct_cuts.front()) ||
         remove_delimiters(quanpin::join_segments(direct_cuts.front())) != remove_delimiters(pinyin))
     {
         pinyin = normalize_shuangpin_to_quanpin_input(pinyin);
@@ -1006,8 +1010,11 @@ std::string ShuangpinDictionary::build_quanpin_sql_for_updating_word(const std::
 
 std::string ShuangpinDictionary::build_quanpin_sql_for_updating_word(std::string pinyin, const std::string &word) const
 {
-    pinyin = normalize_shuangpin_to_quanpin_input(pinyin);
-    const auto cuts = quanpin::cut_pinyin_by_mode(pinyin, "correction");
+    // 调用方约定传入 canonical 全拼（update_weight 已归一化；get_quanpin 本身就
+    // 是全拼）。这里不能再过 normalize_shuangpin_to_quanpin_input：双拼 profile
+    // 会把它当作双拼码重切，qin'tian'shuo 被搧成 qi'n'ti'an'sang'shuo，UPDATE
+    // 永远落在错误 key 上静默失败（0 行更新仍返回 OK）。
+    const auto cuts = quanpin::cut_pinyin_by_mode(remove_delimiters(pinyin), "correction");
     if (cuts.empty())
     {
         return "";
