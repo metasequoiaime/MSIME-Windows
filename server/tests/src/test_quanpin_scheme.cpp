@@ -7,9 +7,11 @@
 #include "engine/quanpin/quanpin_utils.h"
 #include "engine/schemes/quanpin_scheme.h"
 #include <algorithm>
+#include <cstring>
 #include <filesystem>
 #include <sqlite3.h>
 #include <stdexcept>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -519,25 +521,117 @@ TEST_CASE(QuanpinSparsePinyinFallbackSegmentsPreserveSuffixSegments)
 TEST_CASE(QuanpinAutocorrectTableHasNoCollisionsWithLegalPinyin)
 {
     const auto &legal = quanpin::intact_pinyin_set();
-    std::unordered_set<std::string> wrong_keys;
-    // 两张表的数组长度不同，初始化列表推导不出共同的指针类型（VS2022 严格报错）；
+    // Ambiguity is kept: one wrong key may map to several syllables and the
+    // runtime disambiguates with k-best cuts + word frequency (CN 101133411 B),
+    // so uniqueness is asserted per (wrong, correct) pair instead of per key.
+    std::unordered_set<std::string> seen_pairs;
+    size_t total_entries = 0;
+    // 三张表的数组长度不同，初始化列表推导不出共同的指针类型（VS2022 严格报错）；
     // 用边界对遍历代替指针到数组的推导。
     const auto require_valid_entries = [&](const quanpin::autocorrect::Entry *entries, std::size_t count) {
         for (std::size_t i = 0; i < count; ++i)
         {
             const std::string wrong(entries[i].wrong);
+            // correct 是生成音节表的 16-bit 下标，断言前先解引用。
+            const std::string correct(quanpin::autocorrect::kCorrectSyllables[entries[i].correct]);
             REQUIRE(!wrong.empty());
             // 2-letter strings belong to the jianpin space: a correction key there
             // would shadow abbreviations such as wj -> 文件.
             REQUIRE(wrong.size() >= 3);
-            REQUIRE(!legal.count(wrong));             // a key must never shadow a legal syllable
-            REQUIRE(legal.count(entries[i].correct)); // the correction must be a legal syllable
-            REQUIRE(wrong_keys.insert(wrong).second); // keys must be unique across both tables
+            REQUIRE(!legal.count(wrong));                             // a key must never shadow a legal syllable
+            REQUIRE(legal.count(correct));                            // the correction must be a legal syllable
+            REQUIRE(seen_pairs.insert(wrong + '>' + correct).second); // pairs unique across all tables
+            ++total_entries;
         }
     };
     require_valid_entries(quanpin::autocorrect::kTranspositionEntries, quanpin::autocorrect::kTranspositionCount);
     require_valid_entries(quanpin::autocorrect::kNeighborEntries, quanpin::autocorrect::kNeighborCount);
-    REQUIRE(wrong_keys.size() > 1000);
+    require_valid_entries(quanpin::autocorrect::kDeletionEntries, quanpin::autocorrect::kDeletionCount);
+    require_valid_entries(quanpin::autocorrect::kInsertionEntries, quanpin::autocorrect::kInsertionCount);
+    // Coverage gate (task AC1): transposition + neighbor + deletion entries together.
+    REQUIRE(total_entries >= 4700);
+    REQUIRE(seen_pairs.size() == total_entries);
+}
+
+TEST_CASE(QuanpinAutocorrectTableKeepsAmbiguousAndDeletionVariants)
+{
+    std::unordered_map<std::string, std::unordered_set<std::string>> targets;
+    const auto collect = [&](const quanpin::autocorrect::Entry *entries, std::size_t count) {
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            targets[entries[i].wrong].insert(std::string(quanpin::autocorrect::kCorrectSyllables[entries[i].correct]));
+        }
+    };
+    collect(quanpin::autocorrect::kTranspositionEntries, quanpin::autocorrect::kTranspositionCount);
+    collect(quanpin::autocorrect::kNeighborEntries, quanpin::autocorrect::kNeighborCount);
+    collect(quanpin::autocorrect::kDeletionEntries, quanpin::autocorrect::kDeletionCount);
+    collect(quanpin::autocorrect::kInsertionEntries, quanpin::autocorrect::kInsertionCount);
+
+    const auto maps_to = [&](const char *wrong, const char *correct) {
+        const auto found = targets.find(wrong);
+        return found != targets.end() && found->second.count(correct) != 0;
+    };
+
+    // Ambiguous neighbor keys in the z/zh confusion zone used to be dropped at
+    // generation time; they must now survive with every candidate syllable.
+    REQUIRE(maps_to("ahan", "shan"));
+    REQUIRE(maps_to("ahan", "zhan"));
+    REQUIRE(maps_to("aang", "sang"));
+    REQUIRE(maps_to("aang", "wang"));
+    // Deletion variants: one dropped letter, ambiguous targets kept together.
+    REQUIRE(maps_to("shng", "shang"));
+    REQUIRE(maps_to("shng", "sheng"));
+    REQUIRE(maps_to("chn", "chan"));
+    REQUIRE(maps_to("chn", "chen"));
+    REQUIRE(maps_to("bng", "bang"));
+    REQUIRE(maps_to("bng", "beng"));
+    REQUIRE(maps_to("zhng", "zhang"));
+    REQUIRE(maps_to("zhng", "zheng"));
+    // Insertion variants keep ambiguous targets too: baio = bai/bao + one
+    // inserted letter inside the ai->ao confusion zone.
+    REQUIRE(maps_to("baio", "bai"));
+    REQUIRE(maps_to("baio", "bao"));
+}
+
+TEST_CASE(QuanpinAutocorrectDeletionTableEntriesAreLegal)
+{
+    // Shape pin for the deletion table: exactly one dropped letter per key,
+    // never a legal syllable, always a legal target. The runtime builds its
+    // multi-value index from this table (quanpin_utils.cpp correction_index).
+    const auto &legal = quanpin::intact_pinyin_set();
+    REQUIRE(quanpin::autocorrect::kDeletionCount > 0);
+    for (std::size_t i = 0; i < quanpin::autocorrect::kDeletionCount; ++i)
+    {
+        const auto &entry = quanpin::autocorrect::kDeletionEntries[i];
+        const std::string wrong(entry.wrong);
+        const std::string correct(quanpin::autocorrect::kCorrectSyllables[entry.correct]);
+        // A deletion key is exactly one letter shorter than its target.
+        REQUIRE_EQ(wrong.size() + 1, correct.size());
+        REQUIRE(wrong.size() >= 3);
+        REQUIRE(!legal.count(wrong));
+        REQUIRE(legal.count(correct));
+    }
+}
+
+TEST_CASE(QuanpinAutocorrectInsertionTableEntriesAreLegal)
+{
+    // Shape pin for the insertion table: exactly one inserted letter per key,
+    // never a legal syllable, always a legal target. The 6-letter cap means
+    // 6-letter syllables (zhuang family) have no insertion coverage on
+    // purpose -- their variants would be 7 letters.
+    const auto &legal = quanpin::intact_pinyin_set();
+    REQUIRE(quanpin::autocorrect::kInsertionCount > 0);
+    for (std::size_t i = 0; i < quanpin::autocorrect::kInsertionCount; ++i)
+    {
+        const auto &entry = quanpin::autocorrect::kInsertionEntries[i];
+        const std::string wrong(entry.wrong);
+        const std::string correct(quanpin::autocorrect::kCorrectSyllables[entry.correct]);
+        // An insertion key is exactly one letter longer than its target.
+        REQUIRE_EQ(wrong.size(), correct.size() + 1);
+        REQUIRE(wrong.size() >= 3);
+        REQUIRE(!legal.count(wrong));
+        REQUIRE(legal.count(correct));
+    }
 }
 
 TEST_CASE(QuanpinAutocorrectCutGatesEachTypeIndependently)
@@ -556,6 +650,14 @@ TEST_CASE(QuanpinAutocorrectCutGatesEachTypeIndependently)
     REQUIRE(quanpin::autocorrect_cut("shabg", transposition_only).empty());
     REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("shabg", neighbor_only)), std::string("shang"));
     REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("shabg", both)), std::string("shang"));
+
+    // "sshang" (doubled s) is an insertion fix; only that bit may correct it.
+    REQUIRE(quanpin::autocorrect_cut("sshang", none).empty());
+    REQUIRE(quanpin::autocorrect_cut("sshang", transposition_only).empty());
+    REQUIRE(quanpin::autocorrect_cut("sshang", neighbor_only).empty());
+    REQUIRE(quanpin::autocorrect_cut("sshang", quanpin::kAutocorrectDeletion).empty());
+    REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("sshang", quanpin::kAutocorrectInsertion)),
+               std::string("shang"));
 }
 
 TEST_CASE(QuanpinJianpinShapeGuardBlocksCorrection)
@@ -631,6 +733,164 @@ TEST_CASE(QuanpinAutocorrectCutRespectsEdgeBudget)
 
 namespace
 {
+std::string JoinCut(const quanpin::AutocorrectCut &cut)
+{
+    quanpin::Segments syllables;
+    syllables.reserve(cut.segments.size());
+    for (const auto &segment : cut.segments)
+    {
+        syllables.push_back(segment.syllable);
+    }
+    return quanpin::join_segments(syllables);
+}
+} // namespace
+
+TEST_CASE(QuanpinAutocorrectCutDeletionVariants)
+{
+    const unsigned all =
+        quanpin::kAutocorrectTransposition | quanpin::kAutocorrectNeighbor | quanpin::kAutocorrectDeletion;
+
+    // "shng" drops the "a" of shang/sheng: an unequal-length deletion edge.
+    // Both targets weigh kAutocorrectDeletionWeight, so the generated table
+    // order (shang before sheng) fixes the first cut deterministically.
+    const auto cuts = quanpin::autocorrect_cut_kbest("shng", all);
+    REQUIRE(cuts.size() >= 2);
+    REQUIRE_EQ(JoinCut(cuts[0]), std::string("shang"));
+    std::unordered_set<std::string> readings;
+    for (const auto &cut : cuts)
+    {
+        readings.insert(JoinCut(cut));
+    }
+    REQUIRE(readings.count("sheng") != 0);
+
+    // The detail cut is the k = 1 projection; its raw span still covers the
+    // four typed letters even though the syllable is five letters long.
+    const auto detail = quanpin::autocorrect_cut_detail("shng", all);
+    REQUIRE_EQ(detail.segments.size(), static_cast<size_t>(1));
+    REQUIRE_EQ(detail.segments[0].syllable, std::string("shang"));
+    REQUIRE_EQ(detail.segments[0].raw_text, std::string("shng"));
+    REQUIRE_EQ(detail.segments[0].start, static_cast<size_t>(0));
+    REQUIRE(detail.segments[0].corrected);
+    REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("shng", all)), std::string("shang"));
+}
+
+TEST_CASE(QuanpinAutocorrectCutDeletionKeepsRawSpans)
+{
+    const unsigned all =
+        quanpin::kAutocorrectTransposition | quanpin::kAutocorrectNeighbor | quanpin::kAutocorrectDeletion;
+
+    // "zhngu": the deletion key "zhn" consumes three letters, the untouched
+    // "gu" starts at raw offset 3 -- position advance follows raw_length,
+    // not syllable.size().
+    const auto cuts = quanpin::autocorrect_cut_kbest("zhngu", all);
+    REQUIRE(!cuts.empty());
+    REQUIRE_EQ(cuts[0].segments.size(), static_cast<size_t>(2));
+    REQUIRE_EQ(cuts[0].segments[0].syllable, std::string("zhan"));
+    REQUIRE_EQ(cuts[0].segments[0].raw_text, std::string("zhn"));
+    REQUIRE_EQ(cuts[0].segments[0].start, static_cast<size_t>(0));
+    REQUIRE(cuts[0].segments[0].corrected);
+    REQUIRE_EQ(cuts[0].segments[1].syllable, std::string("gu"));
+    REQUIRE_EQ(cuts[0].segments[1].raw_text, std::string("gu"));
+    REQUIRE_EQ(cuts[0].segments[1].start, static_cast<size_t>(3));
+    REQUIRE(!cuts[0].segments[1].corrected);
+
+    // "zhnggu": the 4-letter deletion key "zhng" -> zhang followed by a legal
+    // "gu" at raw offset 4.
+    const auto zhang_gu = quanpin::autocorrect_cut_detail("zhnggu", all);
+    REQUIRE_EQ(zhang_gu.segments.size(), static_cast<size_t>(2));
+    REQUIRE_EQ(zhang_gu.segments[0].syllable, std::string("zhang"));
+    REQUIRE_EQ(zhang_gu.segments[0].raw_text, std::string("zhng"));
+    REQUIRE_EQ(zhang_gu.segments[0].start, static_cast<size_t>(0));
+    REQUIRE(zhang_gu.segments[0].corrected);
+    REQUIRE_EQ(zhang_gu.segments[1].syllable, std::string("gu"));
+    REQUIRE_EQ(zhang_gu.segments[1].raw_text, std::string("gu"));
+    REQUIRE_EQ(zhang_gu.segments[1].start, static_cast<size_t>(4));
+    REQUIRE(!zhang_gu.segments[1].corrected);
+}
+
+TEST_CASE(QuanpinAutocorrectCutMixedDeletionAndNeighbor)
+{
+    const unsigned both = quanpin::kAutocorrectTransposition | quanpin::kAutocorrectNeighbor;
+    const unsigned all = both | quanpin::kAutocorrectDeletion;
+
+    // "shngzhk" mixes a deletion edge (shng -> shang) with a neighbor edge
+    // (zhk -> zhi): two corrected edges, weights 11 + 13.
+    REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("shngzhk", all)), std::string("shang'zhi"));
+    // Without the deletion bit the same input stays unexplained.
+    REQUIRE(quanpin::autocorrect_cut("shngzhk", both).empty());
+
+    // A two-letter jianpin leftover ("zh") stays out of correction scope even
+    // with deletion on: the tables hold no 2-letter keys.
+    REQUIRE(quanpin::autocorrect_cut("sahngzh", all).empty());
+}
+
+TEST_CASE(QuanpinAutocorrectCutGatesDeletionIndependently)
+{
+    const unsigned none = 0;
+    const unsigned transposition_only = quanpin::kAutocorrectTransposition;
+    const unsigned neighbor_only = quanpin::kAutocorrectNeighbor;
+    const unsigned deletion_only = quanpin::kAutocorrectDeletion;
+    const unsigned all = transposition_only | neighbor_only | deletion_only;
+
+    // "shng" is a deletion fix; only that bit may correct it.
+    REQUIRE(quanpin::autocorrect_cut("shng", none).empty());
+    REQUIRE(quanpin::autocorrect_cut("shng", transposition_only).empty());
+    REQUIRE(quanpin::autocorrect_cut("shng", neighbor_only).empty());
+    REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("shng", deletion_only)), std::string("shang"));
+    REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("shng", all)), std::string("shang"));
+
+    // The legacy switches keep their own families for the direct reading; note
+    // that bits gate tables, not typo intents: with deletion only, "sahng" is
+    // still explained through a DIFFERENT split (sa + hng -> hang), which is
+    // exactly the added coverage the deletion table provides.
+    REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("sahng", deletion_only)), std::string("sa'hang"));
+    REQUIRE(quanpin::autocorrect_cut("shabg", deletion_only).empty());
+}
+
+TEST_CASE(QuanpinAutocorrectCutKbestRanksAmbiguousKeys)
+{
+    const unsigned both = quanpin::kAutocorrectTransposition | quanpin::kAutocorrectNeighbor;
+    const unsigned all = both | quanpin::kAutocorrectDeletion;
+
+    // "ahan" maps to both shan and zhan in the neighbor table. Both readings
+    // survive as parallel hypotheses (query-time disambiguation per CN
+    // 101133411 B), ordered by (edge count, weight, table order).
+    const auto cuts = quanpin::autocorrect_cut_kbest("ahan", both);
+    REQUIRE(cuts.size() >= 2);
+    REQUIRE_EQ(JoinCut(cuts[0]), std::string("shan"));
+    REQUIRE_EQ(JoinCut(cuts[1]), std::string("zhan"));
+
+    // Same edge count, different weights: the direct transposition (weight
+    // 10) outranks the split deletion reading (weight 11) within one edge.
+    const auto sahng = quanpin::autocorrect_cut_kbest("sahng", all);
+    REQUIRE(sahng.size() >= 2);
+    REQUIRE_EQ(JoinCut(sahng[0]), std::string("shang"));
+    REQUIRE_EQ(JoinCut(sahng[1]), std::string("sa'hang"));
+
+    // Edge count stays the primary key: one transposition (weight 10) beats
+    // transposition + deletion (21) for the same input.
+    REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("sahnguai", all)), std::string("shan'guai"));
+
+    // k = 1 agrees with the single-cut projection on every input, including
+    // the ones with no correction reading at all.
+    const std::pair<const char *, unsigned> inputs[] = {
+        {"sahng", both},  {"shabg", both}, {"sahnguai", both}, {"ahan", both},    {"zheg", both},
+        {"keneng", both}, {"shng", all},   {"zhngu", all},     {"sahngzhk", all},
+    };
+    for (const auto &entry : inputs)
+    {
+        const auto single = quanpin::autocorrect_cut(entry.first, entry.second);
+        const auto top1 = quanpin::autocorrect_cut_kbest(entry.first, entry.second, 1);
+        REQUIRE_EQ(top1.size(), single.empty() ? static_cast<size_t>(0) : static_cast<size_t>(1));
+        if (!single.empty())
+        {
+            REQUIRE_EQ(JoinCut(top1.front()), quanpin::join_segments(single));
+        }
+    }
+}
+
+namespace
+{
 std::filesystem::path CreateAutocorrectDatabase()
 {
     const auto path = std::filesystem::temp_directory_path() / "msime-quanpin-autocorrect-test.db";
@@ -642,9 +902,15 @@ std::filesystem::path CreateAutocorrectDatabase()
     }
     const char *sql = "CREATE TABLE tbl_1_s(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
                       "CREATE TABLE tbl_2_s(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                      "CREATE TABLE tbl_2_g(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                      "CREATE TABLE tbl_2_j(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                      "CREATE TABLE tbl_2_q(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
                       "CREATE TABLE tbl_4_s(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
                       "INSERT INTO tbl_1_s VALUES('shang','s','上',100);"
                       "INSERT INTO tbl_2_s VALUES('shang''zhi','sz','上至',100);"
+                      "INSERT INTO tbl_2_g VALUES('guan''li','gl','管理',100);"
+                      "INSERT INTO tbl_2_j VALUES('jian''du','jd','监督',100);"
+                      "INSERT INTO tbl_2_q VALUES('quan''li','ql','权利',100);"
                       "INSERT INTO tbl_4_s VALUES('sa''huang''na''ge','shng','撒谎那个',1000);";
     const int result = sqlite3_exec(db, sql, nullptr, nullptr, nullptr);
     sqlite3_close(db);
@@ -684,6 +950,155 @@ TEST_CASE(QuanpinDictionaryAutocorrectNeighborKeySubstitution)
     const auto candidates = dictionary.query("shabg", "sha'b'g", quanpin::kAutocorrectNeighbor);
     REQUIRE(!candidates.empty());
     REQUIRE_EQ(candidates.front().word, std::string("上"));
+}
+
+TEST_CASE(QuanpinDictionaryAutocorrectDeletionTypo)
+{
+    const auto db_path = CreateAutocorrectDatabase();
+    QuanpinDictionary dictionary(test::Utf8(db_path));
+    const unsigned all =
+        quanpin::kAutocorrectTransposition | quanpin::kAutocorrectNeighbor | quanpin::kAutocorrectDeletion;
+
+    // 阶段 2 生效信号：漏字输入经纠错键命中目标词，标记 corrected_from，
+    // 关掉 deletion 位则回到现状（乱码后备尾）。缓存隔离：纠错结果不污染
+    // 后续对同键的其他查询。
+    const auto candidates = dictionary.query("shng", "sh'n'g", all);
+    REQUIRE(!candidates.empty());
+    REQUIRE_EQ(candidates.front().word, std::string("上"));
+    REQUIRE_EQ(candidates.front().pinyin, std::string("shang"));
+    REQUIRE_EQ(candidates.front().corrected_from, std::string("shng"));
+
+    const unsigned both = quanpin::kAutocorrectTransposition | quanpin::kAutocorrectNeighbor;
+    const auto legacy = dictionary.query("shng", "sh'n'g", both);
+    REQUIRE(
+        std::none_of(legacy.begin(), legacy.end(), [](const WordItem &item) { return item.corrected_from == "shng"; }));
+}
+
+TEST_CASE(QuanpinDictionaryAutocorrectInsertionTypo)
+{
+    const auto db_path = CreateAutocorrectDatabase();
+    QuanpinDictionary dictionary(test::Utf8(db_path));
+    const unsigned all = quanpin::kAutocorrectTransposition | quanpin::kAutocorrectNeighbor |
+                         quanpin::kAutocorrectDeletion | quanpin::kAutocorrectInsertion;
+
+    // 阶段 4 生效信号：开头双打（sshang）经插入纠错键命中目标词，标记
+    // corrected_from，canonical 读音落在纠错后的 shang 上（造词/调频不学习
+    // 错拼）。关掉 insertion 位则回到无纠错标记的现状。
+    const auto candidates = dictionary.query("sshang", "", all);
+    REQUIRE(!candidates.empty());
+    REQUIRE_EQ(candidates.front().word, std::string("上"));
+    REQUIRE_EQ(candidates.front().pinyin, std::string("shang"));
+    REQUIRE_EQ(candidates.front().corrected_from, std::string("sshang"));
+
+    const unsigned legacy_bits =
+        quanpin::kAutocorrectTransposition | quanpin::kAutocorrectNeighbor | quanpin::kAutocorrectDeletion;
+    const auto legacy = dictionary.query("sshang", "", legacy_bits);
+    REQUIRE(std::none_of(legacy.begin(), legacy.end(),
+                         [](const WordItem &item) { return item.corrected_from == "sshang"; }));
+}
+
+TEST_CASE(QuanpinDictionaryAutocorrectAmbiguousDisambiguation)
+{
+    // k-best 进查询管线（阶段 3）："chn" 同时映射 chan/chen，主切分查 chan，
+    // 备选切分经 merge_alternative_segmentations 与主切分同台竞争，词频
+    // 高者胜出（专利 M3 查询期消歧）。分两个权重布局验证顺序跟随词频。
+    // 不用派发指令中的 ahan：ahan = a + han 是全合法拼读，被简拼形状守卫
+    // （AC3 既有语义）挡在纠错门外；chn 无任何合法切分，是真实可达的歧义键。
+    const auto create_database = [](long chan_weight, long chen_weight) {
+        const auto path = std::filesystem::temp_directory_path() / "msime-quanpin-autocorrect-ambiguous-test.db";
+        std::filesystem::remove(path);
+        sqlite3 *db = nullptr;
+        if (sqlite3_open(test::Utf8(path).c_str(), &db) != SQLITE_OK)
+        {
+            throw std::runtime_error("Failed to create the ambiguous autocorrect database.");
+        }
+        const std::string sql = std::string("CREATE TABLE tbl_1_c(key TEXT,jp TEXT,value TEXT,weight INTEGER);") +
+                                "INSERT INTO tbl_1_c VALUES('chan','c','产'," + std::to_string(chan_weight) + ");" +
+                                "INSERT INTO tbl_1_c VALUES('chen','c','陈'," + std::to_string(chen_weight) + ");";
+        const int result = sqlite3_exec(db, sql.c_str(), nullptr, nullptr, nullptr);
+        sqlite3_close(db);
+        if (result != SQLITE_OK)
+        {
+            std::filesystem::remove(path);
+            throw std::runtime_error("Failed to initialize the ambiguous autocorrect database.");
+        }
+        return path;
+    };
+    const unsigned all =
+        quanpin::kAutocorrectTransposition | quanpin::kAutocorrectNeighbor | quanpin::kAutocorrectDeletion;
+
+    {
+        const auto db_path = create_database(100000, 1000);
+        QuanpinDictionary dictionary(test::Utf8(db_path));
+        const auto candidates = dictionary.query("chn", "", all);
+        const auto chan =
+            std::find_if(candidates.begin(), candidates.end(), [](const WordItem &item) { return item.word == "产"; });
+        const auto chen =
+            std::find_if(candidates.begin(), candidates.end(), [](const WordItem &item) { return item.word == "陈"; });
+        REQUIRE(chan != candidates.end());
+        REQUIRE(chen != candidates.end());
+        // Both readings survive (query-time disambiguation) and the higher
+        // weight wins the order.
+        REQUIRE(chan < chen);
+        // AC5: candidates from the alternative cut carry corrected_from too.
+        REQUIRE_EQ(chan->corrected_from, std::string("chn"));
+        REQUIRE_EQ(chen->corrected_from, std::string("chn"));
+    }
+    {
+        // Weight layout reversed: the order must follow the dictionary
+        // frequency, not the k-best ranking of the cuts.
+        const auto db_path = create_database(1000, 100000);
+        QuanpinDictionary dictionary(test::Utf8(db_path));
+        const auto candidates = dictionary.query("chn", "", all);
+        const auto chan =
+            std::find_if(candidates.begin(), candidates.end(), [](const WordItem &item) { return item.word == "产"; });
+        const auto chen =
+            std::find_if(candidates.begin(), candidates.end(), [](const WordItem &item) { return item.word == "陈"; });
+        REQUIRE(chan != candidates.end());
+        REQUIRE(chen != candidates.end());
+        REQUIRE(chen < chan);
+    }
+}
+
+TEST_CASE(QuanpinDictionaryAutocorrectEmptyBaseSegmentationReachesCorrection)
+{
+    // 丢声母类错拼（quan -> uan、jian -> ian）在 correction 模式下完全切不出
+    // 段：prefix 切词器连前缀都匹配不上，segments 为空。旧 eligible 门的
+    // !segments.empty() 会把这类输入整体挡在纠错之外（候选为空）；BFS 工作在
+    // 原始字母上，不依赖基础切分，空切分必须进入纠错路径。
+    const auto db_path = CreateAutocorrectDatabase();
+    QuanpinDictionary dictionary(test::Utf8(db_path));
+    const unsigned all =
+        quanpin::kAutocorrectTransposition | quanpin::kAutocorrectNeighbor | quanpin::kAutocorrectDeletion;
+
+    // ian 的漏字目标里 jian 排在 k-best 前 3（bian/dian/jian），备选切分
+    // jian'du 经查询期词频合并成为首位。
+    const auto iandu = dictionary.query("iandu", "", all);
+    REQUIRE(!iandu.empty());
+    REQUIRE_EQ(iandu.front().word, std::string("监督"));
+    REQUIRE_EQ(iandu.front().corrected_from, std::string("iandu"));
+
+    // 关掉纠错（types=0）回到不纠错的现状：纠错词不出现。
+    const auto off = dictionary.query("iandu", "", 0u);
+    REQUIRE(std::none_of(off.begin(), off.end(), [](const WordItem &item) { return item.word == "监督"; }));
+
+    // uan 键有 15 个等权漏字目标（cuan/duan/guan/.../zuan），quan 按表序排
+    // 第 9。k-best 的 k=9 是评测定的截断线：quan'li 恰好进入本轮查询，权利
+    // 可达并带 corrected_from；k=3 时 quan 超出截断线，权利不可达（评测阶段
+    // 4 的边界结论）。本 fixture 里管理/权利同权重 100，quan'li 表序靠后，
+    // 因此权利排第二而非首位（阶段 4 验证时真实 msime.db 上权利进入首选）。
+    const auto uanli = dictionary.query("uanli", "", all);
+    REQUIRE(!uanli.empty());
+    REQUIRE_EQ(uanli.front().word, std::string("管理"));
+    const auto quanli =
+        std::find_if(uanli.begin(), uanli.end(), [](const WordItem &item) { return item.word == "权利"; });
+    REQUIRE(quanli != uanli.end());
+    REQUIRE_EQ(quanli->corrected_from, std::string("uanli"));
+
+    // 无可纠错解读的垃圾串：不产生任何纠错标记（BFS 无路径，走既有后备尾）。
+    const auto garbage = dictionary.query("qqqq", "", all);
+    REQUIRE(std::none_of(garbage.begin(), garbage.end(),
+                         [](const WordItem &item) { return !item.corrected_from.empty(); }));
 }
 
 TEST_CASE(QuanpinDictionaryAutocorrectMultisyllableInput)

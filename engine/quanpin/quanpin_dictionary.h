@@ -115,5 +115,8 @@ class QuanpinDictionary
 
     std::string pinyin_sequence_;
     std::string pinyin_segmentation_;
+    // Joined alternative correction cuts (k-best readings after the primary)
+    // backing mark_autocorrect_candidates on every query, cached or not.
+    std::vector<std::string> pinyin_alternative_segmentations_;
     std::vector<WordItem> current_candidate_list_;
 };

@@ -13,6 +13,7 @@
 #include <fmt/core.h>
 #include "fmt/base.h"
 #include "core/ime_session.h"
+#include "quanpin/autocorrect_table.h"
 #include "quanpin/quanpin_dictionary.h"
 #include "quanpin/quanpin_utils.h"
 #include "quanpin/word_lattice.h"
@@ -52,13 +53,21 @@ class ScopedLocalAppDataOverride
         fs::remove_all(root_);
         fs::create_directories(app_dir_);
 
+        // msime.db 是回归断言的主体，缺失即环境不完整；而当前产品布局已不再发布
+        // 整句解码器的两个数据文件（dict_pinyin.dat/user_dict.dat），引擎对它们
+        // 的缺失也是优雅降级（PinyinDecoder::sentence 直接返回空串），所以这里
+        // 仅在源目录存在时才拷贝，不把它们当硬依赖。
         for (const auto &file_name : {"msime.db", "dict_pinyin.dat", "user_dict.dat"})
         {
             const fs::path source = source_dir / file_name;
             const fs::path target = app_dir_ / file_name;
             if (!fs::exists(source))
             {
-                throw std::runtime_error(fmt::format("Expected test dependency '{}' to exist.", source.string()));
+                if (file_name == std::string_view("msime.db"))
+                {
+                    throw std::runtime_error(fmt::format("Expected test dependency '{}' to exist.", source.string()));
+                }
+                continue;
             }
             fs::copy_file(source, target, fs::copy_options::overwrite_existing);
         }
@@ -683,9 +692,11 @@ std::filesystem::path create_autocorrect_probe_database()
     }
     const char *sql = "CREATE TABLE tbl_1_s(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
                       "CREATE TABLE tbl_2_s(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                      "CREATE TABLE tbl_2_j(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
                       "CREATE TABLE tbl_4_s(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
                       "INSERT INTO tbl_1_s VALUES('shang','s','上',100);"
                       "INSERT INTO tbl_2_s VALUES('shang''zhi','sz','上至',100);"
+                      "INSERT INTO tbl_2_j VALUES('jian''du','jd','监督',100);"
                       "INSERT INTO tbl_4_s VALUES('sa''huang''na''ge','shng','撒谎那个',1000);";
     const int result = sqlite3_exec(db, sql, nullptr, nullptr, nullptr);
     sqlite3_close(db);
@@ -745,6 +756,102 @@ void test_quanpin_autocorrect_switches_and_guard()
     expect(quanpin::autocorrect_cut("zheg", both).empty(),
            "The cleaned table must offer no correction path for 'zheg' (2-letter keys are gone).");
 
+    // Deletion bit (phase 2): "shng" (dropped "a") is a deletion fix; only
+    // that bit may correct it, and the legacy switches keep their own families.
+    const unsigned deletion_only = quanpin::kAutocorrectDeletion;
+    const unsigned all = transposition_only | neighbor_only | deletion_only;
+    expect(quanpin::join_segments(quanpin::autocorrect_cut("shng", deletion_only)) == "shang",
+           "Deletion-only must correct 'shng'.");
+    expect(quanpin::autocorrect_cut("shng", transposition_only).empty(),
+           "Transposition-only must not correct the deletion case 'shng'.");
+    expect(quanpin::autocorrect_cut("shng", neighbor_only).empty(),
+           "Neighbor-only must not correct the deletion case 'shng'.");
+    expect(quanpin::autocorrect_cut("sahng", deletion_only).empty() == false &&
+               quanpin::join_segments(quanpin::autocorrect_cut("sahng", deletion_only)) == "sa'hang",
+           "Bits gate tables, not intents: deletion-only still explains 'sahng' via sa + hng -> hang.");
+    expect(quanpin::autocorrect_cut("shabg", deletion_only).empty(),
+           "Deletion-only must not correct the neighbor case 'shabg'.");
+    expect(quanpin::join_segments(quanpin::autocorrect_cut("shngzhk", all)) == "shang'zhi",
+           "A deletion edge followed by a neighbor edge must cut 'shngzhk'.");
+    expect(quanpin::autocorrect_cut("shngzhk", both).empty(),
+           "Without the deletion bit 'shngzhk' must stay unexplained.");
+
+    // Insertion bit (fourth type): "shangg" (doubled g) and "sjhang" (j is a
+    // QWERTY neighbor of h) are insertion fixes; only that bit may correct them.
+    const unsigned insertion_only = quanpin::kAutocorrectInsertion;
+    const unsigned all_four = all | insertion_only;
+    expect(quanpin::join_segments(quanpin::autocorrect_cut("shangg", insertion_only)) == "shang",
+           "Insertion-only must correct 'shangg'.");
+    expect(quanpin::autocorrect_cut("shangg", transposition_only).empty(),
+           "Transposition-only must not correct the insertion case 'shangg'.");
+    expect(quanpin::autocorrect_cut("shangg", deletion_only).empty(),
+           "Deletion-only must not correct the insertion case 'shangg'.");
+    expect(quanpin::autocorrect_cut("shangg", neighbor_only).empty(),
+           "Neighbor-only must not correct the insertion case 'shangg'.");
+    expect(quanpin::join_segments(quanpin::autocorrect_cut("sjhang", insertion_only)) == "shang",
+           "Insertion-only must correct the neighbor-key insertion 'sjhang'.");
+    expect(quanpin::autocorrect_cut("sjhang", neighbor_only).empty(),
+           "Neighbor-only must not correct the insertion case 'sjhang'.");
+    expect(quanpin::join_segments(quanpin::autocorrect_cut("shanggzhi", all_four)) == "shang'zhi",
+           "An insertion edge followed by a legal tail must cut 'shanggzhi'.");
+
+    // Jianpin guard shapes sit INSIDE the insertion table (zher = zhe + r, and
+    // r is a QWERTY neighbor of e): the BFS cut exists by design, the shape
+    // guard must fire before it at the dictionary layer (end-to-end in the
+    // display test below).
+    expect(quanpin::looks_like_syllable_with_jianpin_tail("zher"),
+           "'zher' (zhe + r) must be detected as jianpin intent.");
+    expect(!quanpin::autocorrect_cut_detail("zher", insertion_only).empty(),
+           "The insertion key 'zher' is in the BFS search space by design; the guard is the dictionary layer's job.");
+
+    // k-best (phase 2): ambiguous keys keep parallel readings for query-time
+    // disambiguation; k = 1 stays consistent with the single-cut projection.
+    const auto cut_reading = [](const quanpin::AutocorrectCut &cut) {
+        quanpin::Segments syllables;
+        for (const auto &segment : cut.segments)
+        {
+            syllables.push_back(segment.syllable);
+        }
+        return quanpin::join_segments(syllables);
+    };
+    const auto ahan_cuts = quanpin::autocorrect_cut_kbest("ahan", both);
+    expect(ahan_cuts.size() >= 2, "'ahan' must keep both the shan and zhan readings.");
+    expect(cut_reading(ahan_cuts[0]) == "shan" && cut_reading(ahan_cuts[1]) == "zhan",
+           "The first two 'ahan' cuts must be shan then zhan (edge count, weight, table order).");
+    const auto shng_cuts = quanpin::autocorrect_cut_kbest("shng", all);
+    expect(shng_cuts.size() >= 2 && cut_reading(shng_cuts[0]) == "shang",
+           "'shng' must cut to shang first with sheng as a kept alternative.");
+    bool has_sheng = false;
+    for (const auto &cut : shng_cuts)
+    {
+        has_sheng = has_sheng || cut_reading(cut) == "sheng";
+    }
+    expect(has_sheng, "'shng' must keep the sheng reading alongside shang.");
+    const auto sahng_cuts = quanpin::autocorrect_cut_kbest("sahng", all);
+    expect(sahng_cuts.size() >= 2 && cut_reading(sahng_cuts[0]) == "shang" && cut_reading(sahng_cuts[1]) == "sa'hang",
+           "Within one edge the transposition weight (10) must outrank the split deletion (11).");
+    // Ambiguous insertion keys keep parallel readings (query-time
+    // disambiguation): baio -> {biao via transposition, bai, bao via
+    // insertion}. Same edge count, so weight orders them: 10 < 12.
+    const auto baio_cuts = quanpin::autocorrect_cut_kbest("baio", all_four);
+    expect(baio_cuts.size() >= 3 && cut_reading(baio_cuts[0]) == "biao" && cut_reading(baio_cuts[1]) == "bai" &&
+               cut_reading(baio_cuts[2]) == "bao",
+           "'baio' must rank the transposition reading (10) before the insertion readings (12) within one edge.");
+    const std::pair<const char *, unsigned> projection_inputs[] = {
+        {"sahng", both},      {"shabg", both}, {"sahnguai", both},
+        {"ahan", both},       {"zheg", both},  {"keneng", both},
+        {"shng", all},        {"zhngu", all},  {"shangg", insertion_only},
+        {"sjhang", all_four},
+    };
+    for (const auto &[input, types] : projection_inputs)
+    {
+        const auto single = quanpin::autocorrect_cut(input, types);
+        const auto top1 = quanpin::autocorrect_cut_kbest(input, types, 1);
+        expect(top1.size() == (single.empty() ? 0u : 1u) &&
+                   (single.empty() || cut_reading(top1.front()) == quanpin::join_segments(single)),
+               std::string("k=1 must agree with autocorrect_cut for '") + input + "'.");
+    }
+
     // Dictionary-level matrix against a deterministic probe database.
     const auto db_path = create_autocorrect_probe_database();
     const auto is_shang = [](const WordItem &item) { return item.word == "上"; };
@@ -775,13 +882,29 @@ void test_quanpin_autocorrect_switches_and_guard()
         expect(!neighbor_corrected.empty() && neighbor_corrected.front().word == "上",
                "Neighbor-only must correct 'shabg' at the dictionary layer (AC3).");
 
+        // 门控语义按纠错标记验证：transposition-only 不产生针对 'shabg' 的纠错
+        // 候选。不能断言"上"完全缺席——序列前缀查询会以 sha 前缀命中 'shang'
+        // 键，那是与纠错无关的既有行为。
         const auto transposition_denied = dictionary.query("shabg", "sha'b'g", transposition_only);
-        expect(std::none_of(transposition_denied.begin(), transposition_denied.end(), is_shang),
+        expect(std::none_of(transposition_denied.begin(), transposition_denied.end(),
+                            [](const WordItem &item) { return item.corrected_from == "shabg"; }),
                "Transposition-only must not correct the neighbor case 'shabg' (AC3).");
 
         const auto multi = dictionary.query("sahngzhi", "sa'h'n'g'zhi", both);
         expect(!multi.empty() && multi.front().word == "上至",
                "Cross-syllable correction must survive the mask wiring.");
+
+        // 空基础切分（丢声母：jian -> ian）也要进纠错：correction 模式对该类错拼
+        // 切不出任何段，旧门 !segments.empty() 会整体跳过纠错。BFS 从原始字母
+        // 纠正，备选切分 jian'du 经查询期词频合并成为首位。
+        const auto dropped_initial = dictionary.query("iandu", "", all);
+        expect(!dropped_initial.empty() && dropped_initial.front().word == "监督" &&
+                   dropped_initial.front().corrected_from == "iandu",
+               "An empty base segmentation (dropped initial) must still reach the correction path.");
+        const auto dropped_initial_off = dictionary.query("iandu", "", none);
+        expect(std::none_of(dropped_initial_off.begin(), dropped_initial_off.end(),
+                            [](const WordItem &item) { return item.word == "监督"; }),
+               "With autocorrection off the dropped-initial typo must not resolve through a corrected key.");
 
         // The guard fires before the BFS, so a jianpin-shaped input must resolve
         // through its raw segmentation instead of a corrected key such as 'zu'ge'.
@@ -792,24 +915,34 @@ void test_quanpin_autocorrect_switches_and_guard()
     std::error_code cleanup_ec;
     fs::remove(db_path, cleanup_ec);
 
-    // Generated-table invariants shared by both type tables (AC6).
+    // Generated-table invariants shared by all three type tables (AC6).
+    // Ambiguity is kept: one wrong key may map to several syllables, so
+    // uniqueness is asserted per (wrong, correct) pair instead of per key.
     const auto &legal = quanpin::intact_pinyin_set();
-    std::unordered_set<std::string> seen_keys;
+    std::unordered_set<std::string> seen_pairs;
     size_t total_entries = 0;
-    for (const auto *table : {&quanpin::autocorrect::kTranspositionEntries, &quanpin::autocorrect::kNeighborEntries})
+    const std::pair<const quanpin::autocorrect::Entry *, std::size_t> tables[] = {
+        {quanpin::autocorrect::kTranspositionEntries, quanpin::autocorrect::kTranspositionCount},
+        {quanpin::autocorrect::kNeighborEntries, quanpin::autocorrect::kNeighborCount},
+        {quanpin::autocorrect::kDeletionEntries, quanpin::autocorrect::kDeletionCount},
+        {quanpin::autocorrect::kInsertionEntries, quanpin::autocorrect::kInsertionCount},
+    };
+    for (const auto &[entries, count] : tables)
     {
-        for (const auto &entry : *table)
+        for (std::size_t i = 0; i < count; ++i)
         {
-            const std::string wrong(entry.wrong);
-            const std::string correct(entry.correct);
+            const std::string wrong(entries[i].wrong);
+            // correct 是生成音节表的 16-bit 下标，断言前先解引用。
+            const std::string correct(quanpin::autocorrect::kCorrectSyllables[entries[i].correct]);
             expect(wrong.size() >= 3, "2-letter keys belong to the jianpin space and must not be generated.");
             expect(legal.find(wrong) == legal.end(), "A correction key must never shadow a legal syllable.");
             expect(legal.find(correct) != legal.end(), "A correction target must be a legal syllable.");
-            expect(seen_keys.insert(wrong).second, "Correction keys must be unique across both tables.");
+            expect(seen_pairs.insert(wrong + '>' + correct).second,
+                   "(wrong, correct) pairs must be unique across all tables.");
             ++total_entries;
         }
     }
-    expect(total_entries > 1000, "The generated tables unexpectedly shrank.");
+    expect(total_entries >= 4700, "The generated tables unexpectedly shrank.");
 }
 
 namespace
@@ -827,11 +960,13 @@ std::filesystem::path create_autocorrect_display_probe_database()
     const char *sql = "CREATE TABLE tbl_1_s(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
                       "CREATE TABLE tbl_1_n(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
                       "CREATE TABLE tbl_2_s(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                      "CREATE TABLE tbl_2_j(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
                       "CREATE TABLE tbl_2_k(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
                       "CREATE TABLE tbl_4_s(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
                       "INSERT INTO tbl_1_s VALUES('shang','s','上',100);"
                       "INSERT INTO tbl_1_n VALUES('nv','n','女',100);"
                       "INSERT INTO tbl_2_s VALUES('shang''hao','sh','上好',100);"
+                      "INSERT INTO tbl_2_j VALUES('jian''du','jd','监督',100);"
                       "INSERT INTO tbl_2_k VALUES('ke''neng','kn','可能',100);"
                       "INSERT INTO tbl_4_s VALUES('sa''huang''na''ge','shng','撒谎那个',1000);";
     const int result = sqlite3_exec(db, sql, nullptr, nullptr, nullptr);
@@ -889,8 +1024,8 @@ void test_quanpin_autocorrect_display()
     expect(sahnghao_cut.segments[0].syllable == "shang" && sahng_cut.segments[0].raw_text == "sahng" &&
                sahnghao_cut.segments[0].start == 0 && sahnghao_cut.segments[0].corrected,
            "The first 'sahnghao' segment must keep the raw letters of the corrected part.");
-    expect(sahnghao_cut.segments[1].syllable == "hao" && sahng_cut.segments[1].raw_text == "hao" &&
-               sahng_cut.segments[1].start == 5 && !sahnghao_cut.segments[1].corrected,
+    expect(sahnghao_cut.segments[1].syllable == "hao" && sahnghao_cut.segments[1].raw_text == "hao" &&
+               sahnghao_cut.segments[1].start == 5 && !sahnghao_cut.segments[1].corrected,
            "The untouched tail of 'sahnghao' must keep its raw span.");
 
     expect(quanpin::autocorrect_cut_detail("zheg", both).empty(),
@@ -903,6 +1038,54 @@ void test_quanpin_autocorrect_display()
            "Manual delimiters must disable the range-carrying cut.");
     expect(quanpin::join_segments(quanpin::autocorrect_cut("sahng", both)) == "shang",
            "The Segments wrapper must stay a projection of the detail cut.");
+
+    // 不等长边（漏字）：4 字母 raw "zhng" 映到 5 字母音节 zhang，第二段从 raw
+    // 偏移 4 接 "gu"；位置推进跟随 raw_length 而非音节长度。
+    const unsigned all = transposition_only | neighbor_only | quanpin::kAutocorrectDeletion;
+    const auto zhnggu_cut = quanpin::autocorrect_cut_detail("zhnggu", all);
+    expect(zhnggu_cut.segments.size() == 2, "'zhnggu' must cut into two segments via a deletion edge.");
+    expect(zhnggu_cut.segments[0].syllable == "zhang" && zhnggu_cut.segments[0].raw_text == "zhng" &&
+               zhnggu_cut.segments[0].start == 0 && zhnggu_cut.segments[0].corrected,
+           "The deletion segment must map 4 raw letters onto the 5-letter syllable.");
+    expect(zhnggu_cut.segments[1].syllable == "gu" && zhnggu_cut.segments[1].raw_text == "gu" &&
+               zhnggu_cut.segments[1].start == 4 && !zhnggu_cut.segments[1].corrected,
+           "The legal tail of 'zhnggu' must start at the raw offset the deletion edge left.");
+
+    // "zhngu"（3+2）：更短的不等长拆分，第二段起点在 3。
+    const auto zhngu_cut = quanpin::autocorrect_cut_detail("zhngu", all);
+    expect(zhngu_cut.segments.size() == 2 && zhngu_cut.segments[0].raw_text == "zhn" &&
+               zhngu_cut.segments[0].corrected && zhngu_cut.segments[1].raw_text == "gu" &&
+               zhngu_cut.segments[1].start == 3 && !zhngu_cut.segments[1].corrected,
+           "'zhngu' must split 3+2 with the legal tail starting at raw offset 3.");
+
+    // 插入（第四类）：raw 比音节长 1（"shangg" -> shang）；位置推进同样跟随
+    // raw_length 而非音节长度。
+    const unsigned all_four = all | quanpin::kAutocorrectInsertion;
+    const auto shangg_cut = quanpin::autocorrect_cut_detail("shangg", all_four);
+    expect(shangg_cut.segments.size() == 1, "'shangg' must cut into a single corrected segment.");
+    expect(shangg_cut.segments[0].syllable == "shang" && shangg_cut.segments[0].raw_text == "shangg" &&
+               shangg_cut.segments[0].start == 0 && shangg_cut.segments[0].corrected,
+           "The insertion segment must map 6 raw letters onto the 5-letter syllable.");
+    const auto shangghao_cut = quanpin::autocorrect_cut_detail("shangghao", all_four);
+    expect(shangghao_cut.segments.size() == 2, "'shangghao' must cut into two segments.");
+    // 同为 1 条纠错边时权重定序：漏字解释（shang + ghao->gao，11）胜过插入
+    // 解释（shangg->shang + hao，12），插入不劫持更便宜的解释。
+    expect(shangghao_cut.segments[0].syllable == "shang" && shangghao_cut.segments[0].raw_text == "shang" &&
+               shangghao_cut.segments[0].start == 0 && !shangghao_cut.segments[0].corrected,
+           "The cheaper deletion reading (weight 11) must win over the insertion reading (12).");
+    expect(shangghao_cut.segments[1].syllable == "gao" && shangghao_cut.segments[1].raw_text == "ghao" &&
+               shangghao_cut.segments[1].start == 5 && shangghao_cut.segments[1].corrected,
+           "The 'ghao' tail must be corrected through the deletion key.");
+    // 纯插入解释的 raw 区间：无更便宜的捷径时插入边胜出，第二段起点跟随
+    // raw_length（6 而非 5）。
+    const auto shanggni_cut = quanpin::autocorrect_cut_detail("shanggni", all_four);
+    expect(shanggni_cut.segments.size() == 2, "'shanggni' must cut into two segments via an insertion edge.");
+    expect(shanggni_cut.segments[0].syllable == "shang" && shanggni_cut.segments[0].raw_text == "shangg" &&
+               shanggni_cut.segments[0].start == 0 && shanggni_cut.segments[0].corrected,
+           "The insertion segment must keep the raw letters of the corrected part.");
+    expect(shanggni_cut.segments[1].syllable == "ni" && shanggni_cut.segments[1].raw_text == "ni" &&
+               shanggni_cut.segments[1].start == 6 && !shanggni_cut.segments[1].corrected,
+           "The legal tail of 'shanggni' must start at the raw offset the insertion edge left.");
 
     // 字典级标记：候选字母 == 主切分字母 且 主切分字母 != 原始字母 才标记。
     const auto db_path = create_autocorrect_display_probe_database();
@@ -941,6 +1124,25 @@ void test_quanpin_autocorrect_display()
         const auto nv = dictionary.query("nv", "nv", both);
         expect(!nv.empty() && nv.front().word == "女" && nv.front().corrected_from.empty(),
                "The u-umlaut 'v' spelling must stay unmarked.");
+
+        // 漏字（阶段 2）：deletion 位开时 "shng" 经纠错键命中目标词并标记；
+        // 关掉则回到现状（无标记，乱码后备尾）。打标按字母比较，天然兼容不等长边。
+        const auto deletion = dictionary.query("shng", "sh'n'g", all);
+        expect(!deletion.empty() && deletion.front().word == "上" && deletion.front().corrected_from == "shng",
+               "A deletion typo must resolve through the corrected key and carry corrected_from.");
+        const auto deletion_off = dictionary.query("shng", "sh'n'g", both);
+        expect(count_marked(deletion_off) == 0, "Without the deletion bit 'shng' must stay uncorrected and unmarked.");
+
+        // 插入（阶段 4）：insertion 位开时 "sshang"（双打 s）经纠错键命中目标词
+        // 并带 corrected_from（AC5）；关闭 insertion 位则无纠错标记。注：结尾单
+        // 插入（如 shangg = shang + g）属简拼尾形状，被词典门按设计拦截，
+        // 与 zher 同理 —— insertion 的可达面在中间/开头插入与多音节输入。
+        const auto insertion = dictionary.query("sshang", "", all_four);
+        expect(!insertion.empty() && insertion.front().word == "上" && insertion.front().corrected_from == "sshang",
+               "An insertion typo must resolve through the corrected key and carry corrected_from.");
+        const auto insertion_off = dictionary.query("sshang", "", all);
+        expect(count_marked(insertion_off) == 0,
+               "Without the insertion bit 'sshang' must stay uncorrected and unmarked.");
     }
 
     // 会话级 preedit：get_pinyin_segmentation_with_cases 必须画原始字母。
@@ -1026,6 +1228,17 @@ void test_quanpin_autocorrect_display()
                "Neighbor-only 'shabg' preedit shows the typed letters.");
     }
     {
+        // 空基础切分的丢声母错拼（jian -> ian）：会话层同样要走到纠错候选，
+        // 预编辑按不等长切分的 raw 区间重绘分隔（ian'du）。
+        metasequoia::InputSession session(SchemeType::Quanpin, all, true, true, true, paths);
+        type_display_session(session, "iandu");
+        expect(session.get_pinyin_segmentation_with_cases() == "ian'du",
+               "A dropped initial must redraw separators from the raw spans (ian'du).");
+        expect(!session.candidates().empty() && session.candidates().front().word == "监督" &&
+                   session.candidates().front().corrected_from == "iandu",
+               "An InputSession-level dropped initial must reach the corrected candidate.");
+    }
+    {
         metasequoia::InputSession session(SchemeType::Quanpin, transposition_only, true, true, true, paths);
         type_display_session(session, "shabg");
         expect(count_marked(session.candidates()) == 0,
@@ -1076,6 +1289,91 @@ void test_quanpin_autocorrect_display()
         expect(!session.candidates().empty() && session.candidates().front().word == "女" &&
                    session.candidates().front().corrected_from.empty(),
                "The u-umlaut candidate must stay unmarked.");
+    }
+    {
+        // 阶段 3：deletion 位随既有开关联动（design D2）后，显式三位 mask 下
+        // zheg 的 preedit 必须仍走简拼守卫，不被漏字表重排为 zheng。
+        const unsigned all_three = transposition_only | neighbor_only | quanpin::kAutocorrectDeletion;
+        metasequoia::InputSession session(SchemeType::Quanpin, all_three, true, true, true, paths);
+        type_display_session(session, "zheg");
+        expect(session.get_pinyin_segmentation_with_cases() == "zhe'g",
+               "The jianpin guard must hold with the deletion bit enabled (phase 3).");
+        expect(count_marked(session.candidates()) == 0,
+               "The jianpin shape must stay unmarked with the deletion bit enabled.");
+    }
+    {
+        // 阶段 3：漏字输入的 display —— 切分段携带不等长 raw span，rebuild 后
+        // preedit 显示原始字母（无分隔，单段纠错）。
+        metasequoia::InputSession session(SchemeType::Quanpin, both, true, true, true, paths);
+        type_display_session(session, "shng");
+        expect(session.get_pinyin_segmentation_with_cases() == "shng",
+               "A deletion-corrected input must show its typed letters in the preedit.");
+        expect(!session.candidates().empty() && session.candidates().front().word == "上" &&
+                   session.candidates().front().corrected_from == "shng",
+               "The deletion reading must reach the candidates end to end with the linked bit.");
+    }
+    {
+        // 阶段 3（design D2）：仅开 transposition 时请求布尔映射也带上 deletion
+        // 位 —— "shng" 必须可纠（端到端行为断言：mask 是会话内部状态，以纠错
+        // 生效为准）。
+        metasequoia::InputSession session(SchemeType::Quanpin, transposition_only, true, true, true, paths);
+        type_display_session(session, "shng");
+        expect(std::any_of(session.candidates().begin(), session.candidates().end(),
+                           [](const WordItem &item) { return item.word == "上"; }),
+               "Transposition-only must still enable the deletion reading of 'shng' (D2 linkage).");
+    }
+    {
+        metasequoia::InputSession session(SchemeType::Quanpin, none, true, true, true, paths);
+        type_display_session(session, "shng");
+        // 门控按纠错标记验证：前缀查询可能以 'sh' 命中「上」，那与纠错无关；
+        // 开关全关时不得存在任何带 corrected_from 的候选。
+        expect(std::none_of(session.candidates().begin(), session.candidates().end(),
+                            [](const WordItem &item) { return !item.corrected_from.empty(); }),
+               "Both switches off must keep the deletion reading disabled.");
+    }
+    {
+        // 阶段 4：插入输入的 display —— raw span 比音节长 1，preedit 显示原始
+        // 字母（无分隔，单段纠错）。用开头双打 "sshang"：结尾单插入属简拼尾
+        // 形状，被词典门拦截（见 zher 用例）。
+        const unsigned all_four =
+            transposition_only | neighbor_only | quanpin::kAutocorrectDeletion | quanpin::kAutocorrectInsertion;
+        metasequoia::InputSession session(SchemeType::Quanpin, all_four, true, true, true, paths);
+        type_display_session(session, "sshang");
+        expect(session.get_pinyin_segmentation_with_cases() == "sshang",
+               "An insertion-corrected input must show its typed letters in the preedit.");
+        expect(!session.candidates().empty() && session.candidates().front().word == "上" &&
+                   session.candidates().front().corrected_from == "sshang",
+               "The insertion reading must reach the candidates end to end.");
+    }
+    {
+        // 阶段 4（design D4）：仅开 transposition 时请求布尔映射也带上 insertion
+        // 位 —— "sshang" 必须可纠（端到端行为断言）。
+        metasequoia::InputSession session(SchemeType::Quanpin, transposition_only, true, true, true, paths);
+        type_display_session(session, "sshang");
+        expect(std::any_of(session.candidates().begin(), session.candidates().end(),
+                           [](const WordItem &item) { return item.word == "上"; }),
+               "Transposition-only must still enable the insertion reading of 'sshang' (D4 linkage).");
+    }
+    {
+        // 阶段 4：'zher' 是 insertion 键（r 是 e 的邻键）但属简拼守卫形状，
+        // 词典门在 BFS 之前拦截：preedit 保持 zhe'r，无任何纠错标记（AC2）。
+        const unsigned all_four =
+            transposition_only | neighbor_only | quanpin::kAutocorrectDeletion | quanpin::kAutocorrectInsertion;
+        metasequoia::InputSession session(SchemeType::Quanpin, all_four, true, true, true, paths);
+        type_display_session(session, "zher");
+        // 守卫拦下纠错后，preedit 保持方案层自身的贪心切分（zh + er），
+        // 不重绘为 insertion 键的字母区间。
+        expect(session.get_pinyin_segmentation_with_cases() == "zh'er",
+               "The jianpin guard must hold for 'zher' with the insertion bit enabled.");
+        expect(count_marked(session.candidates()) == 0,
+               "The jianpin shape 'zher' must stay unmarked (insertion key inside the guard). ");
+    }
+    {
+        metasequoia::InputSession session(SchemeType::Quanpin, none, true, true, true, paths);
+        type_display_session(session, "sshang");
+        expect(std::none_of(session.candidates().begin(), session.candidates().end(),
+                            [](const WordItem &item) { return !item.corrected_from.empty(); }),
+               "Both switches off must keep the insertion reading disabled.");
     }
 
     fs::remove_all(session_dir, cleanup_ec);

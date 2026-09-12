@@ -5,11 +5,16 @@
 
 namespace
 { // The request carries one bool per correction type; the dictionary layer gates
-// the whole feature with a single mask, so bridge the two here.
+// the whole feature with a single mask, so bridge the two here. Design D2: any
+// correction switch on also enables the deletion bit -- the user's intent to
+// have typos fixed covers dropped letters -- while both off stays 0. The same
+// linkage carries the insertion bit (design D4 of the insertion task).
 unsigned autocorrect_types_from_request(const QueryRequest &request)
 {
-    return (request.enable_quanpin_autocorrect_transposition ? quanpin::kAutocorrectTransposition : 0u) |
-           (request.enable_quanpin_autocorrect_neighbor ? quanpin::kAutocorrectNeighbor : 0u);
+    const unsigned legacy =
+        (request.enable_quanpin_autocorrect_transposition ? quanpin::kAutocorrectTransposition : 0u) |
+        (request.enable_quanpin_autocorrect_neighbor ? quanpin::kAutocorrectNeighbor : 0u);
+    return legacy == 0 ? 0u : legacy | quanpin::kAutocorrectDeletion | quanpin::kAutocorrectInsertion;
 }
 } // namespace
 
