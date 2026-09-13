@@ -206,7 +206,15 @@ bool SetConfiguredQuanpinAutocorrectNeighbor(bool enabled);
 // Fuzzy pinyin rules are flat [input] booleans ("fuzzy_z_zh", ...) so the settings page can
 // bind them per key and the upgrade merge keeps user choices per key. Callers get the
 // synthesized engine options and never touch the bitmask themselves.
+// The master switch ("fuzzy_pinyin") gates GetConfiguredFuzzyPinyinOptions only: sessions see
+// all-zero rules while it is off, but the stored rule choices stay intact so flipping it back
+// on restores them.
+bool GetConfiguredFuzzyPinyinEnabled();
+bool SetConfiguredFuzzyPinyinEnabled(bool enabled);
 metasequoia::FuzzyPinyinOptions GetConfiguredFuzzyPinyinOptions();
+// Rule bits without the master gate, for the settings snapshot: checkboxes must show the
+// stored choices even while the master switch is off.
+metasequoia::FuzzyPinyinOptions GetConfiguredFuzzyPinyinRuleStates();
 // key is the config key without section, e.g. "fuzzy_n_l"; unknown keys return false.
 bool SetConfiguredFuzzyPinyinRule(const std::string &key, bool enabled);
 const std::string &GetConfiguredQuanpinHelpcodeSchema();

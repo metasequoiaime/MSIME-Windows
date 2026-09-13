@@ -81,6 +81,9 @@ bool g_quanpin_autocorrect_transposition = false;
 bool g_quanpin_autocorrect_neighbor = false;
 // Bitmask of FuzzyPinyinRule bits. All off by default so upgrades never change behavior.
 std::uint32_t g_fuzzy_pinyin_rules = 0;
+// Master switch, off by default. It gates GetConfiguredFuzzyPinyinOptions only; the rule
+// bitmask above keeps its value so temporary disable/enable preserves the user's choices.
+bool g_fuzzy_pinyin_enabled = false;
 // Config key ↔ engine rule bit. The key mirrors the enumerator name lowercased, so the
 // only mapping to review is this table; the bit position lives in the enum itself.
 struct FuzzyPinyinRuleKey
@@ -893,6 +896,7 @@ bool LoadImeConfig()
             tbl["helpcode"]["show_qp_helpcode_in_candidate_window"].value_or(true);
         g_quanpin_autocorrect_transposition = tbl["quanpin"]["autocorrect_transposition"].value_or(false);
         g_quanpin_autocorrect_neighbor = tbl["quanpin"]["autocorrect_neighbor"].value_or(false);
+        g_fuzzy_pinyin_enabled = tbl["input"]["fuzzy_pinyin"].value_or(false);
         g_fuzzy_pinyin_rules = 0;
         for (const auto &entry : kFuzzyPinyinRuleKeys)
         {
@@ -2191,7 +2195,30 @@ bool SetConfiguredQuanpinAutocorrectNeighbor(bool enabled)
     return true;
 }
 
+bool GetConfiguredFuzzyPinyinEnabled()
+{
+    return g_fuzzy_pinyin_enabled;
+}
+
+bool SetConfiguredFuzzyPinyinEnabled(bool enabled)
+{
+    if (!WriteConfiguredValue("input", "fuzzy_pinyin", enabled ? "true" : "false"))
+        return false;
+    g_fuzzy_pinyin_enabled = enabled;
+    return true;
+}
+
+// The master switch is gated here and nowhere else: sessions see all-zero rules while it is
+// off, and the cached rule bits survive the toggle so re-enabling restores the prior choice.
 metasequoia::FuzzyPinyinOptions GetConfiguredFuzzyPinyinOptions()
+{
+    metasequoia::FuzzyPinyinOptions options;
+    if (g_fuzzy_pinyin_enabled)
+        options.rules = g_fuzzy_pinyin_rules;
+    return options;
+}
+
+metasequoia::FuzzyPinyinOptions GetConfiguredFuzzyPinyinRuleStates()
 {
     metasequoia::FuzzyPinyinOptions options;
     options.rules = g_fuzzy_pinyin_rules;

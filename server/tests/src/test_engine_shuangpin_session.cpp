@@ -120,23 +120,34 @@ TEST_CASE(EngineShuangpinSessionContinuesCompositionWithoutHelpcode)
     REQUIRE_EQ(session.get_pinyin_sequence(), std::string("tele"));
 }
 
-// 模糊音是会话级注入：配置键打开后，新键的 ApplyConfiguration 把规则带给引擎，
-// 全拼输入 zhang 也能命中 zang 读音词；双拼（小鹤 vh = zhang）同一注入路径生效（AC1/AC2）。
+// 模糊音是会话级注入：总开关 + 规则位两层。总开关关 → 聚合 getter 全零，候选不出现；
+// 开规则 + 开总开关 → zang 候选出现（全拼 zhang / 双拼 vh，AC1/AC2）；仅关总开关（规则保留）→
+// 候选消失；重开总开关 → 恢复（AC2b）。
 TEST_CASE(EngineSessionAppliesFuzzyPinyinRulesForQuanpinAndShuangpin)
 {
     ScopedConfigRoot config_root;
     InitImeConfig();
+    REQUIRE(!GetConfiguredFuzzyPinyinEnabled());
     REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
 
-    // 默认全关：zhang 只命中 zhang 读音。
+    // A：默认全关，zhang 只命中 zhang 读音。
     {
         EngineInputSession quanpin(SchemeType::Quanpin);
         InputLetters(quanpin, "zhang");
         REQUIRE(!HasCandidateWithCanonicalPrefix(quanpin, "zang"));
     }
 
-    // 开 fuzzy_z_zh：zang 候选出现。
+    // 开规则、总开关仍关：getter 全零，行为不变。
     REQUIRE(SetConfiguredFuzzyPinyinRule("fuzzy_z_zh", true));
+    REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
+    {
+        EngineInputSession quanpin(SchemeType::Quanpin);
+        InputLetters(quanpin, "zhang");
+        REQUIRE(!HasCandidateWithCanonicalPrefix(quanpin, "zang"));
+    }
+
+    // B：开总开关 —— 既有规则立即生效，全拼与双拼都出 zang 候选。
+    REQUIRE(SetConfiguredFuzzyPinyinEnabled(true));
     {
         EngineInputSession quanpin(SchemeType::Quanpin);
         InputLetters(quanpin, "zhang");
@@ -148,14 +159,29 @@ TEST_CASE(EngineSessionAppliesFuzzyPinyinRulesForQuanpinAndShuangpin)
         REQUIRE(HasCandidateWithCanonicalPrefix(shuangpin, "zang"));
     }
 
-    // 关闭后立即恢复精确匹配；并把位图清零，不留脏状态给进程内后续用例。
-    REQUIRE(SetConfiguredFuzzyPinyinRule("fuzzy_z_zh", false));
+    // A：仅关总开关（规则位保留）—— 候选消失。
+    REQUIRE(SetConfiguredFuzzyPinyinEnabled(false));
+    REQUIRE_EQ(GetConfiguredFuzzyPinyinRuleStates().rules,
+               static_cast<std::uint32_t>(metasequoia::FuzzyPinyinRule::Z_ZH));
     {
         EngineInputSession quanpin(SchemeType::Quanpin);
         InputLetters(quanpin, "zhang");
         REQUIRE(!HasCandidateWithCanonicalPrefix(quanpin, "zang"));
     }
+
+    // B：重开总开关 —— 恢复。
+    REQUIRE(SetConfiguredFuzzyPinyinEnabled(true));
+    {
+        EngineInputSession quanpin(SchemeType::Quanpin);
+        InputLetters(quanpin, "zhang");
+        REQUIRE(HasCandidateWithCanonicalPrefix(quanpin, "zang"));
+    }
+
+    // 收尾：总开关与规则位归零，不留脏状态给进程内后续用例。
+    REQUIRE(SetConfiguredFuzzyPinyinEnabled(false));
+    REQUIRE(SetConfiguredFuzzyPinyinRule("fuzzy_z_zh", false));
     REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
+    REQUIRE(!GetConfiguredFuzzyPinyinEnabled());
 }
 
 TEST_CASE(CloudCandidateNeverEntersCreatingWordMode)

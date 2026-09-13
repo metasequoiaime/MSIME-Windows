@@ -280,7 +280,7 @@ constexpr FuzzyRuleKeyFixture kFuzzyRuleKeyFixtures[] = {
 } // namespace
 
 // 模糊音默认值：无配置文件（首次初始化从模板创建）、模板缺键、全显式 false 三种形态下
-// rules 都必须是 0（AC3：全新安装与升级用户零行为变化）。
+// 总开关为 false 且 rules 都必须是 0（AC2b/AC3：全新安装与升级用户零行为变化）。
 TEST_CASE(fuzzy_pinyin_rules_default_to_all_off)
 {
     namespace fs = std::filesystem;
@@ -298,17 +298,20 @@ TEST_CASE(fuzzy_pinyin_rules_default_to_all_off)
 
         InitImeConfig();
         REQUIRE(fs::exists(data_dir / L"config.toml"));
+        REQUIRE(!GetConfiguredFuzzyPinyinEnabled());
         REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
 
-        // 模板缺键：手写一份没有任何 fuzzy 键的配置，重读后仍为 0。
+        // 模板缺键：手写一份没有任何 fuzzy 键的配置，重读后仍为关。
         WriteText(data_dir / L"config.toml", "[input]\nschema = \"quanpin\"\n");
         InitImeConfig();
+        REQUIRE(!GetConfiguredFuzzyPinyinEnabled());
         REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
 
         // 全部显式 false：与默认逐位一致。
         for (const auto &fixture : kFuzzyRuleKeyFixtures)
             REQUIRE(SetConfiguredFuzzyPinyinRule(fixture.key, false));
         InitImeConfig();
+        REQUIRE(!GetConfiguredFuzzyPinyinEnabled());
         REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
     }
 
@@ -316,6 +319,7 @@ TEST_CASE(fuzzy_pinyin_rules_default_to_all_off)
 }
 
 // 逐键开：对应位翻转、其余位不动；全开合成 0x7ff；重启后保持；未知键拒绝且不碰位图。
+// 总开关全程开着：聚合 getter 只有在总开关开时才透出规则位。
 TEST_CASE(fuzzy_pinyin_rule_keys_round_trip)
 {
     namespace fs = std::filesystem;
@@ -334,6 +338,8 @@ TEST_CASE(fuzzy_pinyin_rule_keys_round_trip)
         InitImeConfig();
         REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
 
+        REQUIRE(SetConfiguredFuzzyPinyinEnabled(true));
+
         std::uint32_t expected = 0;
         for (const auto &fixture : kFuzzyRuleKeyFixtures)
         {
@@ -345,6 +351,7 @@ TEST_CASE(fuzzy_pinyin_rule_keys_round_trip)
 
         InitImeConfig();
         REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0x7ffu);
+        REQUIRE(GetConfiguredFuzzyPinyinEnabled()); // 总开关随重启保持
 
         for (const auto &fixture : kFuzzyRuleKeyFixtures)
         {
@@ -357,6 +364,52 @@ TEST_CASE(fuzzy_pinyin_rule_keys_round_trip)
         REQUIRE(!SetConfiguredFuzzyPinyinRule("fuzzy_zh_z", true));
         REQUIRE(!SetConfiguredFuzzyPinyinRule("autocorrect_transposition", true));
         REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
+
+        // 收尾归零，不留脏状态给进程内后续用例。
+        REQUIRE(SetConfiguredFuzzyPinyinEnabled(false));
+        REQUIRE(!GetConfiguredFuzzyPinyinEnabled());
+    }
+
+    fs::remove_all(unique_root, ec);
+}
+
+// 总开关门控只在聚合 getter：关 → 全零、规则位缓存保留；开 → 位图立即恢复（AC2b）。
+TEST_CASE(fuzzy_pinyin_master_switch_gates_aggregate_only)
+{
+    namespace fs = std::filesystem;
+    const fs::path unique_root =
+        fs::temp_directory_path() / (L"msime-模糊音门控测试-" + std::to_wstring(GetCurrentProcessId()));
+    const fs::path local_app_data = unique_root / L"profile";
+    const fs::path data_dir = local_app_data / L"metasequoiaime";
+
+    std::error_code ec;
+    fs::remove_all(unique_root, ec);
+    SeedTemplate(data_dir);
+
+    {
+        ScopedEnv local_app_data_env(L"LOCALAPPDATA", local_app_data.wstring());
+
+        InitImeConfig();
+        REQUIRE(SetConfiguredFuzzyPinyinEnabled(true));
+        for (const auto &fixture : kFuzzyRuleKeyFixtures)
+            REQUIRE(SetConfiguredFuzzyPinyinRule(fixture.key, true));
+        REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0x7ffu);
+
+        // 关总开关：会话拿到的 options 全零，规则位缓存保留。
+        REQUIRE(SetConfiguredFuzzyPinyinEnabled(false));
+        REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
+        REQUIRE_EQ(GetConfiguredFuzzyPinyinRuleStates().rules, 0x7ffu);
+
+        // 重开：既有选择立即生效；翻动不破坏规则位。
+        REQUIRE(SetConfiguredFuzzyPinyinEnabled(true));
+        REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0x7ffu);
+        REQUIRE_EQ(GetConfiguredFuzzyPinyinRuleStates().rules, 0x7ffu);
+
+        // 收尾归零。
+        REQUIRE(SetConfiguredFuzzyPinyinEnabled(false));
+        for (const auto &fixture : kFuzzyRuleKeyFixtures)
+            REQUIRE(SetConfiguredFuzzyPinyinRule(fixture.key, false));
+        REQUIRE_EQ(GetConfiguredFuzzyPinyinRuleStates().rules, 0u);
     }
 
     fs::remove_all(unique_root, ec);
