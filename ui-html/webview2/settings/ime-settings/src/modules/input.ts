@@ -220,6 +220,7 @@ export function setupInput(): void {
   setupToggleButton('autocorrectNeighborToggleBtn', (active) => {
     updateConfig('quanpin.autocorrect_neighbor', active);
   });
+  setupFuzzyRuleOptions();
   setupToggleButton('smartPunctuationRepeatToChineseToggleBtn', (active) => {
     updateConfig('input.smart_punctuation_repeat_to_chinese', active);
   });
@@ -306,6 +307,15 @@ function setupPageOptions(): void {
       };
       const path = configPaths[checkbox.value];
       if (path) updateConfig(path, checkbox.checked);
+    });
+  });
+}
+
+// 模糊音 11 键同名同前缀：checkbox value 直接是 [input] 段的配置键。
+function setupFuzzyRuleOptions(): void {
+  document.querySelectorAll<HTMLInputElement>('input[name="fuzzy-rule"]').forEach((checkbox) => {
+    checkbox.addEventListener('change', () => {
+      if (checkbox.value.startsWith('fuzzy_')) updateConfig(`input.${checkbox.value}`, checkbox.checked);
     });
   });
 }

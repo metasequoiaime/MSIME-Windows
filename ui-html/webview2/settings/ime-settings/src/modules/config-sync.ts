@@ -126,6 +126,26 @@ function applyConfigData(data: Record<string, any>, target?: string): void {
   if (typeof data?.quanpin?.autocorrect_neighbor === 'boolean') {
     applyToggleState('autocorrectNeighborToggleBtn', data.quanpin.autocorrect_neighbor);
   }
+  // 模糊音 11 键逐键回填；单键缺失/类型不符不影响其余键（AC4）。
+  const fuzzyRuleCheckboxes: [string, string][] = [
+    ['fuzzyZZhCheckbox', 'fuzzy_z_zh'],
+    ['fuzzyCChCheckbox', 'fuzzy_c_ch'],
+    ['fuzzySShCheckbox', 'fuzzy_s_sh'],
+    ['fuzzyNlCheckbox', 'fuzzy_n_l'],
+    ['fuzzyFhCheckbox', 'fuzzy_f_h'],
+    ['fuzzyRlCheckbox', 'fuzzy_r_l'],
+    ['fuzzyAnAngCheckbox', 'fuzzy_an_ang'],
+    ['fuzzyEnEngCheckbox', 'fuzzy_en_eng'],
+    ['fuzzyInIngCheckbox', 'fuzzy_in_ing'],
+    ['fuzzyIanIangCheckbox', 'fuzzy_ian_iang'],
+    ['fuzzyUanUangCheckbox', 'fuzzy_uan_uang']
+  ];
+  for (const [id, key] of fuzzyRuleCheckboxes) {
+    const value = data?.input?.[key];
+    if (typeof value !== 'boolean') continue;
+    const checkbox = findElement(id) as HTMLInputElement | null;
+    if (checkbox) checkbox.checked = value;
+  }
   if (data?.input?.punctuation_lock === 'chinese' || data?.input?.punctuation_lock === 'english' ||
       data?.input?.punctuation_lock === 'follow') {
     applyToggleState('alwaysEnglishPunctuationToggleBtn', data.input.punctuation_lock === 'english');
