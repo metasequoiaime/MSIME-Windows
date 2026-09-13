@@ -255,3 +255,109 @@ TEST_CASE(quanpin_autocorrect_keys_persist_and_legacy_key_stays_ignored)
 
     fs::remove_all(unique_root, ec);
 }
+
+namespace
+{
+// 与 ime_config.cpp 的 kFuzzyPinyinRuleKeys 同一映射；这里是钉住它的测试副本。
+struct FuzzyRuleKeyFixture
+{
+    const char *key;
+    metasequoia::FuzzyPinyinRule rule;
+};
+constexpr FuzzyRuleKeyFixture kFuzzyRuleKeyFixtures[] = {
+    {"fuzzy_z_zh", metasequoia::FuzzyPinyinRule::Z_ZH},
+    {"fuzzy_c_ch", metasequoia::FuzzyPinyinRule::C_CH},
+    {"fuzzy_s_sh", metasequoia::FuzzyPinyinRule::S_SH},
+    {"fuzzy_n_l", metasequoia::FuzzyPinyinRule::N_L},
+    {"fuzzy_f_h", metasequoia::FuzzyPinyinRule::F_H},
+    {"fuzzy_r_l", metasequoia::FuzzyPinyinRule::R_L},
+    {"fuzzy_an_ang", metasequoia::FuzzyPinyinRule::AN_ANG},
+    {"fuzzy_en_eng", metasequoia::FuzzyPinyinRule::EN_ENG},
+    {"fuzzy_in_ing", metasequoia::FuzzyPinyinRule::IN_ING},
+    {"fuzzy_ian_iang", metasequoia::FuzzyPinyinRule::IAN_IANG},
+    {"fuzzy_uan_uang", metasequoia::FuzzyPinyinRule::UAN_UANG},
+};
+} // namespace
+
+// 模糊音默认值：无配置文件（首次初始化从模板创建）、模板缺键、全显式 false 三种形态下
+// rules 都必须是 0（AC3：全新安装与升级用户零行为变化）。
+TEST_CASE(fuzzy_pinyin_rules_default_to_all_off)
+{
+    namespace fs = std::filesystem;
+    const fs::path unique_root =
+        fs::temp_directory_path() / (L"msime-模糊音默认测试-" + std::to_wstring(GetCurrentProcessId()));
+    const fs::path local_app_data = unique_root / L"profile";
+    const fs::path data_dir = local_app_data / L"metasequoiaime";
+
+    std::error_code ec;
+    fs::remove_all(unique_root, ec);
+    SeedTemplate(data_dir);
+
+    {
+        ScopedEnv local_app_data_env(L"LOCALAPPDATA", local_app_data.wstring());
+
+        InitImeConfig();
+        REQUIRE(fs::exists(data_dir / L"config.toml"));
+        REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
+
+        // 模板缺键：手写一份没有任何 fuzzy 键的配置，重读后仍为 0。
+        WriteText(data_dir / L"config.toml", "[input]\nschema = \"quanpin\"\n");
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
+
+        // 全部显式 false：与默认逐位一致。
+        for (const auto &fixture : kFuzzyRuleKeyFixtures)
+            REQUIRE(SetConfiguredFuzzyPinyinRule(fixture.key, false));
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
+    }
+
+    fs::remove_all(unique_root, ec);
+}
+
+// 逐键开：对应位翻转、其余位不动；全开合成 0x7ff；重启后保持；未知键拒绝且不碰位图。
+TEST_CASE(fuzzy_pinyin_rule_keys_round_trip)
+{
+    namespace fs = std::filesystem;
+    const fs::path unique_root =
+        fs::temp_directory_path() / (L"msime-模糊音往返测试-" + std::to_wstring(GetCurrentProcessId()));
+    const fs::path local_app_data = unique_root / L"profile";
+    const fs::path data_dir = local_app_data / L"metasequoiaime";
+
+    std::error_code ec;
+    fs::remove_all(unique_root, ec);
+    SeedTemplate(data_dir);
+
+    {
+        ScopedEnv local_app_data_env(L"LOCALAPPDATA", local_app_data.wstring());
+
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
+
+        std::uint32_t expected = 0;
+        for (const auto &fixture : kFuzzyRuleKeyFixtures)
+        {
+            REQUIRE(SetConfiguredFuzzyPinyinRule(fixture.key, true));
+            expected |= static_cast<std::uint32_t>(fixture.rule);
+            REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, expected);
+        }
+        REQUIRE_EQ(expected, 0x7ffu); // 11 条规则全开
+
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0x7ffu);
+
+        for (const auto &fixture : kFuzzyRuleKeyFixtures)
+        {
+            REQUIRE(SetConfiguredFuzzyPinyinRule(fixture.key, false));
+            expected &= ~static_cast<std::uint32_t>(fixture.rule);
+            REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, expected);
+        }
+
+        // 未知键（拼写错误、别的段的键）不得落盘，也不得碰位图。
+        REQUIRE(!SetConfiguredFuzzyPinyinRule("fuzzy_zh_z", true));
+        REQUIRE(!SetConfiguredFuzzyPinyinRule("autocorrect_transposition", true));
+        REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
+    }
+
+    fs::remove_all(unique_root, ec);
+}

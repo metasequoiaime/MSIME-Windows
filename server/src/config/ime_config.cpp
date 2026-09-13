@@ -79,6 +79,28 @@ bool g_show_quanpin_helpcode_in_candidate_window = true;
 // both correction types default to off and users opt in from the settings page.
 bool g_quanpin_autocorrect_transposition = false;
 bool g_quanpin_autocorrect_neighbor = false;
+// Bitmask of FuzzyPinyinRule bits. All off by default so upgrades never change behavior.
+std::uint32_t g_fuzzy_pinyin_rules = 0;
+// Config key ↔ engine rule bit. The key mirrors the enumerator name lowercased, so the
+// only mapping to review is this table; the bit position lives in the enum itself.
+struct FuzzyPinyinRuleKey
+{
+    const char *key;
+    metasequoia::FuzzyPinyinRule rule;
+};
+constexpr FuzzyPinyinRuleKey kFuzzyPinyinRuleKeys[] = {
+    {"fuzzy_z_zh", metasequoia::FuzzyPinyinRule::Z_ZH},
+    {"fuzzy_c_ch", metasequoia::FuzzyPinyinRule::C_CH},
+    {"fuzzy_s_sh", metasequoia::FuzzyPinyinRule::S_SH},
+    {"fuzzy_n_l", metasequoia::FuzzyPinyinRule::N_L},
+    {"fuzzy_f_h", metasequoia::FuzzyPinyinRule::F_H},
+    {"fuzzy_r_l", metasequoia::FuzzyPinyinRule::R_L},
+    {"fuzzy_an_ang", metasequoia::FuzzyPinyinRule::AN_ANG},
+    {"fuzzy_en_eng", metasequoia::FuzzyPinyinRule::EN_ENG},
+    {"fuzzy_in_ing", metasequoia::FuzzyPinyinRule::IN_ING},
+    {"fuzzy_ian_iang", metasequoia::FuzzyPinyinRule::IAN_IANG},
+    {"fuzzy_uan_uang", metasequoia::FuzzyPinyinRule::UAN_UANG},
+};
 bool g_floating_toolbar_enabled = true;
 FloatingToolbarItemsConfig g_floating_toolbar_items;
 double g_floating_toolbar_scale = 1.0;
@@ -871,6 +893,12 @@ bool LoadImeConfig()
             tbl["helpcode"]["show_qp_helpcode_in_candidate_window"].value_or(true);
         g_quanpin_autocorrect_transposition = tbl["quanpin"]["autocorrect_transposition"].value_or(false);
         g_quanpin_autocorrect_neighbor = tbl["quanpin"]["autocorrect_neighbor"].value_or(false);
+        g_fuzzy_pinyin_rules = 0;
+        for (const auto &entry : kFuzzyPinyinRuleKeys)
+        {
+            if (tbl["input"][entry.key].value_or(false))
+                g_fuzzy_pinyin_rules |= static_cast<std::uint32_t>(entry.rule);
+        }
         g_floating_toolbar_enabled = tbl["general"]["floating_toolbar"].value_or(true);
         // Read the old candidate-only key as a migration fallback. New writes
         // use the unified key.
@@ -2160,6 +2188,36 @@ bool SetConfiguredQuanpinAutocorrectNeighbor(bool enabled)
         return false;
     }
     g_quanpin_autocorrect_neighbor = enabled;
+    return true;
+}
+
+metasequoia::FuzzyPinyinOptions GetConfiguredFuzzyPinyinOptions()
+{
+    metasequoia::FuzzyPinyinOptions options;
+    options.rules = g_fuzzy_pinyin_rules;
+    return options;
+}
+
+bool SetConfiguredFuzzyPinyinRule(const std::string &key, bool enabled)
+{
+    const FuzzyPinyinRuleKey *entry = nullptr;
+    for (const auto &candidate : kFuzzyPinyinRuleKeys)
+    {
+        if (key == candidate.key)
+        {
+            entry = &candidate;
+            break;
+        }
+    }
+    if (!entry)
+        return false;
+    const auto bit = static_cast<std::uint32_t>(entry->rule);
+    if (!WriteConfiguredValue("input", entry->key, enabled ? "true" : "false"))
+        return false;
+    if (enabled)
+        g_fuzzy_pinyin_rules |= bit;
+    else
+        g_fuzzy_pinyin_rules &= ~bit;
     return true;
 }
 

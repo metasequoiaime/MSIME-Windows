@@ -5,7 +5,10 @@
 #include "engine/quanpin/quanpin_query.h"
 #include "engine/shuangpin/shuangpin_dictionary.h"
 #include "src/ipc/candidate_selection_policy.h"
+#include <windows.h>
 #include <algorithm>
+#include <filesystem>
+#include <system_error>
 
 namespace
 {
@@ -32,6 +35,56 @@ void InputSequence(EngineInputSession &session, const std::string &keys)
         const char upper = is_upper ? ch : static_cast<char>(ch - ('a' - 'A'));
         session.handle_key(static_cast<UINT>(upper), 0, static_cast<WCHAR>(ch));
     }
+}
+
+// 把 ime 配置重定向到一次性目录：SetConfiguredFuzzyPinyinRule 会真实落盘，
+// 不能写进开发机的用户配置。引擎词库仍走 METASEQUOIA_IME_DATA_DIR，不受影响。
+class ScopedConfigRoot
+{
+  public:
+    ScopedConfigRoot()
+    {
+        wchar_t buffer[32768];
+        const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", buffer, 32768);
+        had_previous_ = length != 0 || GetLastError() != ERROR_ENVVAR_NOT_FOUND;
+        previous_.assign(buffer, length);
+        root_ = std::filesystem::temp_directory_path() /
+                (L"msime-模糊音注入测试-" + std::to_wstring(GetCurrentProcessId()));
+        const auto data_dir = root_ / L"metasequoiaime";
+        std::error_code ec;
+        std::filesystem::remove_all(root_, ec);
+        std::filesystem::create_directories(data_dir, ec);
+        std::filesystem::copy_file(MSIME_DEFAULT_CONFIG_PATH, data_dir / L"config.default.toml",
+                                   std::filesystem::copy_options::overwrite_existing, ec);
+        // 拷贝失败（如仓库路径含非 ASCII 字符被 ACP 转换破坏）必须在源头报出来，
+        // 否则后面的 SetConfiguredFuzzyPinyinRule 会以无关断言的形式失败。
+        REQUIRE(!ec);
+        SetEnvironmentVariableW(L"LOCALAPPDATA", root_.c_str());
+    }
+    ~ScopedConfigRoot()
+    {
+        SetEnvironmentVariableW(L"LOCALAPPDATA", had_previous_ ? previous_.c_str() : nullptr);
+        std::error_code ec;
+        std::filesystem::remove_all(root_, ec);
+    }
+
+    ScopedConfigRoot(const ScopedConfigRoot &) = delete;
+    ScopedConfigRoot &operator=(const ScopedConfigRoot &) = delete;
+
+  private:
+    std::wstring previous_;
+    bool had_previous_ = false;
+    std::filesystem::path root_;
+};
+
+bool HasCandidateWithCanonicalPrefix(const EngineInputSession &session, const char *prefix)
+{
+    for (const auto &item : session.get_candidates())
+    {
+        if (item.canonical_pinyin.rfind(prefix, 0) == 0)
+            return true;
+    }
+    return false;
 }
 } // namespace
 
@@ -65,6 +118,44 @@ TEST_CASE(EngineShuangpinSessionContinuesCompositionWithoutHelpcode)
     const auto transition = session.advance_composition_after_selection("xi", "西", "xi");
     REQUIRE(transition.continues_composition);
     REQUIRE_EQ(session.get_pinyin_sequence(), std::string("tele"));
+}
+
+// 模糊音是会话级注入：配置键打开后，新键的 ApplyConfiguration 把规则带给引擎，
+// 全拼输入 zhang 也能命中 zang 读音词；双拼（小鹤 vh = zhang）同一注入路径生效（AC1/AC2）。
+TEST_CASE(EngineSessionAppliesFuzzyPinyinRulesForQuanpinAndShuangpin)
+{
+    ScopedConfigRoot config_root;
+    InitImeConfig();
+    REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
+
+    // 默认全关：zhang 只命中 zhang 读音。
+    {
+        EngineInputSession quanpin(SchemeType::Quanpin);
+        InputLetters(quanpin, "zhang");
+        REQUIRE(!HasCandidateWithCanonicalPrefix(quanpin, "zang"));
+    }
+
+    // 开 fuzzy_z_zh：zang 候选出现。
+    REQUIRE(SetConfiguredFuzzyPinyinRule("fuzzy_z_zh", true));
+    {
+        EngineInputSession quanpin(SchemeType::Quanpin);
+        InputLetters(quanpin, "zhang");
+        REQUIRE(HasCandidateWithCanonicalPrefix(quanpin, "zang"));
+    }
+    {
+        EngineInputSession shuangpin(SchemeType::Shuangpin);
+        InputLetters(shuangpin, "vh");
+        REQUIRE(HasCandidateWithCanonicalPrefix(shuangpin, "zang"));
+    }
+
+    // 关闭后立即恢复精确匹配；并把位图清零，不留脏状态给进程内后续用例。
+    REQUIRE(SetConfiguredFuzzyPinyinRule("fuzzy_z_zh", false));
+    {
+        EngineInputSession quanpin(SchemeType::Quanpin);
+        InputLetters(quanpin, "zhang");
+        REQUIRE(!HasCandidateWithCanonicalPrefix(quanpin, "zang"));
+    }
+    REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
 }
 
 TEST_CASE(CloudCandidateNeverEntersCreatingWordMode)
