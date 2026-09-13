@@ -303,12 +303,22 @@ TEST_CASE(fuzzy_pinyin_rules_default_to_all_off)
         REQUIRE(ReadText(data_dir / L"config.toml").find("fuzzy_seeded = false") != std::string::npos);
 
         // 模板缺键：手写一份没有任何 fuzzy 键的配置，重读后仍为关；播种标记同样缺键，
-        // 与总开关一样按 value_or(false) 处理。
+        // 与总开关一样按 value_or(false) 处理。标记没有公开 getter，缺省值用行为兜底：
+        // 缺键即出厂态，开总开关必须播种；若有人把缺省改成 true，这次开启会静默跳过
+        // 播种，下面的位图与文件断言立刻红。
         WriteText(data_dir / L"config.toml", "[input]\nschema = \"quanpin\"\n");
         InitImeConfig();
         REQUIRE(!GetConfiguredFuzzyPinyinEnabled());
         REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0u);
         REQUIRE(ReadText(data_dir / L"config.toml").find("fuzzy_seeded") == std::string::npos);
+        REQUIRE(SetConfiguredFuzzyPinyinEnabled(true));
+        REQUIRE_EQ(GetConfiguredFuzzyPinyinOptions().rules, 0x7ffu);
+        {
+            const std::string text = ReadText(data_dir / L"config.toml");
+            REQUIRE(text.find("fuzzy_seeded = true") != std::string::npos);
+            for (const auto &fixture : kFuzzyRuleKeyFixtures)
+                REQUIRE(text.find(std::string(fixture.key) + " = true") != std::string::npos);
+        }
 
         // 全部显式 false（含播种标记共 13 键）：与默认逐位一致。
         std::string explicit_false = "[input]\nschema = \"quanpin\"\nfuzzy_pinyin = false\nfuzzy_seeded = false\n";
