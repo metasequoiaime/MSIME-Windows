@@ -148,41 +148,48 @@
   </div>
 
   <div class="section">
-    <div class="section-header">
-      <div>
-        <div class="section-title">模糊音</div>
-        <div class="input-setting-description">开启后两个读音互相匹配，如输入 zhang 也可命中 zang 开头的词；全拼与双拼均生效，默认关闭</div>
+    <div class="section-header fuzzy-toggle-header">
+      <button class="fuzzy-expand" id="fuzzyExpand" type="button" aria-expanded="false" aria-controls="fuzzyDetails">
+        <span class="section-title">模糊音</span><span class="fuzzy-chevron" aria-hidden="true"></span>
+      </button>
+      <div class="ftb-toggle-btn" id="fuzzyPinyinToggleBtn" role="switch" aria-checked="false" tabindex="0">
+        <div class="ftb-toggle-knob"></div>
       </div>
     </div>
-    <div class="section-header">
-      <div class="section-title">声母</div>
-    </div>
-    <div class="content-page-option">
-      <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyZZhCheckbox" value="fuzzy_z_zh"><span>z ⇄ zh</span></label>
-      <div class="input-option-divider"></div>
-      <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyCChCheckbox" value="fuzzy_c_ch"><span>c ⇄ ch</span></label>
-      <div class="input-option-divider"></div>
-      <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzySShCheckbox" value="fuzzy_s_sh"><span>s ⇄ sh</span></label>
-      <div class="input-option-divider"></div>
-      <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyNlCheckbox" value="fuzzy_n_l"><span>n ⇄ l</span></label>
-      <div class="input-option-divider"></div>
-      <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyFhCheckbox" value="fuzzy_f_h"><span>f ⇄ h</span></label>
-      <div class="input-option-divider"></div>
-      <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyRlCheckbox" value="fuzzy_r_l"><span>r ⇄ l</span></label>
-    </div>
-    <div class="section-header">
-      <div class="section-title">韵母</div>
-    </div>
-    <div class="content-page-option">
-      <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyAnAngCheckbox" value="fuzzy_an_ang"><span>an ⇄ ang</span></label>
-      <div class="input-option-divider"></div>
-      <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyEnEngCheckbox" value="fuzzy_en_eng"><span>en ⇄ eng</span></label>
-      <div class="input-option-divider"></div>
-      <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyInIngCheckbox" value="fuzzy_in_ing"><span>in ⇄ ing</span></label>
-      <div class="input-option-divider"></div>
-      <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyIanIangCheckbox" value="fuzzy_ian_iang"><span>ian ⇄ iang</span></label>
-      <div class="input-option-divider"></div>
-      <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyUanUangCheckbox" value="fuzzy_uan_uang"><span>uan ⇄ uang</span></label>
+    <!-- 折叠容器默认收起（仿 appearance 主题模式分区）；总开关关时规则复选置灰禁用 -->
+    <div class="fuzzy-details" id="fuzzyDetails">
+      <div class="input-setting-description">开启后两个读音互相匹配，如输入 zhang 也可命中 zang 开头的词；全拼与双拼均生效</div>
+      <div class="section-header">
+        <div class="section-title">声母</div>
+      </div>
+      <div class="content-page-option">
+        <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyZZhCheckbox" value="fuzzy_z_zh"><span>z ⇄ zh</span></label>
+        <div class="input-option-divider"></div>
+        <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyCChCheckbox" value="fuzzy_c_ch"><span>c ⇄ ch</span></label>
+        <div class="input-option-divider"></div>
+        <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzySShCheckbox" value="fuzzy_s_sh"><span>s ⇄ sh</span></label>
+        <div class="input-option-divider"></div>
+        <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyNlCheckbox" value="fuzzy_n_l"><span>n ⇄ l</span></label>
+        <div class="input-option-divider"></div>
+        <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyFhCheckbox" value="fuzzy_f_h"><span>f ⇄ h</span></label>
+        <div class="input-option-divider"></div>
+        <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyRlCheckbox" value="fuzzy_r_l"><span>r ⇄ l</span></label>
+      </div>
+      <div class="section-header">
+        <div class="section-title">韵母</div>
+      </div>
+      <div class="content-page-option">
+        <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyAnAngCheckbox" value="fuzzy_an_ang"><span>an ⇄ ang</span></label>
+        <div class="input-option-divider"></div>
+        <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyEnEngCheckbox" value="fuzzy_en_eng"><span>en ⇄ eng</span></label>
+        <div class="input-option-divider"></div>
+        <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyInIngCheckbox" value="fuzzy_in_ing"><span>in ⇄ ing</span></label>
+        <div class="input-option-divider"></div>
+        <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyIanIangCheckbox" value="fuzzy_ian_iang"><span>ian ⇄ iang</span></label>
+        <div class="input-option-divider"></div>
+        <label class="check-option"><input type="checkbox" name="fuzzy-rule" id="fuzzyUanUangCheckbox" value="fuzzy_uan_uang"><span>uan ⇄ uang</span></label>
+      </div>
+      <div class="fuzzy-disabled-hint is-hidden" id="fuzzyDisabledHint">开启总开关后生效</div>
     </div>
   </div>
 

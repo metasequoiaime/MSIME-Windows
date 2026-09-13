@@ -1,6 +1,6 @@
 import { onHostMessage } from '../utils/host-messages';
 import { serializeHostMessage } from '../../../../shared/messages';
-import { applyCandidateArrange, applyDropdownValue as applyDropdown, applyToggleState as applyToggle } from './shared';
+import { applyCandidateArrange, applyDropdownValue as applyDropdown, applyToggleState as applyToggle, setFuzzyRuleOptionsDisabled } from './shared';
 
 let lastSnapshot: Record<string, any> | null = null;
 const readyModules = new Set<string>();
@@ -125,6 +125,11 @@ function applyConfigData(data: Record<string, any>, target?: string): void {
   }
   if (typeof data?.quanpin?.autocorrect_neighbor === 'boolean') {
     applyToggleState('autocorrectNeighborToggleBtn', data.quanpin.autocorrect_neighbor);
+  }
+  // 先回填总开关再回填规则：总开关关闭时规则复选禁用并提示，但勾选状态仍按已存值展示。
+  if (typeof data?.input?.fuzzy_pinyin === 'boolean') {
+    applyToggleState('fuzzyPinyinToggleBtn', data.input.fuzzy_pinyin);
+    setFuzzyRuleOptionsDisabled(!data.input.fuzzy_pinyin);
   }
   // 模糊音 11 键逐键回填；单键缺失/类型不符不影响其余键（AC4）。
   const fuzzyRuleCheckboxes: [string, string][] = [
