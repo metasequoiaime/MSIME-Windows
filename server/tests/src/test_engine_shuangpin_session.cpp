@@ -146,8 +146,14 @@ TEST_CASE(EngineSessionAppliesFuzzyPinyinRulesForQuanpinAndShuangpin)
         REQUIRE(!HasCandidateWithCanonicalPrefix(quanpin, "zang"));
     }
 
-    // B：开总开关 —— 既有规则立即生效，全拼与双拼都出 zang 候选。
+    // B：开总开关 —— 首次启用会播种全部规则（产品语义）；本用例要的是「只有 z/zh 一条
+    // 规则」的纯净场景，播种后把其余规则关回去，此后总开关翻动不再碰规则位。
     REQUIRE(SetConfiguredFuzzyPinyinEnabled(true));
+    for (const char *key : {"fuzzy_c_ch", "fuzzy_s_sh", "fuzzy_n_l", "fuzzy_f_h", "fuzzy_r_l", "fuzzy_an_ang",
+                            "fuzzy_en_eng", "fuzzy_in_ing", "fuzzy_ian_iang", "fuzzy_uan_uang"})
+        REQUIRE(SetConfiguredFuzzyPinyinRule(key, false));
+    REQUIRE_EQ(GetConfiguredFuzzyPinyinRuleStates().rules,
+               static_cast<std::uint32_t>(metasequoia::FuzzyPinyinRule::Z_ZH));
     {
         EngineInputSession quanpin(SchemeType::Quanpin);
         InputLetters(quanpin, "zhang");

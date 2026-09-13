@@ -209,6 +209,11 @@ bool SetConfiguredQuanpinAutocorrectNeighbor(bool enabled);
 // The master switch ("fuzzy_pinyin") gates GetConfiguredFuzzyPinyinOptions only: sessions see
 // all-zero rules while it is off, but the stored rule choices stay intact so flipping it back
 // on restores them.
+// First enable seeds: SetConfiguredFuzzyPinyinEnabled(true) while the internal marker key
+// "fuzzy_seeded" is still false batch-writes all 11 rules true plus the marker in one atomic
+// file write. Later toggles only touch the master switch, so a user's pruned selection
+// survives disable/enable cycles; the marker also prevents re-seeding an intentionally empty
+// selection. The marker is never sent to the settings page.
 bool GetConfiguredFuzzyPinyinEnabled();
 bool SetConfiguredFuzzyPinyinEnabled(bool enabled);
 metasequoia::FuzzyPinyinOptions GetConfiguredFuzzyPinyinOptions();

@@ -84,6 +84,10 @@ std::uint32_t g_fuzzy_pinyin_rules = 0;
 // Master switch, off by default. It gates GetConfiguredFuzzyPinyinOptions only; the rule
 // bitmask above keeps its value so temporary disable/enable preserves the user's choices.
 bool g_fuzzy_pinyin_enabled = false;
+// First-enable seed marker: once set, toggling the master switch never rewrites the rule
+// keys. Internal key — never sent to the settings page; if the template loses it, the
+// upgrade merge drops it and every user gets re-seeded on the next master-switch flip.
+bool g_fuzzy_seeded = false;
 // Config key ↔ engine rule bit. The key mirrors the enumerator name lowercased, so the
 // only mapping to review is this table; the bit position lives in the enum itself.
 struct FuzzyPinyinRuleKey
@@ -897,6 +901,7 @@ bool LoadImeConfig()
         g_quanpin_autocorrect_transposition = tbl["quanpin"]["autocorrect_transposition"].value_or(false);
         g_quanpin_autocorrect_neighbor = tbl["quanpin"]["autocorrect_neighbor"].value_or(false);
         g_fuzzy_pinyin_enabled = tbl["input"]["fuzzy_pinyin"].value_or(false);
+        g_fuzzy_seeded = tbl["input"]["fuzzy_seeded"].value_or(false);
         g_fuzzy_pinyin_rules = 0;
         for (const auto &entry : kFuzzyPinyinRuleKeys)
         {
@@ -1226,7 +1231,7 @@ struct ConfigValueUpdate
     std::string value;
 };
 
-bool WriteConfiguredValues(std::initializer_list<ConfigValueUpdate> updates)
+bool WriteConfiguredValues(const std::vector<ConfigValueUpdate> &updates)
 {
     ConfigFileLock lock;
     if (!lock)
@@ -2202,6 +2207,27 @@ bool GetConfiguredFuzzyPinyinEnabled()
 
 bool SetConfiguredFuzzyPinyinEnabled(bool enabled)
 {
+    // 首次启用播种：出厂态第一次开总开关，11 条规则全部置 true 并持久化；之后总开关的
+    // 任何翻动只写总开关一个键，用户修剪过的选择在临时停用/恢复间原样保留。不能拿
+    // 「规则位全零」当首次信号——用户故意全部取消勾选后位图同样是零，无标记会把每次
+    // 开启都误判成首次启用，反复改写用户的空选择。
+    if (enabled && !g_fuzzy_seeded)
+    {
+        std::vector<ConfigValueUpdate> updates;
+        updates.reserve(std::size(kFuzzyPinyinRuleKeys) + 2);
+        updates.push_back({"input", "fuzzy_pinyin", "true"});
+        updates.push_back({"input", "fuzzy_seeded", "true"});
+        for (const auto &entry : kFuzzyPinyinRuleKeys)
+            updates.push_back({"input", entry.key, "true"});
+        // 一次批量写：WriteConfiguredValues 走单文件临时改名，无部分失败态。
+        if (!WriteConfiguredValues(updates))
+            return false;
+        g_fuzzy_pinyin_enabled = true;
+        g_fuzzy_seeded = true;
+        for (const auto &entry : kFuzzyPinyinRuleKeys)
+            g_fuzzy_pinyin_rules |= static_cast<std::uint32_t>(entry.rule);
+        return true;
+    }
     if (!WriteConfiguredValue("input", "fuzzy_pinyin", enabled ? "true" : "false"))
         return false;
     g_fuzzy_pinyin_enabled = enabled;
