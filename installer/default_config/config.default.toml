@@ -183,7 +183,9 @@ shuangpin_schema = "xiaohe"
 wubi_schema = "wubi86"
 # 日语方案，当前支持："romaji"
 japanese_schema = "romaji"
-# 模糊音，全拼与双拼均生效；全部默认关闭，升级用户零行为变化
+# 模糊音，全拼与双拼均生效；默认全部关闭，升级用户零行为变化
+# 总开关：关闭时所有规则不生效，已选规则保留，便于临时停用后恢复
+fuzzy_pinyin = false
 # 声母：开启后两个音互相当作同一个读音匹配
 fuzzy_z_zh = false
 fuzzy_c_ch = false
