@@ -79,6 +79,35 @@ bool g_show_quanpin_helpcode_in_candidate_window = true;
 // both correction types default to off and users opt in from the settings page.
 bool g_quanpin_autocorrect_transposition = false;
 bool g_quanpin_autocorrect_neighbor = false;
+// Bitmask of FuzzyPinyinRule bits. All off by default so upgrades never change behavior.
+std::uint32_t g_fuzzy_pinyin_rules = 0;
+// Master switch, off by default. It gates GetConfiguredFuzzyPinyinOptions only; the rule
+// bitmask above keeps its value so temporary disable/enable preserves the user's choices.
+bool g_fuzzy_pinyin_enabled = false;
+// First-enable seed marker: once set, toggling the master switch never rewrites the rule
+// keys. Internal key — never sent to the settings page; if the template loses it, the
+// upgrade merge drops it and every user gets re-seeded on the next master-switch flip.
+bool g_fuzzy_seeded = false;
+// Config key ↔ engine rule bit. The key mirrors the enumerator name lowercased, so the
+// only mapping to review is this table; the bit position lives in the enum itself.
+struct FuzzyPinyinRuleKey
+{
+    const char *key;
+    metasequoia::FuzzyPinyinRule rule;
+};
+constexpr FuzzyPinyinRuleKey kFuzzyPinyinRuleKeys[] = {
+    {"fuzzy_z_zh", metasequoia::FuzzyPinyinRule::Z_ZH},
+    {"fuzzy_c_ch", metasequoia::FuzzyPinyinRule::C_CH},
+    {"fuzzy_s_sh", metasequoia::FuzzyPinyinRule::S_SH},
+    {"fuzzy_n_l", metasequoia::FuzzyPinyinRule::N_L},
+    {"fuzzy_f_h", metasequoia::FuzzyPinyinRule::F_H},
+    {"fuzzy_r_l", metasequoia::FuzzyPinyinRule::R_L},
+    {"fuzzy_an_ang", metasequoia::FuzzyPinyinRule::AN_ANG},
+    {"fuzzy_en_eng", metasequoia::FuzzyPinyinRule::EN_ENG},
+    {"fuzzy_in_ing", metasequoia::FuzzyPinyinRule::IN_ING},
+    {"fuzzy_ian_iang", metasequoia::FuzzyPinyinRule::IAN_IANG},
+    {"fuzzy_uan_uang", metasequoia::FuzzyPinyinRule::UAN_UANG},
+};
 bool g_floating_toolbar_enabled = true;
 FloatingToolbarItemsConfig g_floating_toolbar_items;
 double g_floating_toolbar_scale = 1.0;
@@ -871,6 +900,14 @@ bool LoadImeConfig()
             tbl["helpcode"]["show_qp_helpcode_in_candidate_window"].value_or(true);
         g_quanpin_autocorrect_transposition = tbl["quanpin"]["autocorrect_transposition"].value_or(false);
         g_quanpin_autocorrect_neighbor = tbl["quanpin"]["autocorrect_neighbor"].value_or(false);
+        g_fuzzy_pinyin_enabled = tbl["input"]["fuzzy_pinyin"].value_or(false);
+        g_fuzzy_seeded = tbl["input"]["fuzzy_seeded"].value_or(false);
+        g_fuzzy_pinyin_rules = 0;
+        for (const auto &entry : kFuzzyPinyinRuleKeys)
+        {
+            if (tbl["input"][entry.key].value_or(false))
+                g_fuzzy_pinyin_rules |= static_cast<std::uint32_t>(entry.rule);
+        }
         g_floating_toolbar_enabled = tbl["general"]["floating_toolbar"].value_or(true);
         // Read the old candidate-only key as a migration fallback. New writes
         // use the unified key.
@@ -1194,7 +1231,7 @@ struct ConfigValueUpdate
     std::string value;
 };
 
-bool WriteConfiguredValues(std::initializer_list<ConfigValueUpdate> updates)
+bool WriteConfiguredValues(const std::vector<ConfigValueUpdate> &updates)
 {
     ConfigFileLock lock;
     if (!lock)
@@ -2160,6 +2197,80 @@ bool SetConfiguredQuanpinAutocorrectNeighbor(bool enabled)
         return false;
     }
     g_quanpin_autocorrect_neighbor = enabled;
+    return true;
+}
+
+bool GetConfiguredFuzzyPinyinEnabled()
+{
+    return g_fuzzy_pinyin_enabled;
+}
+
+bool SetConfiguredFuzzyPinyinEnabled(bool enabled)
+{
+    // 首次启用播种：出厂态第一次开总开关，11 条规则全部置 true 并持久化；之后总开关的
+    // 任何翻动只写总开关一个键，用户修剪过的选择在临时停用/恢复间原样保留。不能拿
+    // 「规则位全零」当首次信号——用户故意全部取消勾选后位图同样是零，无标记会把每次
+    // 开启都误判成首次启用，反复改写用户的空选择。
+    if (enabled && !g_fuzzy_seeded)
+    {
+        std::vector<ConfigValueUpdate> updates;
+        updates.reserve(std::size(kFuzzyPinyinRuleKeys) + 2);
+        updates.push_back({"input", "fuzzy_pinyin", "true"});
+        updates.push_back({"input", "fuzzy_seeded", "true"});
+        for (const auto &entry : kFuzzyPinyinRuleKeys)
+            updates.push_back({"input", entry.key, "true"});
+        // 一次批量写：WriteConfiguredValues 走单文件临时改名，无部分失败态。
+        if (!WriteConfiguredValues(updates))
+            return false;
+        g_fuzzy_pinyin_enabled = true;
+        g_fuzzy_seeded = true;
+        for (const auto &entry : kFuzzyPinyinRuleKeys)
+            g_fuzzy_pinyin_rules |= static_cast<std::uint32_t>(entry.rule);
+        return true;
+    }
+    if (!WriteConfiguredValue("input", "fuzzy_pinyin", enabled ? "true" : "false"))
+        return false;
+    g_fuzzy_pinyin_enabled = enabled;
+    return true;
+}
+
+// The master switch is gated here and nowhere else: sessions see all-zero rules while it is
+// off, and the cached rule bits survive the toggle so re-enabling restores the prior choice.
+metasequoia::FuzzyPinyinOptions GetConfiguredFuzzyPinyinOptions()
+{
+    metasequoia::FuzzyPinyinOptions options;
+    if (g_fuzzy_pinyin_enabled)
+        options.rules = g_fuzzy_pinyin_rules;
+    return options;
+}
+
+metasequoia::FuzzyPinyinOptions GetConfiguredFuzzyPinyinRuleStates()
+{
+    metasequoia::FuzzyPinyinOptions options;
+    options.rules = g_fuzzy_pinyin_rules;
+    return options;
+}
+
+bool SetConfiguredFuzzyPinyinRule(const std::string &key, bool enabled)
+{
+    const FuzzyPinyinRuleKey *entry = nullptr;
+    for (const auto &candidate : kFuzzyPinyinRuleKeys)
+    {
+        if (key == candidate.key)
+        {
+            entry = &candidate;
+            break;
+        }
+    }
+    if (!entry)
+        return false;
+    const auto bit = static_cast<std::uint32_t>(entry->rule);
+    if (!WriteConfiguredValue("input", entry->key, enabled ? "true" : "false"))
+        return false;
+    if (enabled)
+        g_fuzzy_pinyin_rules |= bit;
+    else
+        g_fuzzy_pinyin_rules &= ~bit;
     return true;
 }
 

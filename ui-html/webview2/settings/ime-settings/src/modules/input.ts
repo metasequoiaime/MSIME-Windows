@@ -1,5 +1,5 @@
 import { serializeHostMessage } from '../../../../shared/messages';
-import { applyDropdownValue, applyToggleState, setupDropdownMenu, setupToggleButton } from './shared';
+import { applyDropdownValue, applyToggleState, setFuzzyRuleOptionsDisabled, setupDropdownMenu, setupToggleButton } from './shared';
 import { updateConfig } from './config-sync';
 import { updateCandidatePreviewHelpcode } from './appearance';
 
@@ -220,6 +220,7 @@ export function setupInput(): void {
   setupToggleButton('autocorrectNeighborToggleBtn', (active) => {
     updateConfig('quanpin.autocorrect_neighbor', active);
   });
+  setupFuzzySection();
   setupToggleButton('smartPunctuationRepeatToChineseToggleBtn', (active) => {
     updateConfig('input.smart_punctuation_repeat_to_chinese', active);
   });
@@ -306,6 +307,32 @@ function setupPageOptions(): void {
       };
       const path = configPaths[checkbox.value];
       if (path) updateConfig(path, checkbox.checked);
+    });
+  });
+}
+
+// 模糊音分区：折叠头 + 总开关 + 11 规则复选。折叠交互仿 appearance.ts 的主题模式：
+// aria-expanded 驱动 chevron 与容器显隐，默认收起且不跨会话持久化。
+function setupFuzzySection(): void {
+  setupToggleButton('fuzzyPinyinToggleBtn', (active) => {
+    updateConfig('input.fuzzy_pinyin', active);
+    setFuzzyRuleOptionsDisabled(!active);
+  });
+  const fuzzyExpand = document.getElementById('fuzzyExpand');
+  const fuzzyDetails = document.getElementById('fuzzyDetails');
+  fuzzyExpand?.addEventListener('click', () => {
+    const expanded = fuzzyExpand.getAttribute('aria-expanded') !== 'true';
+    fuzzyExpand.setAttribute('aria-expanded', String(expanded));
+    fuzzyDetails?.classList.toggle('open', expanded);
+  });
+  setupFuzzyRuleOptions();
+}
+
+// 模糊音 11 键同名同前缀：checkbox value 直接是 [input] 段的配置键。
+function setupFuzzyRuleOptions(): void {
+  document.querySelectorAll<HTMLInputElement>('input[name="fuzzy-rule"]').forEach((checkbox) => {
+    checkbox.addEventListener('change', () => {
+      if (checkbox.value.startsWith('fuzzy_')) updateConfig(`input.${checkbox.value}`, checkbox.checked);
     });
   });
 }

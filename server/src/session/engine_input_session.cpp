@@ -34,6 +34,10 @@ void EngineInputSession::ApplyConfiguration()
         (GetConfiguredQuanpinAutocorrectTransposition() ? quanpin::kAutocorrectTransposition : 0u) |
         (GetConfiguredQuanpinAutocorrectNeighbor() ? quanpin::kAutocorrectNeighbor : 0u);
     session_.set_quanpin_autocorrect_types(autocorrect_types);
+    // Fuzzy pinyin applies to both quanpin and shuangpin; the engine fuzzes on the
+    // converted quanpin syllables for shuangpin. Re-read on every key so setting
+    // changes take effect immediately.
+    session_.set_fuzzy_pinyin_options(GetConfiguredFuzzyPinyinOptions());
     session_.set_shuangpin_preedit_uses_raw(GetConfiguredShuangpinPreeditMode() == "shuangpin");
 }
 
