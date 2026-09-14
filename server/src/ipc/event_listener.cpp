@@ -1282,6 +1282,7 @@ void WakeNamedPipeListenersForShutdown()
     WakePipeListener(FANY_IME_TO_TSF_WORKER_THREAD_NAMED_PIPE);
     WakePipeListener(FANY_IME_AUX_NAMED_PIPE);
     WakePipeListener(FANY_IME_TSF_DIAGNOSTIC_NAMED_PIPE);
+    WakePipeListener(FANY_IME_VOICE_CONTROL_NAMED_PIPE);
 }
 
 // The pipe server accepts clients before the candidate window exists, so an

@@ -430,6 +430,11 @@ HANDLE CreateTsfDiagnosticNamedPipeInstance()
                                    static_cast<DWORD>(FANY_IME_TSF_DIAGNOSTIC_MAX_FRAME_BYTES));
 }
 
+HANDLE CreateVoiceControlNamedPipeInstance()
+{
+    return CreateNamedPipeInstance(FANY_IME_VOICE_CONTROL_NAMED_PIPE, 512, 512);
+}
+
 HANDLE CreateToTsfNamedPipeInstance()
 {
     return CreateNamedPipeInstance(
@@ -464,6 +469,7 @@ int InitNamedPipe()
     // Short-lived, batch-only TSF diagnostic transport. It is independent of
     // Aux so logging can never delay lifecycle or settings notifications.
     hTsfDiagnosticPipe = CreateTsfDiagnosticNamedPipeInstance();
+    hVoiceControlPipe = CreateVoiceControlNamedPipeInstance();
 
     // Namedpipe for passing data from this process to TSF process
     hToTsfPipe = CreateToTsfNamedPipeInstance();
@@ -621,6 +627,11 @@ int CloseNamedPipe()
     {
         CloseHandle(hPipe);
         hPipe = INVALID_HANDLE_VALUE;
+    }
+    if (hVoiceControlPipe != INVALID_HANDLE_VALUE)
+    {
+        CloseHandle(hVoiceControlPipe);
+        hVoiceControlPipe = INVALID_HANDLE_VALUE;
     }
     return 0;
 }
