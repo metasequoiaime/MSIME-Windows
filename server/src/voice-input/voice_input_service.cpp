@@ -1239,6 +1239,21 @@ void VoiceInput::ToggleRecording()
     EnqueueControlCommand(ControlCommand::Toggle);
 }
 
+void VoiceInput::StartRecording()
+{
+    EnqueueControlCommand(ControlCommand::Start);
+}
+
+void VoiceInput::StopRecording()
+{
+    EnqueueControlCommand(ControlCommand::Stop);
+}
+
+void VoiceInput::CancelRecording()
+{
+    EnqueueControlCommand(ControlCommand::Cancel);
+}
+
 bool VoiceInput::IsRecording()
 {
     return g_recording;
