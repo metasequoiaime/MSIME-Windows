@@ -466,66 +466,17 @@ void CMetasequoiaIME::_RunPairedPunctuationCaretMove()
 void CMetasequoiaIME::_ResetSmartPunctuationHistory()
 {
     _smartPunctuationKey = 0;
-    _smartPunctuationPrecedingChar = 0;
-    _smartPunctuationCommittedAscii = false;
-    _smartPunctuationAsciiRejected = false;
     _smartPunctuationCommitTick = 0;
     _smartPunctuationFocusToken = 0;
     _smartPunctuationForegroundWindow = nullptr;
-}
-
-bool CMetasequoiaIME::_QueueRepeatedSmartPunctuationReplacement(WCHAR wch)
-{
-    // Backspace rejection means the ASCII form is already gone. Treating the
-    // next press as "replace the still-visible ASCII punct" would SendInput a
-    // Backspace into the preceding character instead.
-    if (!_smartPunctuationCommittedAscii || _smartPunctuationAsciiRejected || _smartPunctuationKey != wch ||
-        _smartPunctuationCommitTick == 0 || _msgWndHandle == nullptr || _pCompositionProcessorEngine == nullptr ||
-        _IsComposing() || _candidateMode != CANDIDATE_NONE ||
-        !Global::SmartPunctuationEnabled.load(std::memory_order_relaxed) ||
-        !Global::SmartPunctuationRepeatToChineseEnabled.load(std::memory_order_relaxed))
-    {
-        return false;
-    }
-
-    const ULONGLONG now = GetTickCount64();
-    if (now - _smartPunctuationCommitTick > SMART_PUNCTUATION_REPEAT_INTERVAL_MS ||
-        !_IsFocusSessionCurrent(_smartPunctuationFocusToken) ||
-        GetForegroundWindow() != _smartPunctuationForegroundWindow)
-    {
-        return false;
-    }
-
-    const WCHAR *chinese = _pCompositionProcessorEngine->GetPunctuation(wch);
-    if (chinese == nullptr || chinese[0] == L'\0' || chinese[1] != L'\0')
-    {
-        return false;
-    }
-
-    _pendingSmartPunctuationReplacement = chinese[0];
-    _pendingSmartPunctuationFocusToken = _smartPunctuationFocusToken;
-    _pendingSmartPunctuationForegroundWindow = _smartPunctuationForegroundWindow;
-    _pendingSmartPunctuationDeadline = _smartPunctuationCommitTick + SMART_PUNCTUATION_REPEAT_INTERVAL_MS;
-
-    const uint64_t focusToken = _pendingSmartPunctuationFocusToken;
-    if (!PostMessage(_msgWndHandle, WM_ReplaceRepeatedSmartPunctuation, static_cast<WPARAM>(focusToken & 0xFFFFFFFFULL),
-                     static_cast<LPARAM>((focusToken >> 32) & 0xFFFFFFFFULL)))
-    {
-        _pendingSmartPunctuationReplacement = 0;
-        _pendingSmartPunctuationFocusToken = 0;
-        _pendingSmartPunctuationForegroundWindow = nullptr;
-        _pendingSmartPunctuationDeadline = 0;
-        return false;
-    }
-
-    _ResetSmartPunctuationHistory();
-    return true;
 }
 
 void CMetasequoiaIME::_InvalidateSmartPunctuationShadow()
 {
     _smartPunctuationShadowChar = 0;
     _smartPunctuationShadowValid = false;
+    _smartPunctuationShadowTick = 0;
+    _smartPunctuationShadowFocusToken = 0;
 }
 
 void CMetasequoiaIME::_UpdateSmartPunctuationShadow(UINT code, WCHAR wch, bool isEaten)
@@ -564,10 +515,14 @@ void CMetasequoiaIME::_UpdateSmartPunctuationShadow(UINT code, WCHAR wch, bool i
         break;
     }
 
-    if (CCompositionProcessorEngine::IsSmartAsciiPunctuationKey(wch))
+    const bool smartPunctuationEnabled = Global::SmartPunctuationEnabled.load(std::memory_order_relaxed) &&
+                                         !Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed);
+    if (CCompositionProcessorEngine::IsSmartAsciiPunctuationKey(wch) || (smartPunctuationEnabled && wch == L'>'))
     {
-        // _ResolveSmartPunctuation needs the current shadow to decide the form,
-        // and records whatever it commits once that decision is made.
+        // _ResolveSmartPunctuation needs the current shadow to decide the form
+        // (digit rewrite, or the '->' arrow), and records whatever it commits
+        // once that decision is made. Deferring the clear to the edit session
+        // is what keeps a shallow text store from answering with 0.
         return;
     }
 
@@ -581,19 +536,30 @@ void CMetasequoiaIME::_UpdateSmartPunctuationShadow(UINT code, WCHAR wch, bool i
 
     _smartPunctuationShadowChar = wch;
     _smartPunctuationShadowValid = true;
+    _smartPunctuationShadowTick = GetTickCount64();
+    _smartPunctuationShadowFocusToken = _CaptureFocusSessionToken();
 }
 
 void CMetasequoiaIME::_NoteKeyForSmartPunctuation(UINT code, WCHAR wch, bool isEaten)
 {
-    // The replacement message normally runs before another input event. If it
-    // does not, never let a later key leave the queued Backspace targeting an
+    // The fixup message normally runs before another input event. If it does
+    // not, never let a later key leave the queued Backspace targeting an
     // unrelated character.
-    if (_pendingSmartPunctuationReplacement != 0)
+    if (!_pendingSmartPunctuationReplacementText.empty())
     {
-        _pendingSmartPunctuationReplacement = 0;
+        _pendingSmartPunctuationReplacementText.clear();
+        _pendingSmartPunctuationAppendChar = 0;
         _pendingSmartPunctuationFocusToken = 0;
         _pendingSmartPunctuationForegroundWindow = nullptr;
         _pendingSmartPunctuationDeadline = 0;
+    }
+
+    // OnTestKeyDown runs before OnKeyDown and notes the key in between. A key
+    // the fixup predicate already claimed must survive that note, or the
+    // OnKeyDown execution would no longer see the state it is about to read.
+    if (_IsSmartPunctuationFixupKey(wch))
+    {
+        return;
     }
 
     _UpdateSmartPunctuationShadow(code, wch, isEaten);
@@ -621,27 +587,6 @@ void CMetasequoiaIME::_NoteKeyForSmartPunctuation(UINT code, WCHAR wch, bool isE
     case VK_CAPITAL:
         // ':' needs Shift; modifier presses are not edits.
         return;
-    case VK_BACK:
-        // Only deleting the ASCII form says that form was unwanted. Deleting
-        // the Chinese punctuation that replaced it must not undo the rejection.
-        if (_smartPunctuationCommittedAscii)
-        {
-            _smartPunctuationAsciiRejected = true;
-            // ASCII punct is gone; disarm repeat-to-Chinese replacement so a
-            // quick retype takes the reject path instead of SendInput(VK_BACK).
-            _smartPunctuationCommitTick = 0;
-            _smartPunctuationFocusToken = 0;
-            _smartPunctuationForegroundWindow = nullptr;
-            // UpdateShadow already cleared the punctuation shadow. Restore the
-            // preceding character recorded at commit so a retype can still match
-            // the reject spot when the host text store cannot re-read it.
-            if (_smartPunctuationPrecedingChar != 0)
-            {
-                _smartPunctuationShadowChar = _smartPunctuationPrecedingChar;
-                _smartPunctuationShadowValid = true;
-            }
-        }
-        return;
     case VK_DECIMAL:
         // Numpad '.' bypasses smart punctuation entirely.
         _ResetSmartPunctuationHistory();
@@ -663,49 +608,40 @@ std::wstring CMetasequoiaIME::_ResolveSmartPunctuation(WCHAR wch, WCHAR precedin
         return {};
     }
 
-    const bool smartEnabled = Global::SmartPunctuationEnabled.load(std::memory_order_relaxed);
+    const bool smartEnabled = Global::SmartPunctuationEnabled.load(std::memory_order_relaxed) &&
+                              !Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed);
     std::wstring resolved = _pCompositionProcessorEngine->ResolvePunctuation(wch, precedingChar);
+
+    // Track the character that actually reaches the document. '~=' / '/=' and
+    // the '->' arrow read this on the very next key, so every commit path must
+    // record it — including '~' and '>', which take the early return below.
+    if (!resolved.empty())
+    {
+        _smartPunctuationShadowChar = resolved.back();
+        _smartPunctuationShadowValid = true;
+        _smartPunctuationShadowTick = GetTickCount64();
+        _smartPunctuationShadowFocusToken = _CaptureFocusSessionToken();
+    }
+
     if (!CCompositionProcessorEngine::IsSmartAsciiPunctuationKey(wch) || !smartEnabled)
     {
         _ResetSmartPunctuationHistory();
         return resolved;
     }
 
-    bool committedAscii = resolved.size() == 1 && resolved[0] == wch;
-    // The rejection is sticky for as long as this spot survives, so repeated
-    // delete/retype cycles keep producing Chinese punctuation.
-    const bool asciiRejected = _smartPunctuationAsciiRejected && _smartPunctuationKey == wch &&
-                               _smartPunctuationPrecedingChar == precedingChar;
-    if (asciiRejected && committedAscii)
+    // The mark is committed as Chinese punctuation first. Arm the digit rewrite
+    // only when a digit precedes it, so the following digit can correct it.
+    const bool precededByDigit = precedingChar >= L'0' && precedingChar <= L'9';
+    if (precededByDigit)
     {
-        const WCHAR *chinese = _pCompositionProcessorEngine->GetPunctuation(wch);
-        if (chinese != nullptr && *chinese != L'\0')
-        {
-            resolved.assign(chinese);
-            committedAscii = false;
-        }
-    }
-
-    _smartPunctuationKey = wch;
-    _smartPunctuationPrecedingChar = precedingChar;
-    _smartPunctuationCommittedAscii = committedAscii;
-    _smartPunctuationAsciiRejected = asciiRejected;
-    if (committedAscii)
-    {
+        _smartPunctuationKey = wch;
         _smartPunctuationCommitTick = GetTickCount64();
         _smartPunctuationFocusToken = _CaptureFocusSessionToken();
         _smartPunctuationForegroundWindow = GetForegroundWindow();
     }
     else
     {
-        _smartPunctuationCommitTick = 0;
-        _smartPunctuationFocusToken = 0;
-        _smartPunctuationForegroundWindow = nullptr;
-    }
-    if (!resolved.empty())
-    {
-        _smartPunctuationShadowChar = resolved.back();
-        _smartPunctuationShadowValid = true;
+        _ResetSmartPunctuationHistory();
     }
     return resolved;
 }

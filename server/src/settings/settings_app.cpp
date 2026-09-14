@@ -329,7 +329,6 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
             {"word_to_character", GetConfiguredWordToCharacterEnabled()},
             {"word_to_character_keys", GetConfiguredWordToCharacterKeys()},
             {"smart_punctuation", GetConfiguredSmartPunctuationEnabled()},
-            {"smart_punctuation_repeat_to_chinese", GetConfiguredSmartPunctuationRepeatToChineseEnabled()},
             {"paired_punctuation", GetConfiguredPairedPunctuationEnabled()},
             {"punctuation_lock", GetConfiguredPunctuationLock()},
             {"fuzzy_pinyin", GetConfiguredFuzzyPinyinEnabled()},
@@ -576,8 +575,6 @@ bool ApplyConfigUpdate(const json::object &data)
         return SetConfiguredWordToCharacterKeys(json::value_to<std::string>(data.at("value")));
     if (path == "input.smart_punctuation")
         return SetConfiguredSmartPunctuationEnabled(json::value_to<bool>(data.at("value")));
-    if (path == "input.smart_punctuation_repeat_to_chinese")
-        return SetConfiguredSmartPunctuationRepeatToChineseEnabled(json::value_to<bool>(data.at("value")));
     if (path == "input.paired_punctuation")
         return SetConfiguredPairedPunctuationEnabled(json::value_to<bool>(data.at("value")));
     if (path == "input.punctuation_lock")

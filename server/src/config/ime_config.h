@@ -314,8 +314,6 @@ std::string GetConfiguredWordToCharacterKeys();
 bool SetConfiguredWordToCharacterKeys(const std::string &keys);
 bool GetConfiguredSmartPunctuationEnabled();
 bool SetConfiguredSmartPunctuationEnabled(bool enabled);
-bool GetConfiguredSmartPunctuationRepeatToChineseEnabled();
-bool SetConfiguredSmartPunctuationRepeatToChineseEnabled(bool enabled);
 bool GetConfiguredPairedPunctuationEnabled();
 bool SetConfiguredPairedPunctuationEnabled(bool enabled);
 // "follow" | "chinese" | "english" — punctuation stays put when switching CN/EN.

@@ -1908,10 +1908,6 @@ void CMetasequoiaIME::IpcWorkerThread(CMetasequoiaIME *pIME)
         {
             Global::SmartPunctuationEnabled.store(buf.data[0] == L'1', std::memory_order_relaxed);
         }
-        else if (buf.msg_type == Global::DataToTsfWorkerThreadMsgType::SmartPunctuationRepeatToChineseChanged)
-        {
-            Global::SmartPunctuationRepeatToChineseEnabled.store(buf.data[0] == L'1', std::memory_order_relaxed);
-        }
         else if (buf.msg_type == Global::DataToTsfWorkerThreadMsgType::PairedPunctuationChanged)
         {
             Global::PairedPunctuationEnabled.store(buf.data[0] == L'1', std::memory_order_relaxed);
@@ -2729,18 +2725,20 @@ LRESULT CALLBACK CMetasequoiaIME_WindowProc(HWND hWnd, UINT message, WPARAM wPar
         pIME->_RunPairedPunctuationCaretMove();
         break;
     }
-    case WM_ReplaceRepeatedSmartPunctuation: {
+    case WM_ReplaceSmartPunctuation: {
         const uint64_t focusToken = static_cast<uint64_t>(static_cast<uint32_t>(wParam)) |
                                     (static_cast<uint64_t>(static_cast<uint32_t>(lParam)) << 32);
-        const WCHAR replacement = pIME->_pendingSmartPunctuationReplacement;
-        const bool requestCurrent = replacement != 0 && focusToken != 0 &&
+        const std::wstring replacement = pIME->_pendingSmartPunctuationReplacementText;
+        const WCHAR appendChar = pIME->_pendingSmartPunctuationAppendChar;
+        const bool requestCurrent = !replacement.empty() && focusToken != 0 &&
                                     focusToken == pIME->_pendingSmartPunctuationFocusToken &&
-                                    Global::SmartPunctuationRepeatToChineseEnabled.load(std::memory_order_relaxed) &&
+                                    Global::SmartPunctuationEnabled.load(std::memory_order_relaxed) &&
                                     pIME->_IsFocusSessionCurrent(focusToken) &&
                                     GetForegroundWindow() == pIME->_pendingSmartPunctuationForegroundWindow &&
                                     GetTickCount64() <= pIME->_pendingSmartPunctuationDeadline;
 
-        pIME->_pendingSmartPunctuationReplacement = 0;
+        pIME->_pendingSmartPunctuationReplacementText.clear();
+        pIME->_pendingSmartPunctuationAppendChar = 0;
         pIME->_pendingSmartPunctuationFocusToken = 0;
         pIME->_pendingSmartPunctuationForegroundWindow = nullptr;
         pIME->_pendingSmartPunctuationDeadline = 0;
@@ -2749,28 +2747,58 @@ LRESULT CALLBACK CMetasequoiaIME_WindowProc(HWND hWnd, UINT message, WPARAM wPar
             break;
         }
 
-        INPUT inputs[4] = {};
-        inputs[0].type = INPUT_KEYBOARD;
-        inputs[0].ki.wVk = VK_BACK;
-        inputs[0].ki.dwExtraInfo = SMART_PUNCTUATION_SENDINPUT_EXTRA_INFO;
-        inputs[1] = inputs[0];
-        inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
+        const auto appendKey = [](std::vector<INPUT> &inputs, WORD vk, WCHAR scan, DWORD flags) {
+            INPUT input = {};
+            input.type = INPUT_KEYBOARD;
+            input.ki.wVk = vk;
+            input.ki.wScan = scan;
+            input.ki.dwFlags = flags;
+            input.ki.dwExtraInfo = SMART_PUNCTUATION_SENDINPUT_EXTRA_INFO;
+            inputs.push_back(input);
+        };
 
-        inputs[2].type = INPUT_KEYBOARD;
-        inputs[2].ki.wScan = replacement;
-        inputs[2].ki.dwFlags = KEYEVENTF_UNICODE;
-        inputs[2].ki.dwExtraInfo = SMART_PUNCTUATION_SENDINPUT_EXTRA_INFO;
-        inputs[3] = inputs[2];
-        inputs[3].ki.dwFlags |= KEYEVENTF_KEYUP;
-
-        if (SendInput(ARRAYSIZE(inputs), inputs, sizeof(INPUT)) == ARRAYSIZE(inputs))
+        // Delete the committed Chinese mark (or '~' / '/'), then type the ASCII
+        // form and, for the digit rewrite, the digit that confirmed the spot.
+        std::vector<INPUT> inputs;
+        appendKey(inputs, VK_BACK, 0, 0);
+        appendKey(inputs, VK_BACK, 0, KEYEVENTF_KEYUP);
+        for (const wchar_t ch : replacement)
         {
-            pIME->_smartPunctuationShadowChar = replacement;
+            appendKey(inputs, 0, ch, KEYEVENTF_UNICODE);
+            appendKey(inputs, 0, ch, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP);
+        }
+        if (appendChar != 0)
+        {
+            appendKey(inputs, 0, appendChar, KEYEVENTF_UNICODE);
+            appendKey(inputs, 0, appendChar, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP);
+        }
+
+        const UINT sent = SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT));
+        if (sent == static_cast<UINT>(inputs.size()))
+        {
+            pIME->_smartPunctuationShadowChar = appendChar != 0 ? appendChar : replacement.back();
             pIME->_smartPunctuationShadowValid = true;
+            pIME->_smartPunctuationShadowTick = GetTickCount64();
+            pIME->_smartPunctuationShadowFocusToken = focusToken;
         }
         else
         {
             pIME->_InvalidateSmartPunctuationShadow();
+            if (appendChar != 0)
+            {
+                // UIPI can drop the whole batch; at least keep the digit the
+                // user typed instead of swallowing it.
+                INPUT fallback[2] = {};
+                fallback[0].type = INPUT_KEYBOARD;
+                fallback[0].ki.wScan = appendChar;
+                fallback[0].ki.dwFlags = KEYEVENTF_UNICODE;
+                fallback[0].ki.dwExtraInfo = SMART_PUNCTUATION_SENDINPUT_EXTRA_INFO;
+                fallback[1] = fallback[0];
+                fallback[1].ki.dwFlags |= KEYEVENTF_KEYUP;
+                SendInput(ARRAYSIZE(fallback), fallback, sizeof(INPUT));
+            }
+            DebugTsfIssue47(L"smart-punctuation-fixup-sendinput-failed", FANY_IME_NO_REQUEST_ID, 0, appendChar, 0, 0, 1,
+                            pIME->_IsComposing(), 0, E_FAIL);
         }
         break;
     }

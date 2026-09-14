@@ -640,6 +640,113 @@ __inline UINT VKeyFromVKPacketAndWchar(UINT vk, WCHAR wch)
 
 //+---------------------------------------------------------------------------
 //
+// Smart-punctuation fixup
+//
+// A digit right after a Chinese mark committed behind a digit, or '=' right
+// after a '~' / '/' shadow, is owned locally: the mark is rewritten as ASCII.
+//
+//----------------------------------------------------------------------------
+
+bool CMetasequoiaIME::_IsSmartPunctuationFixupKey(WCHAR wch)
+{
+    // Cheap gate first: every keydown reaches the caller, while only a digit or
+    // '=' can ever be a fixup.
+    if (!((wch >= L'0' && wch <= L'9') || wch == L'='))
+    {
+        return false;
+    }
+    if (!Global::SmartPunctuationEnabled.load(std::memory_order_relaxed) ||
+        Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed) || _pCompositionProcessorEngine == nullptr ||
+        _pThreadMgr == nullptr || _msgWndHandle == nullptr ||
+        !_pCompositionProcessorEngine->GetPunctuationMode(_pThreadMgr, _tfClientId) ||
+        _pCompositionProcessorEngine->GetDoubleSingleByteMode(_pThreadMgr, _tfClientId) || _IsComposing() ||
+        _candidateMode != CANDIDATE_NONE || _pCompositionProcessorEngine->IsUnicodeModeComposition())
+    {
+        return false;
+    }
+    // Ctrl/Alt/Win combinations and Shift variants ('+') belong to the app.
+    if ((CaptureIpcModifiers() & 0b00000110u) != 0 || (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 ||
+        (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0)
+    {
+        return false;
+    }
+
+    const ULONGLONG now = GetTickCount64();
+    if (wch >= L'0' && wch <= L'9')
+    {
+        return _smartPunctuationKey != 0 && _smartPunctuationCommitTick != 0 &&
+               now - _smartPunctuationCommitTick <= SMART_PUNCTUATION_FIXUP_INTERVAL_MS &&
+               _IsFocusSessionCurrent(_smartPunctuationFocusToken) &&
+               GetForegroundWindow() == _smartPunctuationForegroundWindow;
+    }
+    if (wch == L'=')
+    {
+        return _smartPunctuationShadowValid &&
+               (_smartPunctuationShadowChar == L'~' || _smartPunctuationShadowChar == L'/') &&
+               _smartPunctuationShadowTick != 0 &&
+               now - _smartPunctuationShadowTick <= SMART_PUNCTUATION_FIXUP_INTERVAL_MS &&
+               _IsFocusSessionCurrent(_smartPunctuationShadowFocusToken);
+    }
+    return false;
+}
+
+bool CMetasequoiaIME::_TryConsumeSmartPunctuationFixup(WCHAR wch)
+{
+    if (!_IsSmartPunctuationFixupKey(wch))
+    {
+        return false;
+    }
+
+    std::wstring replacementText;
+    WCHAR appendChar = 0;
+    uint64_t focusToken = 0;
+    HWND foregroundWindow = nullptr;
+    ULONGLONG deadline = 0;
+    if (wch >= L'0' && wch <= L'9')
+    {
+        // The Chinese mark we committed maps back to the same ASCII character.
+        replacementText.assign(1, _smartPunctuationKey);
+        appendChar = wch;
+        focusToken = _smartPunctuationFocusToken;
+        foregroundWindow = _smartPunctuationForegroundWindow;
+        deadline = _smartPunctuationCommitTick + SMART_PUNCTUATION_FIXUP_INTERVAL_MS;
+    }
+    else
+    {
+        replacementText = _smartPunctuationShadowChar == L'~' ? L"≈" : L"≠";
+        focusToken = _smartPunctuationShadowFocusToken;
+        foregroundWindow = GetForegroundWindow();
+        deadline = _smartPunctuationShadowTick + SMART_PUNCTUATION_FIXUP_INTERVAL_MS;
+    }
+
+    _pendingSmartPunctuationReplacementText = replacementText;
+    _pendingSmartPunctuationAppendChar = appendChar;
+    _pendingSmartPunctuationFocusToken = focusToken;
+    _pendingSmartPunctuationForegroundWindow = foregroundWindow;
+    _pendingSmartPunctuationDeadline = deadline;
+
+    if (!PostMessage(_msgWndHandle, WM_ReplaceSmartPunctuation, static_cast<WPARAM>(focusToken & 0xFFFFFFFFULL),
+                     static_cast<LPARAM>((focusToken >> 32) & 0xFFFFFFFFULL)))
+    {
+        _pendingSmartPunctuationReplacementText.clear();
+        _pendingSmartPunctuationAppendChar = 0;
+        _pendingSmartPunctuationFocusToken = 0;
+        _pendingSmartPunctuationForegroundWindow = nullptr;
+        _pendingSmartPunctuationDeadline = 0;
+        // Disarm the spot: without this the same digit / '=' would be claimed
+        // again (and the rewrite retried) on every subsequent press.
+        _ResetSmartPunctuationHistory();
+        _InvalidateSmartPunctuationShadow();
+        return false;
+    }
+
+    _ResetSmartPunctuationHistory();
+    _InvalidateSmartPunctuationShadow();
+    return true;
+}
+
+//+---------------------------------------------------------------------------
+//
 // _IsKeyEaten
 //
 //----------------------------------------------------------------------------
@@ -816,6 +923,21 @@ BOOL CMetasequoiaIME::_IsKeyEaten(         //
             }
             return TRUE;
         }
+    }
+
+    //
+    // Smart-punctuation fixup (digit or '='): owned locally, never sent to the
+    // Server. OnTestKeyDown must agree so the key is not handed back after
+    // OnKeyDown consumes it.
+    //
+    if (_IsSmartPunctuationFixupKey(wch))
+    {
+        if (pKeyState)
+        {
+            pKeyState->Category = CATEGORY_COMPOSING;
+            pKeyState->Function = FUNCTION_SMART_PUNCTUATION_FIXUP;
+        }
+        return TRUE;
     }
 
     return isTouchKeyboardSpecialKeys;
@@ -1413,15 +1535,21 @@ STDAPI CMetasequoiaIME::OnTestKeyDown(ITfContext *pContext, WPARAM wParam, LPARA
     if (_HasDeferredKeyBarrier())
     {
         _KEYSTROKE_STATE deferredState = {};
-        WCHAR deferredWch = L'\0';
-        UINT deferredCode = 0;
+        WCHAR deferredWch = ConvertVKey(static_cast<UINT>(wParam));
+        UINT deferredCode = VKeyFromVKPacketAndWchar(static_cast<UINT>(wParam), deferredWch);
+        // The fixup is a local rewrite and needs no Server reply, so keep
+        // OnTestKeyDown consistent with _DispatchKeyDown even while the
+        // deferred barrier is up.
+        if (_IsSmartPunctuationFixupKey(deferredWch))
+        {
+            *pIsEaten = TRUE;
+            return S_OK;
+        }
         if (!_DeferredKeyQueueHasCapacity())
         {
-            // Still observe Backspace for smart-punctuation rejection. Uneaten
-            // keys often never reach OnKeyDown, and this is the only sink that
-            // always sees them.
-            deferredWch = ConvertVKey(static_cast<UINT>(wParam));
-            deferredCode = VKeyFromVKPacketAndWchar(static_cast<UINT>(wParam), deferredWch);
+            // Still observe Backspace to keep the smart-punctuation shadow
+            // honest. Uneaten keys often never reach OnKeyDown, and this is the
+            // only sink that always sees them.
             _NoteKeyForSmartPunctuation(deferredCode, deferredWch, false);
             *pIsEaten = FALSE;
             return S_OK;
@@ -1430,7 +1558,7 @@ STDAPI CMetasequoiaIME::OnTestKeyDown(ITfContext *pContext, WPARAM wParam, LPARA
             _ClassifyDeferredKeyDown(pContext, wParam, nullptr, nullptr, &deferredWch, &deferredCode, &deferredState)
                 ? TRUE
                 : FALSE;
-        // Classify always fills code/wch before failing. Track rejection even
+        // Classify always fills code/wch before failing. Track the shadow even
         // when the key is handed back to the app (typical for VK_BACK).
         _NoteKeyForSmartPunctuation(deferredCode, deferredWch, *pIsEaten ? true : false);
         return S_OK;
@@ -1450,7 +1578,7 @@ STDAPI CMetasequoiaIME::OnTestKeyDown(ITfContext *pContext, WPARAM wParam, LPARA
 
     // Every keydown reaches this sink, including the ones handed back to the
     // application (backspace with no composition), so the smart-punctuation
-    // rejection state is tracked here rather than in the eaten-key path.
+    // shadow is tracked here rather than in the eaten-key path.
     _NoteKeyForSmartPunctuation(code, wch, *pIsEaten ? true : false);
 
     DebugTsfIssue47(L"test-keydown-classified", FANY_IME_NO_REQUEST_ID, code, wch, KeystrokeState.Category,
@@ -2004,14 +2132,26 @@ CMetasequoiaIME::KeyDownDispatchResult CMetasequoiaIME::_DispatchKeyDown(
         }
     }
 
+    // Smart-punctuation fixup is a local rewrite (SendInput) and must run
+    // before the deferred FIFO barrier: the digit / '=' key is consumed here
+    // and never sent to the Server, even while the barrier is up.
+    {
+        const WCHAR fixupWch = translatedWch ? *translatedWch : ConvertVKey(static_cast<UINT>(wParam));
+        if (_TryConsumeSmartPunctuationFixup(fixupWch))
+        {
+            *pIsEaten = TRUE;
+            return KeyDownDispatchResult::Complete;
+        }
+    }
+
     if (canDefer && _HasDeferredKeyBarrier())
     {
         if (!_DeferredKeyQueueHasCapacity() ||
             !_ClassifyDeferredKeyDown(pContext, wParam, translatedWch, &capturedModifiers, &wch, &code,
                                       &KeystrokeState))
         {
-            // Mirror OnTestKeyDown: uneaten keys (esp. Backspace) must still
-            // update smart-punctuation rejection state.
+            // Mirror OnTestKeyDown: uneaten keys still update the
+            // smart-punctuation shadow.
             if (code == 0 && wch == L'\0')
             {
                 wch = translatedWch ? *translatedWch : ConvertVKey(static_cast<UINT>(wParam));
@@ -2031,7 +2171,7 @@ CMetasequoiaIME::KeyDownDispatchResult CMetasequoiaIME::_DispatchKeyDown(
             return KeyDownDispatchResult::Complete;
         }
         // Queued keys note on replay; note now too so a Backspace that is
-        // somehow classified+queued still records rejection before drain.
+        // somehow classified+queued still updates the shadow before drain.
         _NoteKeyForSmartPunctuation(code, wch, true);
         *pIsEaten =
             _QueueDeferredKeyDown(pContext, wParam, lParam, wch, capturedModifiers, KeystrokeState) ? TRUE : FALSE;
@@ -2267,11 +2407,13 @@ CMetasequoiaIME::KeyDownDispatchResult CMetasequoiaIME::_DispatchKeyDown(
                 // Numpad '.' stays ASCII, including after a candidate.
                 punctuationCommitText = L".";
             }
-            else if (CCompositionProcessorEngine::IsSmartAsciiPunctuationKey(wch) &&
-                     Global::SmartPunctuationEnabled.load(std::memory_order_relaxed))
+            else if (Global::SmartPunctuationEnabled.load(std::memory_order_relaxed) &&
+                     !Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed) &&
+                     (CCompositionProcessorEngine::IsSmartAsciiPunctuationKey(wch) || wch == L'>' || wch == L'~'))
             {
                 // Defer mapping until the edit session can inspect the
-                // preceding document character (letters/digits → ASCII).
+                // preceding document character: it decides ',' '.' ':' against a
+                // digit, the '->' arrow, and records '~' / '/' for '~=' '/='.
                 punctuationCommitText.clear();
             }
             else

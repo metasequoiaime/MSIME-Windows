@@ -1024,11 +1024,6 @@ HRESULT CMetasequoiaIME::_HandleCompositionPunctuation(TfEditCookie ec, _In_ ITf
 {
     HRESULT hr = S_OK;
 
-    if (_QueueRepeatedSmartPunctuationReplacement(wch))
-    {
-        return S_OK;
-    }
-
     //
     // Get punctuation char from composition processor engine
     //
@@ -1110,7 +1105,11 @@ HRESULT CMetasequoiaIME::_HandleCompositionPunctuation(TfEditCookie ec, _In_ ITf
     // 标点回落到原有的左右轮换行为。
     const bool pairedPunctuationEnabled = Global::PairedPunctuationEnabled.load(std::memory_order_relaxed) &&
                                           !Global::IsPairedPunctuationExcludedProcess(Global::current_process_name);
-    if (pairedPunctuationEnabled && !_IsComposing() && _candidateMode == CANDIDATE_NONE)
+    // The '-' + '>' arrow commits a half-width '>' on purpose. Feeding it to
+    // the step-over probe would look like a mismatched closing and clear the
+    // whole paired stack, breaking a still-pending 《》 step-over.
+    const bool halfWidthArrowAngle = wch == L'>' && punctuationStr.size() == 1 && punctuationStr[0] == L'>';
+    if (pairedPunctuationEnabled && !halfWidthArrowAngle && !_IsComposing() && _candidateMode == CANDIDATE_NONE)
     {
         // A pair whose closing half is still waiting on the right of the caret
         // is closed by stepping over it. Without this the closing key inserts a

@@ -739,9 +739,11 @@ BOOL CCompositionProcessorEngine::IsSmartAsciiPunctuationKey(WCHAR wch)
 
 std::wstring CCompositionProcessorEngine::ResolvePunctuation(WCHAR wch, WCHAR precedingChar)
 {
-    if (Global::SmartPunctuationEnabled.load(std::memory_order_relaxed) && IsSmartAsciiPunctuationKey(wch) &&
-        ((precedingChar >= L'0' && precedingChar <= L'9') || (precedingChar >= L'A' && precedingChar <= L'Z') ||
-         (precedingChar >= L'a' && precedingChar <= L'z')))
+    // Arrow rule: '-' directly before '>' commits a half-width '>' so the user
+    // can type "->". The nest-pair count must not move, so GetPunctuation is
+    // skipped entirely.
+    if (Global::SmartPunctuationEnabled.load(std::memory_order_relaxed) && wch == L'>' && precedingChar == L'-' &&
+        !Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed))
     {
         return std::wstring(1, wch);
     }

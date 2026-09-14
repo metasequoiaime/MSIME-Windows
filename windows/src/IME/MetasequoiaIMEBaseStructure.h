@@ -68,7 +68,10 @@ enum KEYSTROKE_FUNCTION
     FUNCTION_UPDATE_VOICE_COMPOSITION,
     FUNCTION_COMMIT_VOICE_COMPOSITION,
     FUNCTION_CANCEL_VOICE_COMPOSITION,
-    FUNCTION_TOGGLE_CHARACTER_SET
+    FUNCTION_TOGGLE_CHARACTER_SET,
+
+    // Smart punctuation fixup (digit or '=') consumed locally without IPC.
+    FUNCTION_SMART_PUNCTUATION_FIXUP
 };
 
 //---------------------------------------------------------------------

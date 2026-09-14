@@ -249,7 +249,8 @@ constexpr std::uint32_t SmartPunctuationChanged = 11;
 constexpr std::uint32_t PairedPunctuationChanged = 12;
 // Whether ';' is an input key for the Microsoft shuangpin profile.
 constexpr std::uint32_t MicrosoftShuangpinChanged = 13;
-// Replace a repeated smart ASCII punctuation with its Chinese mapping.
+// Deprecated. The id is kept only for wire-format stability; there is no sender
+// anymore. Old Servers may still emit it, so receivers must tolerate and ignore it.
 constexpr std::uint32_t SmartPunctuationRepeatToChineseChanged = 14;
 // Streaming ASR: replace the inline composition with this full snapshot.
 constexpr std::uint32_t UpdateVoiceComposition = 15;

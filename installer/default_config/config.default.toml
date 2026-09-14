@@ -158,10 +158,9 @@ ime_mode_scope = "app"
 # 以词定字：开启后，[ 上屏高亮候选的首个汉字，] 上屏末个汉字
 word_to_character = true
 word_to_character_keys = "brackets"
-# 智能标点：中文标点模式下，字母/数字后的 , . : 输出英文标点（类似小狼毫 digit_separators）
-smart_punctuation = true
-# 重复标点转中文：智能标点输出英文标点后，2 秒内再次输入同一标点时替换为中文标点
-smart_punctuation_repeat_to_chinese = true
+# 智能标点：中文标点模式下，数字后的 , . : 先输出中文，仅当紧接着输入数字时回改为英文标点
+# （小数点、数位分节符、比例号）；~ 与 / 后跟 = 输出 ≈ / ≠；- 后跟 > 输出半角 >。
+smart_punctuation = false
 # 成对标点补全：输入左侧符号时自动补全右侧符号，并将光标置于中间
 paired_punctuation = true
 # 标点锁定，可选："follow"（随中英文切换）, "chinese"（始终中文标点）, "english"（始终英文标点）

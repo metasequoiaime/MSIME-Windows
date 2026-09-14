@@ -111,12 +111,6 @@ function applyConfigData(data: Record<string, any>, target?: string): void {
   if (typeof data?.input?.smart_punctuation === 'boolean') {
     applyToggleState('smartPunctuationToggleBtn', data.input.smart_punctuation);
   }
-  if (typeof data?.input?.smart_punctuation_repeat_to_chinese === 'boolean') {
-    applyToggleState(
-      'smartPunctuationRepeatToChineseToggleBtn',
-      data.input.smart_punctuation_repeat_to_chinese
-    );
-  }
   if (typeof data?.input?.paired_punctuation === 'boolean') {
     applyToggleState('pairedPunctuationToggleBtn', data.input.paired_punctuation);
   }

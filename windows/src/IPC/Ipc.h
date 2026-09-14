@@ -164,10 +164,8 @@ inline bool IsPunctuationLocked()
 }
 
 inline std::atomic_bool PagingCommaPeriodEnabled{false};
-// Default on: matches rime-ice digit_separators behavior until Server syncs.
-inline std::atomic_bool SmartPunctuationEnabled{true};
-// Default on until the Server sends the persisted setting.
-inline std::atomic_bool SmartPunctuationRepeatToChineseEnabled{true};
+// Default off: matches the shipped config until Server syncs.
+inline std::atomic_bool SmartPunctuationEnabled{false};
 // Default on until the Server sends the persisted setting.
 inline std::atomic_bool PairedPunctuationEnabled{true};
 inline std::atomic_bool MicrosoftShuangpinEnabled{false};

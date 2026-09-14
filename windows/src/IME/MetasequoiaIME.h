@@ -39,7 +39,7 @@ const DWORD WM_DrainDeferredKeyDown = WM_USER + 18;
 const DWORD WM_InsertText = WM_USER + 19;
 const DWORD WM_RefreshLanguageBarTheme = WM_USER + 20;
 const DWORD WM_PairedPunctuationCaretMove = WM_USER + 21;
-const DWORD WM_ReplaceRepeatedSmartPunctuation = WM_USER + 22;
+const DWORD WM_ReplaceSmartPunctuation = WM_USER + 22;
 const DWORD WM_BareShiftRelease = WM_USER + 23;
 const DWORD WM_UpdateVoiceComposition = WM_USER + 24;
 const DWORD WM_CommitVoiceComposition = WM_USER + 25;
@@ -55,7 +55,7 @@ constexpr bool IsSelfGeneratedSendInputExtraInfo(ULONG_PTR extraInfo)
 {
     return extraInfo == SMART_PUNCTUATION_SENDINPUT_EXTRA_INFO || extraInfo == PAIRED_PUNCTUATION_SENDINPUT_EXTRA_INFO;
 }
-constexpr ULONGLONG SMART_PUNCTUATION_REPEAT_INTERVAL_MS = 2000;
+constexpr ULONGLONG SMART_PUNCTUATION_FIXUP_INTERVAL_MS = 2000;
 constexpr UINT_PTR TIMER_CONNECT_ALL_NAMEDPIPE = 1;
 constexpr UINT_PTR TIMER_CONNECT_TO_TSF_NAMEDPIPE = 2;
 constexpr UINT_PTR TIMER_REFRESH_LANG_BAR_THEME = 3;
@@ -219,10 +219,11 @@ class CMetasequoiaIME : public ITfTextInputProcessorEx,
     void _RunPairedPunctuationCaretMove();
     void _CancelPairedPunctuationCaretMove();
 
-    // Smart punctuation: backspacing the ASCII punctuation we just committed
-    // means that form was unwanted, so the spot stays on Chinese punctuation.
+    // Smart punctuation: a digit or '=' right after a committed mark is
+    // consumed locally and rewritten as the ASCII form (or a symbol pair).
     std::wstring _ResolveSmartPunctuation(WCHAR wch, WCHAR precedingChar);
-    bool _QueueRepeatedSmartPunctuationReplacement(WCHAR wch);
+    bool _IsSmartPunctuationFixupKey(WCHAR wch);
+    bool _TryConsumeSmartPunctuationFixup(WCHAR wch);
     void _NoteKeyForSmartPunctuation(UINT code, WCHAR wch, bool isEaten);
     void _ResetSmartPunctuationHistory();
     void _UpdateSmartPunctuationShadow(UINT code, WCHAR wch, bool isEaten);
@@ -545,15 +546,15 @@ class CMetasequoiaIME : public ITfTextInputProcessorEx,
     CCandidateListUIPresenter *_pCandidateListUIPresenter;
     BOOL _isCandidateWithWildcard : 1;
 
-    // Last smart-punctuation commit, used to detect a backspace rejection.
+    // Smart-punctuation state: the last Chinese mark committed after a digit
+    // (digit-','-digit rewrite), plus the last character known to have reached
+    // the application (for the '~=' / '/=' pairs and the '->' arrow).
     WCHAR _smartPunctuationKey = 0;
-    WCHAR _smartPunctuationPrecedingChar = 0;
-    bool _smartPunctuationCommittedAscii = false;
-    bool _smartPunctuationAsciiRejected = false;
     ULONGLONG _smartPunctuationCommitTick = 0;
     uint64_t _smartPunctuationFocusToken = 0;
     HWND _smartPunctuationForegroundWindow = nullptr;
-    WCHAR _pendingSmartPunctuationReplacement = 0;
+    std::wstring _pendingSmartPunctuationReplacementText;
+    WCHAR _pendingSmartPunctuationAppendChar = 0;
     uint64_t _pendingSmartPunctuationFocusToken = 0;
     HWND _pendingSmartPunctuationForegroundWindow = nullptr;
     ULONGLONG _pendingSmartPunctuationDeadline = 0;
@@ -566,6 +567,8 @@ class CMetasequoiaIME : public ITfTextInputProcessorEx,
     // document read is used only while this is invalid.
     WCHAR _smartPunctuationShadowChar = 0;
     bool _smartPunctuationShadowValid = false;
+    ULONGLONG _smartPunctuationShadowTick = 0;
+    uint64_t _smartPunctuationShadowFocusToken = 0;
 
     // Pairs whose closing half was auto-inserted and still sits immediately to
     // the right of the caret, innermost last.

@@ -221,6 +221,8 @@ HRESULT CMetasequoiaIME::_HandleCandidateFinalizeForVKReturn(TfEditCookie ec, _I
     {
         _smartPunctuationShadowChar = committedLastChar;
         _smartPunctuationShadowValid = true;
+        _smartPunctuationShadowTick = GetTickCount64();
+        _smartPunctuationShadowFocusToken = _CaptureFocusSessionToken();
     }
 
     return hr;
