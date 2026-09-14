@@ -16,4 +16,6 @@ enum class VoiceControlAction : std::uint32_t
 // access to global voice state and remains straightforward to test.
 bool ParseVoiceControl(std::wstring_view frame, std::uint64_t client_id, std::uint64_t activation_epoch,
                        std::uint64_t generation, VoiceControlAction &action);
+bool DispatchVoiceControl(std::wstring_view frame, std::uint64_t client_id, std::uint64_t activation_epoch,
+                          std::uint64_t generation);
 } // namespace FanyNamedPipe

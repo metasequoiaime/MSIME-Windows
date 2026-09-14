@@ -1,5 +1,6 @@
 #include "voice_control_dispatch.h"
 #include "contracts/windows_ipc.h"
+#include "../voice-input/voice_input_service.h"
 #include <cwchar>
 #include <cerrno>
 
@@ -28,6 +29,27 @@ bool ParseVoiceControl(std::wstring_view frame, std::uint64_t client_id, std::ui
         !parse(end + 1, generation, &end) || *end != L'\0')
         return false;
     action = static_cast<VoiceControlAction>(command);
+    return true;
+}
+
+bool DispatchVoiceControl(std::wstring_view frame, std::uint64_t client_id, std::uint64_t activation_epoch,
+                          std::uint64_t generation)
+{
+    VoiceControlAction action{};
+    if (!ParseVoiceControl(frame, client_id, activation_epoch, generation, action))
+        return false;
+    switch (action)
+    {
+    case VoiceControlAction::Start:
+        VoiceInput::StartRecording();
+        break;
+    case VoiceControlAction::Stop:
+        VoiceInput::StopRecording();
+        break;
+    case VoiceControlAction::Cancel:
+        VoiceInput::CancelRecording();
+        break;
+    }
     return true;
 }
 } // namespace FanyNamedPipe
