@@ -1,5 +1,11 @@
 set(TEST_EXECUTABLE_NAME "MetasequoiaImeServerTests")
 
+add_executable(test_voice_control_dispatch src/test_voice_control_dispatch.cpp
+    ../src/ipc/voice_control_dispatch.cpp)
+target_include_directories(test_voice_control_dispatch PRIVATE ../src "${MSIME_ENGINE_DIR}")
+target_compile_features(test_voice_control_dispatch PRIVATE cxx_std_17)
+add_test(NAME voice_control_dispatch COMMAND test_voice_control_dispatch)
+
 set(TEST_SOURCE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_date_time_query.cpp"

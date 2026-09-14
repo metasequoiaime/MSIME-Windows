@@ -1,8 +1,7 @@
 #include "voice_control_dispatch.h"
 #include "contracts/windows_ipc.h"
 #include "../voice-input/voice_input_service.h"
-#include <cwchar>
-#include <cerrno>
+#include <limits>
 
 namespace FanyNamedPipe
 {
@@ -14,21 +13,31 @@ bool ParseVoiceControl(std::wstring_view frame, std::uint64_t client_id, std::ui
         !activation_epoch || !generation)
         return false;
     frame.remove_prefix(prefix.size());
-    wchar_t *end = nullptr;
-    std::wstring value(frame);
-    const auto command = std::wcstoul(value.c_str(), &end, 10);
-    if (end == value.c_str() || *end != L'|' || command < FanyImeVoiceControl::Start ||
-        command > FanyImeVoiceControl::Cancel)
+    std::uint64_t fields[4]{};
+    for (unsigned index = 0; index < 4; ++index)
+    {
+        const auto separator = frame.find(L'|');
+        if ((index < 3) != (separator != std::wstring_view::npos))
+            return false;
+        const auto field = frame.substr(0, separator);
+        if (field.empty())
+            return false;
+        for (const auto digit : field)
+        {
+            if (digit < L'0' || digit > L'9')
+                return false;
+            const auto value = static_cast<std::uint64_t>(digit - L'0');
+            if (fields[index] > (std::numeric_limits<std::uint64_t>::max() - value) / 10)
+                return false;
+            fields[index] = fields[index] * 10 + value;
+        }
+        if (index < 3)
+            frame.remove_prefix(separator + 1);
+    }
+    if (fields[0] < FanyImeVoiceControl::Start || fields[0] > FanyImeVoiceControl::Cancel || fields[1] != client_id ||
+        fields[2] != activation_epoch || fields[3] != generation)
         return false;
-    const auto parse = [&](const wchar_t *begin, std::uint64_t expected, wchar_t **next) {
-        errno = 0;
-        const auto actual = std::wcstoull(begin, next, 10);
-        return errno != ERANGE && actual == expected;
-    };
-    if (!parse(end + 1, client_id, &end) || *end != L'|' || !parse(end + 1, activation_epoch, &end) || *end != L'|' ||
-        !parse(end + 1, generation, &end) || *end != L'\0')
-        return false;
-    action = static_cast<VoiceControlAction>(command);
+    action = static_cast<VoiceControlAction>(fields[0]);
     return true;
 }
 
