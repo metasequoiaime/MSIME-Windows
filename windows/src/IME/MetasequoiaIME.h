@@ -222,8 +222,12 @@ class CMetasequoiaIME : public ITfTextInputProcessorEx,
     // Smart punctuation: a digit or '=' right after a committed mark is
     // consumed locally and rewritten as the ASCII form (or a symbol pair).
     std::wstring _ResolveSmartPunctuation(WCHAR wch, WCHAR precedingChar);
+    bool _IsSmartPunctuationConsumable();
     bool _IsSmartPunctuationFixupKey(WCHAR wch);
     bool _TryConsumeSmartPunctuationFixup(WCHAR wch);
+    bool _IsSmartPunctuationUndoKey(WCHAR wch);
+    bool _TryConsumeSmartPunctuationUndo(WCHAR wch);
+    void _ClearSmartPunctuationUndo();
     void _NoteKeyForSmartPunctuation(UINT code, WCHAR wch, bool isEaten);
     void _ResetSmartPunctuationHistory();
     void _UpdateSmartPunctuationShadow(UINT code, WCHAR wch, bool isEaten);
@@ -555,9 +559,23 @@ class CMetasequoiaIME : public ITfTextInputProcessorEx,
     HWND _smartPunctuationForegroundWindow = nullptr;
     std::wstring _pendingSmartPunctuationReplacementText;
     WCHAR _pendingSmartPunctuationAppendChar = 0;
+    // Number of characters the rewrite deletes before typing the replacement:
+    // 1 for the mark rewrite, 2 for the undo (ASCII mark + confirmed digit).
+    ULONGLONG _pendingSmartPunctuationBackspaceCount = 1;
+    // What to type back if the injected batch is dropped wholesale: the key the
+    // user pressed (digit, space, '=' or the mark being undone).
+    WCHAR _pendingSmartPunctuationFallbackChar = 0;
     uint64_t _pendingSmartPunctuationFocusToken = 0;
     HWND _pendingSmartPunctuationForegroundWindow = nullptr;
     ULONGLONG _pendingSmartPunctuationDeadline = 0;
+
+    // Undo for the digit rewrite: after "1,2" the same mark key restores
+    // "1，2" while the spot is still fresh. Only the digit rewrite records it.
+    WCHAR _smartPunctuationUndoKey = 0;
+    WCHAR _smartPunctuationUndoDigit = 0;
+    ULONGLONG _smartPunctuationUndoTick = 0;
+    uint64_t _smartPunctuationUndoFocusToken = 0;
+    HWND _smartPunctuationUndoForegroundWindow = nullptr;
 
     // Last character known to have reached the application. Hosts such as the
     // VS Code terminal back the context with a proxy text store that only ever

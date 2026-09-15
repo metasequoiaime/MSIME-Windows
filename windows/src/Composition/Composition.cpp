@@ -469,6 +469,18 @@ void CMetasequoiaIME::_ResetSmartPunctuationHistory()
     _smartPunctuationCommitTick = 0;
     _smartPunctuationFocusToken = 0;
     _smartPunctuationForegroundWindow = nullptr;
+    // Any other key means the user has moved on; the rewrite is no longer the
+    // last edit and must not be undone under new text.
+    _ClearSmartPunctuationUndo();
+}
+
+void CMetasequoiaIME::_ClearSmartPunctuationUndo()
+{
+    _smartPunctuationUndoKey = 0;
+    _smartPunctuationUndoDigit = 0;
+    _smartPunctuationUndoTick = 0;
+    _smartPunctuationUndoFocusToken = 0;
+    _smartPunctuationUndoForegroundWindow = nullptr;
 }
 
 void CMetasequoiaIME::_InvalidateSmartPunctuationShadow()
@@ -549,6 +561,8 @@ void CMetasequoiaIME::_NoteKeyForSmartPunctuation(UINT code, WCHAR wch, bool isE
     {
         _pendingSmartPunctuationReplacementText.clear();
         _pendingSmartPunctuationAppendChar = 0;
+        _pendingSmartPunctuationBackspaceCount = 1;
+        _pendingSmartPunctuationFallbackChar = 0;
         _pendingSmartPunctuationFocusToken = 0;
         _pendingSmartPunctuationForegroundWindow = nullptr;
         _pendingSmartPunctuationDeadline = 0;
@@ -560,6 +574,15 @@ void CMetasequoiaIME::_NoteKeyForSmartPunctuation(UINT code, WCHAR wch, bool isE
     if (_IsSmartPunctuationFixupKey(wch))
     {
         return;
+    }
+
+    // Any other key (including the one that merely passes through) means the
+    // rewrite is no longer the last edit; drop its undo so a later mark cannot
+    // delete text the user typed after it. The mark key itself keeps the state
+    // alive until _DispatchKeyDown decides whether the undo is still in range.
+    if (_smartPunctuationUndoKey != 0 && wch != _smartPunctuationUndoKey)
+    {
+        _ClearSmartPunctuationUndo();
     }
 
     _UpdateSmartPunctuationShadow(code, wch, isEaten);

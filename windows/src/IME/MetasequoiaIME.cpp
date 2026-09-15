@@ -2730,6 +2730,8 @@ LRESULT CALLBACK CMetasequoiaIME_WindowProc(HWND hWnd, UINT message, WPARAM wPar
                                     (static_cast<uint64_t>(static_cast<uint32_t>(lParam)) << 32);
         const std::wstring replacement = pIME->_pendingSmartPunctuationReplacementText;
         const WCHAR appendChar = pIME->_pendingSmartPunctuationAppendChar;
+        const ULONGLONG backspaceCount = pIME->_pendingSmartPunctuationBackspaceCount;
+        const WCHAR fallbackChar = pIME->_pendingSmartPunctuationFallbackChar;
         const bool requestCurrent = !replacement.empty() && focusToken != 0 &&
                                     focusToken == pIME->_pendingSmartPunctuationFocusToken &&
                                     Global::SmartPunctuationEnabled.load(std::memory_order_relaxed) &&
@@ -2739,6 +2741,8 @@ LRESULT CALLBACK CMetasequoiaIME_WindowProc(HWND hWnd, UINT message, WPARAM wPar
 
         pIME->_pendingSmartPunctuationReplacementText.clear();
         pIME->_pendingSmartPunctuationAppendChar = 0;
+        pIME->_pendingSmartPunctuationBackspaceCount = 1;
+        pIME->_pendingSmartPunctuationFallbackChar = 0;
         pIME->_pendingSmartPunctuationFocusToken = 0;
         pIME->_pendingSmartPunctuationForegroundWindow = nullptr;
         pIME->_pendingSmartPunctuationDeadline = 0;
@@ -2757,11 +2761,15 @@ LRESULT CALLBACK CMetasequoiaIME_WindowProc(HWND hWnd, UINT message, WPARAM wPar
             inputs.push_back(input);
         };
 
-        // Delete the committed Chinese mark (or '~' / '/'), then type the ASCII
-        // form and, for the digit rewrite, the digit that confirmed the spot.
+        // Delete what the tip committed (the Chinese mark; or, when undoing a
+        // digit rewrite, that ASCII mark plus the digit after it), then type
+        // the replacement and the confirmed key back.
         std::vector<INPUT> inputs;
-        appendKey(inputs, VK_BACK, 0, 0);
-        appendKey(inputs, VK_BACK, 0, KEYEVENTF_KEYUP);
+        for (ULONGLONG i = 0; i < backspaceCount; ++i)
+        {
+            appendKey(inputs, VK_BACK, 0, 0);
+            appendKey(inputs, VK_BACK, 0, KEYEVENTF_KEYUP);
+        }
         for (const wchar_t ch : replacement)
         {
             appendKey(inputs, 0, ch, KEYEVENTF_UNICODE);
@@ -2780,25 +2788,44 @@ LRESULT CALLBACK CMetasequoiaIME_WindowProc(HWND hWnd, UINT message, WPARAM wPar
             pIME->_smartPunctuationShadowValid = true;
             pIME->_smartPunctuationShadowTick = GetTickCount64();
             pIME->_smartPunctuationShadowFocusToken = focusToken;
+            if (appendChar >= L'0' && appendChar <= L'9' && backspaceCount == 1 && replacement.size() == 1)
+            {
+                // Digit rewrite only: the same mark key restores the Chinese
+                // form while the spot is still fresh ("1,2" -> "1，2"). The
+                // space confirmation of an ordered list is not a digit rewrite
+                // and must not arm an undo that would delete the user's space.
+                pIME->_smartPunctuationUndoKey = replacement[0];
+                pIME->_smartPunctuationUndoDigit = appendChar;
+                pIME->_smartPunctuationUndoTick = GetTickCount64();
+                pIME->_smartPunctuationUndoFocusToken = focusToken;
+                pIME->_smartPunctuationUndoForegroundWindow = GetForegroundWindow();
+            }
+            else
+            {
+                // Undo, the space confirmation and the pair rewrites leave
+                // nothing to undo.
+                pIME->_ClearSmartPunctuationUndo();
+            }
         }
         else
         {
             pIME->_InvalidateSmartPunctuationShadow();
-            if (appendChar != 0)
+            pIME->_ClearSmartPunctuationUndo();
+            if (fallbackChar != 0)
             {
-                // UIPI can drop the whole batch; at least keep the digit the
-                // user typed instead of swallowing it.
+                // UIPI can drop the whole batch; at least keep the key the user
+                // pressed (or the mark being undone) instead of swallowing it.
                 INPUT fallback[2] = {};
                 fallback[0].type = INPUT_KEYBOARD;
-                fallback[0].ki.wScan = appendChar;
+                fallback[0].ki.wScan = fallbackChar;
                 fallback[0].ki.dwFlags = KEYEVENTF_UNICODE;
                 fallback[0].ki.dwExtraInfo = SMART_PUNCTUATION_SENDINPUT_EXTRA_INFO;
                 fallback[1] = fallback[0];
                 fallback[1].ki.dwFlags |= KEYEVENTF_KEYUP;
                 SendInput(ARRAYSIZE(fallback), fallback, sizeof(INPUT));
             }
-            DebugTsfIssue47(L"smart-punctuation-fixup-sendinput-failed", FANY_IME_NO_REQUEST_ID, 0, appendChar, 0, 0, 1,
-                            pIME->_IsComposing(), 0, E_FAIL);
+            DebugTsfIssue47(L"smart-punctuation-fixup-sendinput-failed", FANY_IME_NO_REQUEST_ID, 0, fallbackChar, 0, 0,
+                            1, pIME->_IsComposing(), 0, E_FAIL);
         }
         break;
     }

@@ -648,16 +648,11 @@ __inline UINT VKeyFromVKPacketAndWchar(UINT vk, WCHAR wch)
 //
 //----------------------------------------------------------------------------
 
-bool CMetasequoiaIME::_IsSmartPunctuationFixupKey(WCHAR wch)
+bool CMetasequoiaIME::_IsSmartPunctuationConsumable()
 {
-    // Cheap gate first: every keydown reaches the caller, while only a digit,
-    // '=' or a space can ever be a fixup. A space confirms the digit-mark-space
-    // shape of ordered lists ("1. hello") the same way a digit confirms a
-    // decimal number.
-    if (!((wch >= L'0' && wch <= L'9') || wch == L'=' || wch == L' '))
-    {
-        return false;
-    }
+    // Shared shell for both local rewrites (mark fixup and its undo): only a
+    // plain key in Chinese-punctuation mode with no composition, candidate,
+    // U-mode or full-width mode may be consumed locally.
     if (!Global::SmartPunctuationEnabled.load(std::memory_order_relaxed) ||
         Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed) || _pCompositionProcessorEngine == nullptr ||
         _pThreadMgr == nullptr || _msgWndHandle == nullptr ||
@@ -668,8 +663,21 @@ bool CMetasequoiaIME::_IsSmartPunctuationFixupKey(WCHAR wch)
         return false;
     }
     // Ctrl/Alt/Win combinations and Shift variants ('+') belong to the app.
-    if ((CaptureIpcModifiers() & 0b00000110u) != 0 || (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 ||
-        (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0)
+    return (CaptureIpcModifiers() & 0b00000110u) == 0 && (GetAsyncKeyState(VK_LWIN) & 0x8000) == 0 &&
+           (GetAsyncKeyState(VK_RWIN) & 0x8000) == 0;
+}
+
+bool CMetasequoiaIME::_IsSmartPunctuationFixupKey(WCHAR wch)
+{
+    // Cheap gate first: every keydown reaches the caller, while only a digit,
+    // '=' or a space can ever be a fixup. A space confirms the digit-mark-space
+    // shape of ordered lists ("1. hello") the same way a digit confirms a
+    // decimal number.
+    if (!((wch >= L'0' && wch <= L'9') || wch == L'=' || wch == L' '))
+    {
+        return false;
+    }
+    if (!_IsSmartPunctuationConsumable())
     {
         return false;
     }
@@ -727,6 +735,8 @@ bool CMetasequoiaIME::_TryConsumeSmartPunctuationFixup(WCHAR wch)
 
     _pendingSmartPunctuationReplacementText = replacementText;
     _pendingSmartPunctuationAppendChar = appendChar;
+    _pendingSmartPunctuationBackspaceCount = 1;
+    _pendingSmartPunctuationFallbackChar = wch;
     _pendingSmartPunctuationFocusToken = focusToken;
     _pendingSmartPunctuationForegroundWindow = foregroundWindow;
     _pendingSmartPunctuationDeadline = deadline;
@@ -736,6 +746,8 @@ bool CMetasequoiaIME::_TryConsumeSmartPunctuationFixup(WCHAR wch)
     {
         _pendingSmartPunctuationReplacementText.clear();
         _pendingSmartPunctuationAppendChar = 0;
+        _pendingSmartPunctuationBackspaceCount = 1;
+        _pendingSmartPunctuationFallbackChar = 0;
         _pendingSmartPunctuationFocusToken = 0;
         _pendingSmartPunctuationForegroundWindow = nullptr;
         _pendingSmartPunctuationDeadline = 0;
@@ -746,6 +758,68 @@ bool CMetasequoiaIME::_TryConsumeSmartPunctuationFixup(WCHAR wch)
         return false;
     }
 
+    _ResetSmartPunctuationHistory();
+    _InvalidateSmartPunctuationShadow();
+    return true;
+}
+
+bool CMetasequoiaIME::_IsSmartPunctuationUndoKey(WCHAR wch)
+{
+    if (_smartPunctuationUndoKey == 0 || wch != _smartPunctuationUndoKey)
+    {
+        return false;
+    }
+    if (!_IsSmartPunctuationConsumable())
+    {
+        return false;
+    }
+
+    const ULONGLONG now = GetTickCount64();
+    return _smartPunctuationUndoTick != 0 && now - _smartPunctuationUndoTick <= SMART_PUNCTUATION_FIXUP_INTERVAL_MS &&
+           _IsFocusSessionCurrent(_smartPunctuationUndoFocusToken) &&
+           GetForegroundWindow() == _smartPunctuationUndoForegroundWindow;
+}
+
+bool CMetasequoiaIME::_TryConsumeSmartPunctuationUndo(WCHAR wch)
+{
+    if (!_IsSmartPunctuationUndoKey(wch))
+    {
+        return false;
+    }
+
+    const WCHAR *chinese = _pCompositionProcessorEngine->GetPunctuation(wch);
+    if (chinese == nullptr || chinese[0] == L'\0' || chinese[1] != L'\0')
+    {
+        _ClearSmartPunctuationUndo();
+        return false;
+    }
+
+    _pendingSmartPunctuationReplacementText.assign(chinese);
+    _pendingSmartPunctuationAppendChar = _smartPunctuationUndoDigit;
+    // The rewrite injected the ASCII mark plus the digit after it; both must go
+    // before the Chinese mark and that digit are typed back.
+    _pendingSmartPunctuationBackspaceCount = _smartPunctuationUndoDigit != 0 ? 2 : 1;
+    _pendingSmartPunctuationFallbackChar = wch;
+    _pendingSmartPunctuationFocusToken = _smartPunctuationUndoFocusToken;
+    _pendingSmartPunctuationForegroundWindow = _smartPunctuationUndoForegroundWindow;
+    _pendingSmartPunctuationDeadline = _smartPunctuationUndoTick + SMART_PUNCTUATION_FIXUP_INTERVAL_MS;
+
+    const uint64_t focusToken = _pendingSmartPunctuationFocusToken;
+    if (!PostMessage(_msgWndHandle, WM_ReplaceSmartPunctuation, static_cast<WPARAM>(focusToken & 0xFFFFFFFFULL),
+                     static_cast<LPARAM>((focusToken >> 32) & 0xFFFFFFFFULL)))
+    {
+        _pendingSmartPunctuationReplacementText.clear();
+        _pendingSmartPunctuationAppendChar = 0;
+        _pendingSmartPunctuationBackspaceCount = 1;
+        _pendingSmartPunctuationFallbackChar = 0;
+        _pendingSmartPunctuationFocusToken = 0;
+        _pendingSmartPunctuationForegroundWindow = nullptr;
+        _pendingSmartPunctuationDeadline = 0;
+        _ClearSmartPunctuationUndo();
+        return false;
+    }
+
+    _ClearSmartPunctuationUndo();
     _ResetSmartPunctuationHistory();
     _InvalidateSmartPunctuationShadow();
     return true;
@@ -2138,12 +2212,14 @@ CMetasequoiaIME::KeyDownDispatchResult CMetasequoiaIME::_DispatchKeyDown(
         }
     }
 
-    // Smart-punctuation fixup is a local rewrite (SendInput) and must run
-    // before the deferred FIFO barrier: the digit / space / '=' key is consumed
-    // here and never sent to the Server, even while the barrier is up.
+    // Smart-punctuation rewrites (mark fixup and its undo) are local SendInput
+    // work and must run before the deferred FIFO barrier: the consumed key is
+    // never sent to the Server, even while the barrier is up. The undo key is
+    // a mark key, so it would otherwise be classified as ordinary punctuation
+    // before this point could ever see it.
     {
         const WCHAR fixupWch = translatedWch ? *translatedWch : ConvertVKey(static_cast<UINT>(wParam));
-        if (_TryConsumeSmartPunctuationFixup(fixupWch))
+        if (_TryConsumeSmartPunctuationUndo(fixupWch) || _TryConsumeSmartPunctuationFixup(fixupWch))
         {
             *pIsEaten = TRUE;
             return KeyDownDispatchResult::Complete;
