@@ -642,16 +642,19 @@ __inline UINT VKeyFromVKPacketAndWchar(UINT vk, WCHAR wch)
 //
 // Smart-punctuation fixup
 //
-// A digit right after a Chinese mark committed behind a digit, or '=' right
-// after a '~' / '/' shadow, is owned locally: the mark is rewritten as ASCII.
+// A digit or space right after a Chinese mark committed behind a digit, or '='
+// right after a '~' / '/' shadow, is owned locally: the mark is rewritten as
+// ASCII.
 //
 //----------------------------------------------------------------------------
 
 bool CMetasequoiaIME::_IsSmartPunctuationFixupKey(WCHAR wch)
 {
-    // Cheap gate first: every keydown reaches the caller, while only a digit or
-    // '=' can ever be a fixup.
-    if (!((wch >= L'0' && wch <= L'9') || wch == L'='))
+    // Cheap gate first: every keydown reaches the caller, while only a digit,
+    // '=' or a space can ever be a fixup. A space confirms the digit-mark-space
+    // shape of ordered lists ("1. hello") the same way a digit confirms a
+    // decimal number.
+    if (!((wch >= L'0' && wch <= L'9') || wch == L'=' || wch == L' '))
     {
         return false;
     }
@@ -672,13 +675,6 @@ bool CMetasequoiaIME::_IsSmartPunctuationFixupKey(WCHAR wch)
     }
 
     const ULONGLONG now = GetTickCount64();
-    if (wch >= L'0' && wch <= L'9')
-    {
-        return _smartPunctuationKey != 0 && _smartPunctuationCommitTick != 0 &&
-               now - _smartPunctuationCommitTick <= SMART_PUNCTUATION_FIXUP_INTERVAL_MS &&
-               _IsFocusSessionCurrent(_smartPunctuationFocusToken) &&
-               GetForegroundWindow() == _smartPunctuationForegroundWindow;
-    }
     if (wch == L'=')
     {
         return _smartPunctuationShadowValid &&
@@ -686,6 +682,14 @@ bool CMetasequoiaIME::_IsSmartPunctuationFixupKey(WCHAR wch)
                _smartPunctuationShadowTick != 0 &&
                now - _smartPunctuationShadowTick <= SMART_PUNCTUATION_FIXUP_INTERVAL_MS &&
                _IsFocusSessionCurrent(_smartPunctuationShadowFocusToken);
+    }
+    // A digit or a space both confirm the mark committed behind a digit.
+    if ((wch >= L'0' && wch <= L'9') || wch == L' ')
+    {
+        return _smartPunctuationKey != 0 && _smartPunctuationCommitTick != 0 &&
+               now - _smartPunctuationCommitTick <= SMART_PUNCTUATION_FIXUP_INTERVAL_MS &&
+               _IsFocusSessionCurrent(_smartPunctuationFocusToken) &&
+               GetForegroundWindow() == _smartPunctuationForegroundWindow;
     }
     return false;
 }
@@ -702,9 +706,11 @@ bool CMetasequoiaIME::_TryConsumeSmartPunctuationFixup(WCHAR wch)
     uint64_t focusToken = 0;
     HWND foregroundWindow = nullptr;
     ULONGLONG deadline = 0;
-    if (wch >= L'0' && wch <= L'9')
+    if ((wch >= L'0' && wch <= L'9') || wch == L' ')
     {
-        // The Chinese mark we committed maps back to the same ASCII character.
+        // The Chinese mark we committed maps back to the same ASCII character;
+        // the digit (or the space that turns the mark into an ordered-list
+        // marker) is replayed after the rewrite.
         replacementText.assign(1, _smartPunctuationKey);
         appendChar = wch;
         focusToken = _smartPunctuationFocusToken;
@@ -733,8 +739,8 @@ bool CMetasequoiaIME::_TryConsumeSmartPunctuationFixup(WCHAR wch)
         _pendingSmartPunctuationFocusToken = 0;
         _pendingSmartPunctuationForegroundWindow = nullptr;
         _pendingSmartPunctuationDeadline = 0;
-        // Disarm the spot: without this the same digit / '=' would be claimed
-        // again (and the rewrite retried) on every subsequent press.
+        // Disarm the spot: without this the same digit / space / '=' would be
+        // claimed again (and the rewrite retried) on every subsequent press.
         _ResetSmartPunctuationHistory();
         _InvalidateSmartPunctuationShadow();
         return false;
@@ -926,9 +932,9 @@ BOOL CMetasequoiaIME::_IsKeyEaten(         //
     }
 
     //
-    // Smart-punctuation fixup (digit or '='): owned locally, never sent to the
-    // Server. OnTestKeyDown must agree so the key is not handed back after
-    // OnKeyDown consumes it.
+    // Smart-punctuation fixup (digit, space or '='): owned locally, never sent
+    // to the Server. OnTestKeyDown must agree so the key is not handed back
+    // after OnKeyDown consumes it.
     //
     if (_IsSmartPunctuationFixupKey(wch))
     {
@@ -2133,8 +2139,8 @@ CMetasequoiaIME::KeyDownDispatchResult CMetasequoiaIME::_DispatchKeyDown(
     }
 
     // Smart-punctuation fixup is a local rewrite (SendInput) and must run
-    // before the deferred FIFO barrier: the digit / '=' key is consumed here
-    // and never sent to the Server, even while the barrier is up.
+    // before the deferred FIFO barrier: the digit / space / '=' key is consumed
+    // here and never sent to the Server, even while the barrier is up.
     {
         const WCHAR fixupWch = translatedWch ? *translatedWch : ConvertVKey(static_cast<UINT>(wParam));
         if (_TryConsumeSmartPunctuationFixup(fixupWch))
