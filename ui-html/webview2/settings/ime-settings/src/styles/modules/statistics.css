@@ -52,8 +52,7 @@
 
 .statistics-empty.is-hidden,
 .statistics-data.is-hidden,
-.statistics-hint.is-hidden,
-.statistics-clear-status.is-hidden {
+.statistics-hint.is-hidden {
   display: none;
 }
 
@@ -320,14 +319,4 @@
   color: var(--text-subtle);
   font-size: 12px;
   line-height: 1.5;
-}
-
-.statistics-clear-status {
-  margin-top: 8px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.statistics-clear-status.is-error {
-  color: var(--danger-text);
 }

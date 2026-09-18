@@ -23,21 +23,14 @@ import {
 
 type StatsRequest = Extract<SettingsMessage, { type: 'statsRequest' }>['data'];
 type StatsResponse = Extract<ServerMessage, { type: 'statsResponse' }>['data'];
-type StatsAction = StatsRequest['action'];
-type ClearRange = NonNullable<StatsRequest['range']>;
 
-// 状态提示与确认框要读成「已清除 X」「确定清理 X 吗」，所以这里按「删除起点」描述，
-// 不能复用下拉里的「保留最近 N」——那样拼出来是「已清除 保留最近 30 天」，语义反了。
-const CLEAR_RANGE_LABELS: Record<ClearRange, string> = {
-  '30d': '30 天前的历史数据',
-  '90d': '3 个月前的历史数据',
-  '180d': '6 个月前的历史数据',
-  '365d': '1 年前的历史数据',
-  forever: '任何历史数据',
-};
+// 与 [statistics].retention 同值域；下拉是唯一入口，选中即写入配置，Server 回收到后才生效。
+const RETENTION_VALUES = ['30d', '90d', '180d', '365d', 'forever'] as const;
+type Retention = (typeof RETENTION_VALUES)[number];
 
-// 「永久保留」不是清理命令，所以不在可执行列表里——它只是让用户明确选择不删任何东西。
-const CLEAR_RANGES: readonly ClearRange[] = ['30d', '90d', '180d', '365d'];
+function isRetention(value: unknown): value is Retention {
+  return typeof value === 'string' && (RETENTION_VALUES as readonly string[]).includes(value);
+}
 
 const BREAKDOWN_LABELS: Array<[keyof CharacterBreakdown, string]> = [
   ['cjk', '中文'],
@@ -48,10 +41,8 @@ const BREAKDOWN_LABELS: Array<[keyof CharacterBreakdown, string]> = [
 ];
 
 let requestCounter = 0;
-// 只认最后一个请求的回包：连续刷新 / 清理时，旧回包会把新数据盖回去。
+// 只认最后一个请求的回包：连续刷新时，旧回包会把新数据盖回去。
 let latestRequestId = '';
-let latestAction: StatsAction = 'query';
-let latestClearRange: ClearRange | null = null;
 
 function byId(id: string): HTMLElement | null {
   return document.getElementById(id);
@@ -83,14 +74,6 @@ function formatDuration(activeMs: number): string {
 function setEnabledState(enabled: boolean): void {
   applyToggleState('statisticsToggleBtn', enabled);
   byId('statisticsDisabledHint')?.classList.toggle('is-hidden', enabled);
-}
-
-function setClearStatus(text: string, isError: boolean): void {
-  const node = byId('statisticsClearStatus');
-  if (!node) return;
-  node.textContent = text;
-  node.classList.remove('is-hidden');
-  node.classList.toggle('is-error', isError);
 }
 
 function showEmpty(title: string, description: string): void {
@@ -282,47 +265,16 @@ function renderPanel(data: StatsResponse): void {
   renderDetails(daily, hourly, today);
 }
 
-function post(action: StatsAction, range?: ClearRange): void {
+function requestStats(): void {
   const requestId = `stats-${++requestCounter}`;
   latestRequestId = requestId;
-  latestAction = action;
-  latestClearRange = range ?? null;
-  const data: StatsRequest = range ? { requestId, action, range } : { requestId, action };
+  const data: StatsRequest = { requestId, action: 'query' };
   window.chrome?.webview?.postMessage(serializeHostMessage({ type: 'statsRequest', data }));
-}
-
-function requestStats(): void {
-  post('query');
 }
 
 function handleResponse(data: StatsResponse): void {
   if (data.requestId !== latestRequestId) return;
-
-  if (latestAction === 'clear') {
-    const label = latestClearRange ? CLEAR_RANGE_LABELS[latestClearRange] : '所选范围';
-    setClearStatus(data.ok ? `已清除 ${label}。` : (data.message ?? '清理失败，请重试。'), !data.ok);
-  }
   renderPanel(data);
-}
-
-function selectedClearRange(): ClearRange | null {
-  const select = byId('statisticsClearRange') as HTMLSelectElement | null;
-  const value = select?.value ?? '';
-  return (CLEAR_RANGES as readonly string[]).includes(value) ? (value as ClearRange) : null;
-}
-
-function syncClearButtonState(): void {
-  const button = byId('statisticsClearButton') as HTMLButtonElement | null;
-  // 选「永久保留」时没有可清理的东西：禁用按钮比让它点了没反应更清楚。
-  if (button) button.disabled = selectedClearRange() === null;
-}
-
-function onClearClicked(): void {
-  const range = selectedClearRange();
-  if (range === null) return;
-  if (!window.confirm(`确定清理「${CLEAR_RANGE_LABELS[range]}」之前的历史数据吗？此操作不可恢复。`)) return;
-  setClearStatus('正在清理…', false);
-  post('clear', range);
 }
 
 function isPanelVisible(): boolean {
@@ -340,9 +292,14 @@ function setupRefreshHooks(): void {
   });
 }
 
-/** config-sync 把 configSnapshot 里 `statistics.enabled` 的布尔值交到这里回填。 */
-export function applyStatisticsConfig(enabled: unknown): void {
+/** config-sync 把 configSnapshot 的 `statistics.enabled` / `statistics.retention` 交到这里回填。 */
+export function applyStatisticsConfig(enabled: unknown, retention?: unknown): void {
   if (typeof enabled === 'boolean') setEnabledState(enabled);
+  // 非白名单值跳过：下拉永远显示 Server 真正生效的策略，而不是一个前端造出来的值。
+  if (isRetention(retention)) {
+    const select = byId('statisticsRetention') as HTMLSelectElement | null;
+    if (select) select.value = retention;
+  }
 }
 
 export function setupStatistics(): void {
@@ -350,9 +307,11 @@ export function setupStatistics(): void {
     setEnabledState(active);
     updateConfig('statistics.enabled', active);
   });
-  byId('statisticsClearButton')?.addEventListener('click', onClearClicked);
-  byId('statisticsClearRange')?.addEventListener('change', syncClearButtonState);
-  syncClearButtonState();
+  // 下拉只负责设定保留策略（持久生效），不发送任何清理请求：改选后由 Server 落盘并立即清理一次。
+  byId('statisticsRetention')?.addEventListener('change', () => {
+    const select = byId('statisticsRetention') as HTMLSelectElement | null;
+    if (select && isRetention(select.value)) updateConfig('statistics.retention', select.value);
+  });
   onHostMessage('statsResponse', (message) => handleResponse(message.data));
   setupRefreshHooks();
   requestStats();

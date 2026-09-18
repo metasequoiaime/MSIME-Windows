@@ -5,7 +5,7 @@
     <div class="statistics-privacy-badge" aria-hidden="true">本机</div>
     <div>
       <div class="statistics-privacy-title">只在本机记录字数</div>
-      <div class="statistics-privacy-desc">不记录你输入的内容，不保存拼音或候选词，不联网、不上传；可随时关闭统计或清除历史数据。详细说明见隐私政策。</div>
+      <div class="statistics-privacy-desc">不记录你输入的内容，不保存拼音或候选词，不联网、不上传；可随时关闭统计或设置保留期限。详细说明见隐私政策。</div>
     </div>
   </div>
 
@@ -102,17 +102,15 @@
     <div class="divider"></div>
     <div class="statistics-clear">
       <div class="statistics-clear-row">
-        <select id="statisticsClearRange">
+        <select id="statisticsRetention" aria-label="统计保留期限">
           <option value="30d">保留最近 30 天</option>
           <option value="90d">保留最近 3 个月</option>
           <option value="180d">保留最近 6 个月</option>
           <option value="365d">保留最近 1 年</option>
           <option value="forever" selected>永久保留（不清理）</option>
         </select>
-        <button id="statisticsClearButton" class="dict-button primary" type="button">清理</button>
       </div>
-      <div class="statistics-clear-note">按所选期限清理：保留更近的记录，删除更早的部分（3 个月按 90 天、6 个月按 180 天、1 年按 365 天计）；清理不可恢复。</div>
-      <div class="statistics-clear-status is-hidden" id="statisticsClearStatus" role="status"></div>
+      <div class="statistics-clear-note">保留期限设定后自动生效：改选时立即按新期限清理一次，之后每天首次输入时自动清理；3 个月按 90 天、6 个月按 180 天、1 年按 365 天计。默认永久保留，不清理任何历史；清理不可恢复。</div>
     </div>
   </div>
 </div>

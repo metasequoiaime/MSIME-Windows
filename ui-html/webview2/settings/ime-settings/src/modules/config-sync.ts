@@ -313,7 +313,8 @@ function applyConfigData(data: Record<string, any>, target?: string): void {
   if (applies('statistics')) {
     void import('./statistics').then((module) => {
       if (data !== lastSnapshot) return;
-      module.applyStatisticsConfig(data?.statistics?.enabled);
+      // 保留策略与开关一起回填；非白名单的 retention 由模块跳过，不污染下拉。
+      module.applyStatisticsConfig(data?.statistics?.enabled, data?.statistics?.retention);
     });
   }
   if (applies('floating-toolbar')) {
