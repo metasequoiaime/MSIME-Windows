@@ -282,6 +282,39 @@
         "additionalProperties": false
       }
     },
+    "statsRequest": {
+      "surfaces": [
+        "settings"
+      ],
+      "data": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "query",
+              "clear"
+            ]
+          },
+          "range": {
+            "type": "string",
+            "enum": [
+              "30d",
+              "90d",
+              "all"
+            ]
+          }
+        },
+        "required": [
+          "requestId",
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
     "openKeyboardPanel": {
       "surfaces": [
         "settings",
@@ -746,6 +779,113 @@
         "rows"
       ],
       "additionalProperties": true
+    },
+    "statsResponse": {
+      "data": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "daily": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "integer"
+                },
+                "cjk": {
+                  "type": "integer"
+                },
+                "latin": {
+                  "type": "integer"
+                },
+                "digit": {
+                  "type": "integer"
+                },
+                "punct": {
+                  "type": "integer"
+                },
+                "other": {
+                  "type": "integer"
+                },
+                "activeMs": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "day",
+                "cjk",
+                "latin",
+                "digit",
+                "punct",
+                "other",
+                "activeMs"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "hourly": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "integer"
+                },
+                "hour": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 23
+                },
+                "chars": {
+                  "type": "integer"
+                },
+                "activeMs": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "day",
+                "hour",
+                "chars",
+                "activeMs"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "firstDay": {
+                "type": "integer"
+              },
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "requestId",
+          "ok",
+          "daily",
+          "hourly",
+          "meta"
+        ],
+        "additionalProperties": false
+      }
     }
   }
 }

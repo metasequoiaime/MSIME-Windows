@@ -27,7 +27,14 @@ inline const wchar_t *FANY_IME_TSF_DIAGNOSTIC_NAMED_PIPE = L"\\\\.\\pipe\\FanyIm
 inline const wchar_t *FANY_IME_VOICE_CONTROL_NAMED_PIPE = L"\\\\.\\pipe\\FanyImeVoiceControlNamedPipe";
 inline constexpr uint32_t FANY_IME_TSF_DIAGNOSTIC_MAGIC = 0x474F4C54; // "TLOG"
 inline constexpr uint32_t FANY_IME_TSF_DIAGNOSTIC_VERSION = 1;
+// DLL -> Server local input statistics counters. A separate channel from the
+// diagnostic log: independent switch gate and fixed binary records instead of
+// log text. No payload of this channel ever contains typed text.
+inline const wchar_t *FANY_IME_STATS_NAMED_PIPE = L"\\\\.\\pipe\\FanyImeStatsNamedPipe";
+inline constexpr uint32_t FANY_IME_STATS_MAGIC = 0x54415453; // "STAT"
+inline constexpr uint32_t FANY_IME_STATS_VERSION = 1;
 inline constexpr size_t FANY_IME_TSF_DIAGNOSTIC_MAX_FRAME_BYTES = 16 * 1024;
+inline constexpr size_t FANY_IME_STATS_MAX_FRAME_BYTES = 16 * 1024;
 inline constexpr uint64_t FANY_IME_UNSOLICITED_REQUEST_ID = 0;
 inline constexpr uint64_t FANY_IME_NO_REQUEST_ID = UINT64_MAX;
 
@@ -185,6 +192,33 @@ struct FanyImeTsfDiagnosticBatchHeader
     uint32_t source_process_id = 0;
 };
 
+struct FanyImeStatsBatchHeader
+{
+    uint32_t magic = FANY_IME_STATS_MAGIC;
+    uint32_t version = FANY_IME_STATS_VERSION;
+    uint32_t header_size = 28;
+    uint32_t payload_bytes = 0;
+    uint32_t record_count = 0;
+    uint32_t dropped_count = 0;
+    uint32_t source_process_id = 0;
+};
+
+// One aggregated composition commit. Counts are user-perceived characters (a
+// UTF-16 surrogate pair counts once) and active_ms is the typing time since the
+// previous commit, capped at the idle threshold. Classification stays inside the
+// TSF process: only these counters cross the pipe.
+struct FanyImeStatsRecord
+{
+    uint32_t day_key = 0; // local date, YYYYMMDD
+    uint16_t hour = 0;    // 0-23
+    uint16_t cjk = 0;
+    uint16_t latin = 0;
+    uint16_t digit = 0;
+    uint16_t punct = 0;
+    uint16_t other = 0;
+    uint32_t active_ms = 0;
+};
+
 static_assert(sizeof(FanyImeWireChar) == 2, "The IPC ABI requires 16-bit FanyImeWireChar.");
 static_assert(offsetof(FanyImeNamedpipeData, client_id) == 8);
 static_assert(offsetof(FanyImeNamedpipeData, request_id) == 16);
@@ -197,6 +231,11 @@ static_assert(sizeof(FanyImeNamedpipeDataToTsf) == 416);
 static_assert(sizeof(FanyImePipeHello) == 16);
 static_assert(sizeof(FanyImeNamedpipeDataToTsfWorkerThread) == 404);
 static_assert(sizeof(FanyImeTsfDiagnosticBatchHeader) == 28);
+static_assert(sizeof(FanyImeStatsBatchHeader) == 28);
+static_assert(sizeof(FanyImeStatsRecord) == 20);
+static_assert(offsetof(FanyImeStatsRecord, day_key) == 0);
+static_assert(offsetof(FanyImeStatsRecord, hour) == 4);
+static_assert(offsetof(FanyImeStatsRecord, active_ms) == 16);
 
 namespace FanyImeReplyType
 {
@@ -293,7 +332,12 @@ constexpr std::uint32_t SmartPunctuationSpaceConvertChanged = 22;
 constexpr std::uint32_t SmartPunctuationDirectDigitChanged = 24;
 // Direct ASCII punctuation output for ',' '.' ':' after ASCII letters. Payload "0"/"1".
 constexpr std::uint32_t SmartPunctuationDirectLetterChanged = 25;
-constexpr std::uint32_t MaxKnown = SmartPunctuationDirectLetterChanged;
+// Whether local input statistics are collected. Payload "1" on / "0" off.
+// The number must not be recycled if the feature is ever removed: this branch
+// ships test builds, and a reused opcode would let an old build misread a new
+// frame (see 23 above).
+constexpr std::uint32_t StatisticsEnabledChanged = 26;
+constexpr std::uint32_t MaxKnown = StatisticsEnabledChanged;
 // Source compatibility for the Server's historical spellings.
 constexpr std::uint32_t SwitchToEn = SwitchToEnglish;
 constexpr std::uint32_t SwitchToCn = SwitchToChinese;

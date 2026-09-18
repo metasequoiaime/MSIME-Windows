@@ -446,5 +446,182 @@
     "direction": "client",
     "surface": "settings",
     "valid": false
+  },
+  {
+    "name": "statistics query",
+    "message": {
+      "type": "statsRequest",
+      "data": {
+        "requestId": "stats-1",
+        "action": "query"
+      }
+    },
+    "valid": true,
+    "surface": "settings",
+    "direction": "client"
+  },
+  {
+    "name": "statistics range clear",
+    "message": {
+      "type": "statsRequest",
+      "data": {
+        "requestId": "stats-2",
+        "action": "clear",
+        "range": "90d"
+      }
+    },
+    "valid": true,
+    "surface": "settings",
+    "direction": "client"
+  },
+  {
+    "name": "statistics unknown clear range",
+    "message": {
+      "type": "statsRequest",
+      "data": {
+        "requestId": "stats-3",
+        "action": "clear",
+        "range": "7d"
+      }
+    },
+    "valid": false,
+    "surface": "settings",
+    "direction": "client"
+  },
+  {
+    "name": "statistics unknown action",
+    "message": {
+      "type": "statsRequest",
+      "data": {
+        "requestId": "stats-4",
+        "action": "drop"
+      }
+    },
+    "valid": false,
+    "surface": "settings",
+    "direction": "client"
+  },
+  {
+    "name": "statistics response",
+    "message": {
+      "type": "statsResponse",
+      "data": {
+        "requestId": "stats-1",
+        "ok": true,
+        "daily": [
+          {
+            "day": 20250918,
+            "cjk": 120,
+            "latin": 30,
+            "digit": 4,
+            "punct": 12,
+            "other": 1,
+            "activeMs": 65000
+          }
+        ],
+        "hourly": [
+          {
+            "day": 20250918,
+            "hour": 9,
+            "chars": 167,
+            "activeMs": 65000
+          }
+        ],
+        "meta": {
+          "firstDay": 20250918,
+          "enabled": true
+        }
+      }
+    },
+    "valid": true,
+    "surface": "settings",
+    "direction": "server"
+  },
+  {
+    "name": "statistics response without records",
+    "message": {
+      "type": "statsResponse",
+      "data": {
+        "requestId": "stats-5",
+        "ok": true,
+        "daily": [],
+        "hourly": [],
+        "meta": {
+          "enabled": false
+        }
+      }
+    },
+    "valid": true,
+    "surface": "settings",
+    "direction": "server"
+  },
+  {
+    "name": "statistics response missing daily",
+    "message": {
+      "type": "statsResponse",
+      "data": {
+        "requestId": "stats-6",
+        "ok": true,
+        "hourly": [],
+        "meta": {
+          "enabled": true
+        }
+      }
+    },
+    "valid": false,
+    "surface": "settings",
+    "direction": "server"
+  },
+  {
+    "name": "statistics response malformed daily row",
+    "message": {
+      "type": "statsResponse",
+      "data": {
+        "requestId": "stats-7",
+        "ok": true,
+        "daily": [
+          {
+            "day": 20250918,
+            "latin": 30,
+            "digit": 4,
+            "punct": 12,
+            "other": 1,
+            "activeMs": 65000
+          }
+        ],
+        "hourly": [],
+        "meta": {
+          "enabled": true
+        }
+      }
+    },
+    "valid": false,
+    "surface": "settings",
+    "direction": "server"
+  },
+  {
+    "name": "statistics response hour out of range",
+    "message": {
+      "type": "statsResponse",
+      "data": {
+        "requestId": "stats-8",
+        "ok": true,
+        "daily": [],
+        "hourly": [
+          {
+            "day": 20250918,
+            "hour": 24,
+            "chars": 5,
+            "activeMs": 1000
+          }
+        ],
+        "meta": {
+          "enabled": true
+        }
+      }
+    },
+    "valid": false,
+    "surface": "settings",
+    "direction": "server"
   }
 ]
