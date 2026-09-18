@@ -1290,6 +1290,17 @@ HRESULT CMetasequoiaIME::_AddCharAndFinalize(TfEditCookie ec, _In_ ITfContext *p
     hr = SafeRangeSetText(tfSelection.range, ec, 0, pstrAddString->Get(), (LONG)pstrAddString->GetLength());
     if (hr == S_OK)
     {
+        // Statistics: text written here lands straight in the document, so it
+        // never passes the two composition-end capture points (punctuation with
+        // no active composition, full/half-width conversion, server-delivered
+        // inserts, smart-punctuation fallbacks). Counting is limited to this
+        // direct branch because the preedit branch above returns first: text set
+        // into an active composition is still counted exactly once when the
+        // composition ends. Read-only side channel: silent on failure, and no
+        // HRESULT, selection or cleanup order changes.
+        MsimeStats::QueueStatisticsCommit(
+            MsimeStats::ClassifyText(pstrAddString->Get(), static_cast<size_t>(pstrAddString->GetLength())));
+
         // Update the selection, we'll make it an insertion point just past
         // the inserted text.
         tfSelection.range->Collapse(ec, TF_ANCHOR_END);
