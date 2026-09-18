@@ -1,0 +1,116 @@
+<div class="content" id="statistics-content">
+  <div class="content-header"><span>统计</span></div>
+
+  <div class="section statistics-privacy">
+    <div class="statistics-privacy-badge" aria-hidden="true">本机</div>
+    <div>
+      <div class="statistics-privacy-title">只在本机记录字数</div>
+      <div class="statistics-privacy-desc">不记录你输入的内容，不保存拼音或候选词，不联网、不上传；可随时关闭统计或清除历史数据。详细说明见隐私政策。</div>
+    </div>
+  </div>
+
+  <div class="section statistics-empty" id="statisticsEmpty">
+    <div class="statistics-empty-title" id="statisticsEmptyTitle">正在读取统计数据…</div>
+    <div class="statistics-empty-desc" id="statisticsEmptyDescription"></div>
+  </div>
+
+  <div class="statistics-data is-hidden" id="statisticsData">
+    <div class="statistics-cards">
+      <div class="statistics-card">
+        <div class="statistics-card-label">今日输入</div>
+        <div class="statistics-card-value" id="statisticsTodayChars">0 字</div>
+        <div class="statistics-card-sub" id="statisticsTodaySub"></div>
+      </div>
+      <div class="statistics-card">
+        <div class="statistics-card-label">累计输入</div>
+        <div class="statistics-card-value" id="statisticsTotalChars">0 字</div>
+        <div class="statistics-card-sub" id="statisticsTotalSub"></div>
+      </div>
+      <div class="statistics-card">
+        <div class="statistics-card-label">日均输入</div>
+        <div class="statistics-card-value" id="statisticsAverageChars">0 字</div>
+        <div class="statistics-card-sub" id="statisticsAverageSub"></div>
+      </div>
+      <div class="statistics-card">
+        <div class="statistics-card-label">连续天数</div>
+        <div class="statistics-card-value" id="statisticsStreakDays">0 天</div>
+        <div class="statistics-card-sub" id="statisticsStreakSub"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">输入日历</div>
+        <div class="statistics-legend" aria-hidden="true">
+          <span>少</span>
+          <span class="statistics-heat level-0"></span>
+          <span class="statistics-heat level-1"></span>
+          <span class="statistics-heat level-2"></span>
+          <span class="statistics-heat level-3"></span>
+          <span class="statistics-heat level-4"></span>
+          <span>多</span>
+        </div>
+      </div>
+      <div class="statistics-calendar-scroll">
+        <div class="statistics-calendar">
+          <div class="statistics-calendar-weekdays">
+            <span></span>
+            <span>一</span>
+            <span>二</span>
+            <span>三</span>
+            <span>四</span>
+            <span>五</span>
+            <span>六</span>
+            <span>日</span>
+          </div>
+          <div class="statistics-calendar-grid" id="statisticsCalendarGrid"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">今日时段分布</div>
+        <div class="statistics-section-note" id="statisticsHourlyTotal"></div>
+      </div>
+      <div class="statistics-hourly" id="statisticsHourly"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">字符分类</div>
+      <div class="statistics-breakdown" id="statisticsBreakdown"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">输入详情</div>
+      <div class="statistics-details" id="statisticsDetails"></div>
+      <div class="statistics-note">速度 = 字数 ÷ 活跃时长；相邻两次上屏间隔不超过 5 秒才计入活跃。最快速度只统计活跃满 1 分钟的时段。</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <div>
+        <div class="section-title">记录输入统计</div>
+        <div class="statistics-setting-description">默认开启。只在上屏时累计字数，不记录输入内容；关闭后停止记录新的字数，已有历史保留。</div>
+      </div>
+      <div class="ftb-toggle-btn active" id="statisticsToggleBtn" role="switch" aria-checked="true" tabindex="0">
+        <div class="ftb-toggle-knob"></div>
+      </div>
+    </div>
+    <div class="statistics-hint is-hidden" id="statisticsDisabledHint">统计已关闭：关闭期间的输入不会被记录，历史数据仍保留在面板中；重新开启后继续统计。</div>
+    <div class="divider"></div>
+    <div class="statistics-clear">
+      <div class="statistics-clear-row">
+        <select id="statisticsClearRange">
+          <option value="30d">清除 30 天前的数据（保留最近 30 天）</option>
+          <option value="90d">清除 90 天前的数据（保留最近 90 天）</option>
+          <option value="all">清除全部历史数据</option>
+        </select>
+        <button id="statisticsClearButton" class="dict-button primary" type="button">清除</button>
+      </div>
+      <div class="statistics-clear-note">清除所选时间之前的历史数据，保留更近的记录；清除不可恢复。</div>
+      <div class="statistics-clear-status is-hidden" id="statisticsClearStatus" role="status"></div>
+    </div>
+  </div>
+</div>

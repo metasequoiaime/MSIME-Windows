@@ -310,6 +310,12 @@ function applyConfigData(data: Record<string, any>, target?: string): void {
   if (applies('ai-settings') && data?.ai_assistant && typeof data.ai_assistant === 'object') {
     void import('./ai-settings').then((module) => { if (data === lastSnapshot) module.applyAiConfig(data.ai_assistant); });
   }
+  if (applies('statistics')) {
+    void import('./statistics').then((module) => {
+      if (data !== lastSnapshot) return;
+      module.applyStatisticsConfig(data?.statistics?.enabled);
+    });
+  }
   if (applies('floating-toolbar')) {
     void import('./floating-toolbar').then((module) => {
       if (data !== lastSnapshot) return;

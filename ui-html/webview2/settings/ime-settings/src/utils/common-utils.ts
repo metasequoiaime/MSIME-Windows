@@ -21,6 +21,7 @@ export async function loadHTML(url: string): Promise<string> {
 const MODULE_IDS = [
   'floating-toolbar',
   'appearance',
+  'statistics',
   'input',
   'helpcode',
   'dict',
@@ -68,4 +69,7 @@ export function showOnlyCurrentModule(moduleName: string): void {
 
   next.style.display = 'block';
   activeModuleName = moduleName;
+  // 模块只在首次打开时装配，重新切回不会重跑 setup；需要按「再次可见」刷新的模块
+  // （如统计面板）监听这个事件。
+  window.dispatchEvent(new CustomEvent('msime:module-shown', { detail: { module: moduleName } }));
 }

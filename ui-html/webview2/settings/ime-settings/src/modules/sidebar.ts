@@ -22,6 +22,9 @@ const setupLoaders: Record<string, () => Promise<void>> = {
     const module = await import('./appearance');
     await module.setupAppearance();
   },
+  statistics: async () => {
+    (await import('./statistics')).setupStatistics();
+  },
   input: async () => {
     (await import('./input')).setupInput();
   },
