@@ -159,12 +159,13 @@ TEST_CASE(statistics_settings_clear_answers_with_what_is_left)
     REQUIRE_EQ(json::value_to<int>(daily[0].as_object().at("day")), today);
     REQUIRE_EQ(json::value_to<int>(cleared.at("meta").as_object().at("firstDay")), today);
 
-    const json::object emptied = SettingsStatistics::HandleRequest(Request("req-4", "clear", "all"), &store);
-    RequireValidResponse(emptied);
-    REQUIRE(emptied.at("ok").as_bool());
-    REQUIRE(emptied.at("daily").as_array().empty());
-    REQUIRE(emptied.at("hourly").as_array().empty());
-    REQUIRE(emptied.at("meta").as_object().if_contains("firstDay") == nullptr);
+    // "forever" means keep everything, so it answers with the same row still there.
+    const json::object kept = SettingsStatistics::HandleRequest(Request("req-4", "clear", "forever"), &store);
+    RequireValidResponse(kept);
+    REQUIRE(kept.at("ok").as_bool());
+    REQUIRE_EQ(kept.at("daily").as_array().size(), std::size_t{1});
+    REQUIRE_EQ(kept.at("hourly").as_array().size(), std::size_t{1});
+    REQUIRE_EQ(json::value_to<int>(kept.at("meta").as_object().at("firstDay")), today);
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);

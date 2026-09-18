@@ -475,6 +475,34 @@
     "direction": "client"
   },
   {
+    "name": "statistics forever is a valid retention window",
+    "message": {
+      "type": "statsRequest",
+      "data": {
+        "requestId": "stats-2b",
+        "action": "clear",
+        "range": "forever"
+      }
+    },
+    "valid": true,
+    "surface": "settings",
+    "direction": "client"
+  },
+  {
+    "name": "statistics retired clear range",
+    "message": {
+      "type": "statsRequest",
+      "data": {
+        "requestId": "stats-2c",
+        "action": "clear",
+        "range": "all"
+      }
+    },
+    "valid": false,
+    "surface": "settings",
+    "direction": "client"
+  },
+  {
     "name": "statistics unknown clear range",
     "message": {
       "type": "statsRequest",

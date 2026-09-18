@@ -396,19 +396,32 @@ bool StatsStore::Query(Snapshot &snapshot)
 
 bool StatsStore::Clear(const std::string &range)
 {
-    bool clear_all = false;
-    int days = 0;
-    if (range == "all")
+    // The panel picks a retention window: keep the most recent N local days and drop
+    // everything older. "forever" means the user wants to keep everything, so it is a
+    // successful no-op rather than a rejected value -- it is part of the contract, not an
+    // invalid input. Months and years are approximated by days (3m = 90, 6m = 180, 1y = 365):
+    // the difference of a few days is immaterial for trimming old history.
+    if (range == "forever")
     {
-        clear_all = true;
+        return true;
     }
-    else if (range == "30d")
+
+    int days = 0;
+    if (range == "30d")
     {
         days = 30;
     }
     else if (range == "90d")
     {
         days = 90;
+    }
+    else if (range == "180d")
+    {
+        days = 180;
+    }
+    else if (range == "365d")
+    {
+        days = 365;
     }
     else
     {
@@ -426,22 +439,11 @@ bool StatsStore::Clear(const std::string &range)
         return false;
     }
 
-    bool ok = false;
-    if (clear_all)
-    {
-        ok = Execute(db.get(), "DELETE FROM stats_daily") && Execute(db.get(), "DELETE FROM stats_hourly") &&
-             Execute(db.get(), "DELETE FROM stats_meta WHERE key='first_day'");
-    }
-    else
-    {
-        // Keep the most recent `days` local days and drop everything older, matching the
-        // panel's "clear data older than N days" wording. cutoff is the oldest day that
-        // survives, so the comparison is strict.
-        const int32_t cutoff = LocalDayKeyDaysAgo(days - 1);
-        ok = DeleteFromDay(db.get(), "DELETE FROM stats_daily WHERE day_key < ?1", cutoff) &&
-             DeleteFromDay(db.get(), "DELETE FROM stats_hourly WHERE day_key < ?1", cutoff) &&
-             RecomputeFirstDay(db.get());
-    }
+    // cutoff is the oldest day that survives, so the comparison is strict.
+    const int32_t cutoff = LocalDayKeyDaysAgo(days - 1);
+    bool ok = DeleteFromDay(db.get(), "DELETE FROM stats_daily WHERE day_key < ?1", cutoff) &&
+              DeleteFromDay(db.get(), "DELETE FROM stats_hourly WHERE day_key < ?1", cutoff) &&
+              RecomputeFirstDay(db.get());
     if (!ok)
     {
         Execute(db.get(), "ROLLBACK");

@@ -41,7 +41,7 @@ You need the **Microsoft Visual C++ 2015–2022 Redistributable (x64)**. The ser
 
 An input method sees every keystroke, so the boundaries are stated explicitly in [PRIVACY.md](PRIVACY.md): which features reach the network, what each one sends, what the defaults are, and how to turn each off.
 
-Three things worth knowing up front. **Cloud candidates are on by default** — the composition spelling goes to Google's input-tools service, and it is the only network feature that works without you supplying a credential. **API tokens are stored in plain text** in `config.toml`, unlike macOS and Linux which use the Keychain and Secret Service. **Input statistics are on by default** — they count characters as they are committed and keep the running totals on this machine; the first install shows a page of its own before enabling them, and the switch in 设置 → 统计 turns them off and clears them.
+Three things worth knowing up front. **Cloud candidates are on by default** — the composition spelling goes to Google's input-tools service, and it is the only network feature that works without you supplying a credential. **API tokens are stored in plain text** in `config.toml`, unlike macOS and Linux which use the Keychain and Secret Service. **Input statistics are on by default** — they count characters as they are committed and keep the running totals on this machine; the first install shows a page of its own before enabling them, and 设置 → 统计 turns them off and trims them by age.
 
 There is no telemetry, analytics or crash reporting of any kind, and no measured usage data ever leaves the machine.
 

@@ -26,11 +26,18 @@ type StatsResponse = Extract<ServerMessage, { type: 'statsResponse' }>['data'];
 type StatsAction = StatsRequest['action'];
 type ClearRange = NonNullable<StatsRequest['range']>;
 
+// 状态提示与确认框要读成「已清除 X」「确定清理 X 吗」，所以这里按「删除起点」描述，
+// 不能复用下拉里的「保留最近 N」——那样拼出来是「已清除 保留最近 30 天」，语义反了。
 const CLEAR_RANGE_LABELS: Record<ClearRange, string> = {
-  '30d': '30 天前的历史数据（保留最近 30 天）',
-  '90d': '90 天前的历史数据（保留最近 90 天）',
-  all: '全部历史数据',
+  '30d': '30 天前的历史数据',
+  '90d': '3 个月前的历史数据',
+  '180d': '6 个月前的历史数据',
+  '365d': '1 年前的历史数据',
+  forever: '任何历史数据',
 };
+
+// 「永久保留」不是清理命令，所以不在可执行列表里——它只是让用户明确选择不删任何东西。
+const CLEAR_RANGES: readonly ClearRange[] = ['30d', '90d', '180d', '365d'];
 
 const BREAKDOWN_LABELS: Array<[keyof CharacterBreakdown, string]> = [
   ['cjk', '中文'],
@@ -298,11 +305,22 @@ function handleResponse(data: StatsResponse): void {
   renderPanel(data);
 }
 
-function onClearClicked(): void {
+function selectedClearRange(): ClearRange | null {
   const select = byId('statisticsClearRange') as HTMLSelectElement | null;
-  const range = select?.value;
-  if (range !== '30d' && range !== '90d' && range !== 'all') return;
-  if (!window.confirm(`确定清除「${CLEAR_RANGE_LABELS[range]}」吗？此操作不可恢复。`)) return;
+  const value = select?.value ?? '';
+  return (CLEAR_RANGES as readonly string[]).includes(value) ? (value as ClearRange) : null;
+}
+
+function syncClearButtonState(): void {
+  const button = byId('statisticsClearButton') as HTMLButtonElement | null;
+  // 选「永久保留」时没有可清理的东西：禁用按钮比让它点了没反应更清楚。
+  if (button) button.disabled = selectedClearRange() === null;
+}
+
+function onClearClicked(): void {
+  const range = selectedClearRange();
+  if (range === null) return;
+  if (!window.confirm(`确定清理「${CLEAR_RANGE_LABELS[range]}」之前的历史数据吗？此操作不可恢复。`)) return;
   setClearStatus('正在清理…', false);
   post('clear', range);
 }
@@ -333,6 +351,8 @@ export function setupStatistics(): void {
     updateConfig('statistics.enabled', active);
   });
   byId('statisticsClearButton')?.addEventListener('click', onClearClicked);
+  byId('statisticsClearRange')?.addEventListener('change', syncClearButtonState);
+  syncClearButtonState();
   onHostMessage('statsResponse', (message) => handleResponse(message.data));
   setupRefreshHooks();
   requestStats();

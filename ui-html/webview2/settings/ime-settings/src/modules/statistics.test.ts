@@ -177,8 +177,17 @@ it('clears history for the selected range and refreshes from the response', () =
 it('keeps the result of an unconfirmed clear untouched', () => {
   confirm.mockReturnValue(false);
   setupStatistics();
-  element('statisticsClearRange').value = 'all';
+  element('statisticsClearRange').value = '30d';
   element('statisticsClearButton').dispatch('click');
+  expect(postMessage).toHaveBeenCalledTimes(1);
+});
+
+it('clears nothing while the retention window is "forever"', () => {
+  setupStatistics();
+  element('statisticsClearRange').value = 'forever';
+  element('statisticsClearButton').dispatch('click');
+  // 「永久保留」是合法选择，只是没有要删的东西：不弹确认框、不发 clear，也不报错。
+  expect(confirm).not.toHaveBeenCalled();
   expect(postMessage).toHaveBeenCalledTimes(1);
 });
 

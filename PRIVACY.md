@@ -34,7 +34,7 @@ The input method counts characters as they are committed to the focused applicat
 
 It stores no typed content. The committed text, the spelling being composed, the candidates on screen, the application name and the window title are all absent from it: the text is classified inside the input method process, and only those five counters cross into the rest of the program. Nothing is uploaded either — this module makes no network request and is not wired into any feature that does. Reading the database in full tells you how many characters were typed on which day, in which hour and in which category, and nothing else.
 
-Turn it off with the switch in 设置 → 统计, or by setting `enabled = false` under `[statistics]` in `%LOCALAPPDATA%\metasequoiaime\config.toml`. Turning it off stops new records and keeps the ones already stored. The same page clears records by age: everything older than 30 days, older than 90 days, or everything.
+Turn it off with the switch in 设置 → 统计, or by setting `enabled = false` under `[statistics]` in `%LOCALAPPDATA%\metasequoiaime\config.toml`. Turning it off stops new records and keeps the ones already stored. The same page trims records by age. It can keep only the most recent 30 days, 3 months, 6 months or 1 year and drop everything older, or keep everything — the retention window defaults to "keep everything", which trims nothing. Trimming is immediate and not reversible.
 
 ## Local data
 

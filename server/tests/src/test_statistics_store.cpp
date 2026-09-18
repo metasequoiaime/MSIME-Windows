@@ -259,9 +259,14 @@ TEST_CASE(statistics_store_clear_keeps_only_the_recent_window)
     REQUIRE(store.Apply(MakeRecord(middle, 9, 1, 0, 0, 0, 0, 10)));
     REQUIRE(store.Apply(MakeRecord(old, 9, 1, 0, 0, 0, 0, 10)));
 
+    // 1y keeps everything here (every row is younger), so nothing goes.
+    REQUIRE(store.Clear("365d"));
+    Statistics::Snapshot snapshot;
+    REQUIRE(store.Query(snapshot));
+    REQUIRE_EQ(snapshot.daily.size(), std::size_t{4});
+
     // 90d keeps the most recent 90 days, so only the 100-day-old row goes.
     REQUIRE(store.Clear("90d"));
-    Statistics::Snapshot snapshot;
     REQUIRE(store.Query(snapshot));
     REQUIRE_EQ(snapshot.daily.size(), std::size_t{3});
     REQUIRE_EQ(snapshot.daily[0].day, middle);
@@ -280,17 +285,20 @@ TEST_CASE(statistics_store_clear_keeps_only_the_recent_window)
     REQUIRE_EQ(snapshot.hourly.size(), std::size_t{2});
     REQUIRE_EQ(snapshot.first_day, recent);
 
-    // An unknown or missing range is refused and changes nothing.
-    REQUIRE(!store.Clear("7d"));
-    REQUIRE(!store.Clear(""));
+    // "forever" is a valid choice that means "keep everything" -- it must not delete a row.
+    REQUIRE(store.Clear("forever"));
     REQUIRE(store.Query(snapshot));
     REQUIRE_EQ(snapshot.daily.size(), std::size_t{2});
+    REQUIRE_EQ(snapshot.hourly.size(), std::size_t{2});
+    REQUIRE_EQ(snapshot.first_day, recent);
 
-    REQUIRE(store.Clear("all"));
+    // An unknown, missing or retired range is refused and changes nothing.
+    // "all" was the pre-retention-window spelling; it is no longer a legal value.
+    REQUIRE(!store.Clear("7d"));
+    REQUIRE(!store.Clear(""));
+    REQUIRE(!store.Clear("all"));
     REQUIRE(store.Query(snapshot));
-    REQUIRE(snapshot.daily.empty());
-    REQUIRE(snapshot.hourly.empty());
-    REQUIRE(!snapshot.has_first_day);
+    REQUIRE_EQ(snapshot.daily.size(), std::size_t{2});
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);

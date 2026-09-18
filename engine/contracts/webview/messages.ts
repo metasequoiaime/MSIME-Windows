@@ -18,7 +18,7 @@ export type ClientMessage =
   | { "type": "configUpdate"; "protocolVersion"?: 1; "data": { "path": string; "value": string | number | boolean } }
   | { "type": "apiCredentialTest"; "protocolVersion"?: 1; "data": { "requestId": string; "service": "translation.tencent" | "translation.niutrans" | "translation.custom" | "voice.asr" | "voice.polish" | "ai.assistant"; "config": { [key: string]: unknown } } }
   | { "type": "dictionaryRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "dictionary": "quanpin" | "wubi" | "english" | "quick"; "action": "query" | "create" | "update" | "delete" | "import" | "importHans" | "export"; "word"?: string; "code"?: string; "content"?: string; "weight"?: number; "oldWord"?: string; "oldCode"?: string; "display"?: string; "oldDisplay"?: string; "offset"?: number; "limit"?: number } }
-  | { "type": "statsRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "action": "query" | "clear"; "range"?: "30d" | "90d" | "all" } }
+  | { "type": "statsRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "action": "query" | "clear"; "range"?: "30d" | "90d" | "180d" | "365d" | "forever" } }
   | { "type": "openKeyboardPanel"; "protocolVersion"?: 1 }
   | { "type": "candidate"; "protocolVersion"?: 1; "data": number }
   | { "type": "delete"; "protocolVersion"?: 1; "data": number }
@@ -72,7 +72,7 @@ export type SettingsMessage =
   | { "type": "configUpdate"; "protocolVersion"?: 1; "data": { "path": string; "value": string | number | boolean } }
   | { "type": "apiCredentialTest"; "protocolVersion"?: 1; "data": { "requestId": string; "service": "translation.tencent" | "translation.niutrans" | "translation.custom" | "voice.asr" | "voice.polish" | "ai.assistant"; "config": { [key: string]: unknown } } }
   | { "type": "dictionaryRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "dictionary": "quanpin" | "wubi" | "english" | "quick"; "action": "query" | "create" | "update" | "delete" | "import" | "importHans" | "export"; "word"?: string; "code"?: string; "content"?: string; "weight"?: number; "oldWord"?: string; "oldCode"?: string; "display"?: string; "oldDisplay"?: string; "offset"?: number; "limit"?: number } }
-  | { "type": "statsRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "action": "query" | "clear"; "range"?: "30d" | "90d" | "all" } }
+  | { "type": "statsRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "action": "query" | "clear"; "range"?: "30d" | "90d" | "180d" | "365d" | "forever" } }
   | { "type": "openKeyboardPanel"; "protocolVersion"?: 1 };
 declare global {
   var MsimeProtocol: {

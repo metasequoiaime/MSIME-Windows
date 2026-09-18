@@ -103,13 +103,15 @@
     <div class="statistics-clear">
       <div class="statistics-clear-row">
         <select id="statisticsClearRange">
-          <option value="30d">清除 30 天前的数据（保留最近 30 天）</option>
-          <option value="90d">清除 90 天前的数据（保留最近 90 天）</option>
-          <option value="all">清除全部历史数据</option>
+          <option value="30d">保留最近 30 天</option>
+          <option value="90d">保留最近 3 个月</option>
+          <option value="180d">保留最近 6 个月</option>
+          <option value="365d">保留最近 1 年</option>
+          <option value="forever" selected>永久保留（不清理）</option>
         </select>
-        <button id="statisticsClearButton" class="dict-button primary" type="button">清除</button>
+        <button id="statisticsClearButton" class="dict-button primary" type="button">清理</button>
       </div>
-      <div class="statistics-clear-note">清除所选时间之前的历史数据，保留更近的记录；清除不可恢复。</div>
+      <div class="statistics-clear-note">按所选期限清理：保留更近的记录，删除更早的部分（3 个月按 90 天、6 个月按 180 天、1 年按 365 天计）；清理不可恢复。</div>
       <div class="statistics-clear-status is-hidden" id="statisticsClearStatus" role="status"></div>
     </div>
   </div>
