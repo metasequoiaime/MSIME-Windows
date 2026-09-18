@@ -178,6 +178,8 @@ var
   DataDirPage: TInputDirWizardPage;
   NetworkPage: TInputOptionWizardPage;
   CloudCandidatesIndex: Integer;
+  StatisticsPage: TInputOptionWizardPage;
+  StatisticsEnabledIndex: Integer;
   UserConfigExistedBeforeInstall: Boolean;
 
 { 上一次安装（或历史版本）的数据目录。没有注册表值就是历史默认位置。}
@@ -403,6 +405,25 @@ begin
     '启用云候选：输入过程中把当前正在输入的拼写通过 HTTPS 发送给 Google 的 input-tools 服务' +
     '（inputtools.google.com），换回一条额外候选。已上屏的文本、词库内容和学习到的词频都不会发送。');
   NetworkPage.Values[CloudCandidatesIndex] := True;
+
+  { 输入统计与联网无关，所以单独一页，不并进上面那页：那页的标题与文案都是「联网功能」，
+    统计混进去会让人以为它也会把数据发出去。文本、拼音串和候选词都不出输入法进程，
+    Server 只收到五个整数计数，这一页要说的就是这件事。升级时同样跳过：那时 config.toml
+    已经属于用户，安装器不该替他重新决定（见 ShouldSkipPage）。}
+  StatisticsPage := CreateInputOptionPage(
+    NetworkPage.ID,
+    '输入统计',
+    '选择安装后是否在本机统计你的输入量',
+    '这一项只在本机统计你输入了多少字：不上传，也不记录你打了什么。' + #13#10 +
+    '每次上屏只累加计数——中文、英文、数字、标点、其他字符各多少，以及时段分布与活跃时长。' +
+    '上屏文本、拼音串和候选词都不会被保存，统计也不联网。' + #13#10#13#10 +
+    '默认开启。安装后随时可以在「设置 → 统计」里关闭统计，或按时间范围清除已有记录。',
+    False,
+    False
+  );
+  StatisticsEnabledIndex := StatisticsPage.Add(
+    '开启输入统计（只在本机记录计数，不记录输入内容）');
+  StatisticsPage.Values[StatisticsEnabledIndex] := True;
 #endif
 end;
 
@@ -410,6 +431,8 @@ function ShouldSkipPage(PageID: Integer): Boolean;
 begin
   Result := False;
   if (NetworkPage <> nil) and (PageID = NetworkPage.ID) then
+    Result := UserConfigExistedBeforeInstall;
+  if (StatisticsPage <> nil) and (PageID = StatisticsPage.ID) then
     Result := UserConfigExistedBeforeInstall;
 end;
 
@@ -439,6 +462,52 @@ begin
     begin
       Lines[Index] := 'cloud_candidates = false';
       SaveStringsToFile(UserConfigPath, Lines, False);
+      Exit;
+    end;
+  end;
+end;
+
+{ 判断这一行是不是给指定键赋值：只看等号左边的键名，避免 'enabled_x' 被当成 'enabled' 误改。}
+function IsKeyAssignment(const Trimmed, KeyName: String): Boolean;
+var
+  EqualsPos: Integer;
+begin
+  EqualsPos := Pos('=', Trimmed);
+  Result :=
+    (EqualsPos > 1) and
+    (CompareText(Trim(Copy(Trimmed, 1, EqualsPos - 1)), KeyName) = 0);
+end;
+
+{ 只在本次安装刚生成 config.toml 时写入，且只改 [statistics] 段里的 enabled。找不到段或键就
+  什么都不做——这一步失败不应该让安装失败。模板里本来就是 true，所以只有取消勾选才要落盘。
+
+  落盘用 SaveStringsToUTF8FileWithoutBOM 而不是既有写回用的 SaveStringsToFile：后者按系统
+  ANSI 代码页写盘，会把整份 config.toml（模板是 UTF-8）连同注释一起重编码，系统代码页里没有的
+  字符直接变成 '?'。取消勾选统计是个隐私动作，不该顺带弄坏用户配置。}
+procedure ApplyStatisticsChoiceToUserConfig;
+var
+  Lines: TArrayOfString;
+  Index: Integer;
+  Trimmed: String;
+  InStatistics: Boolean;
+begin
+  if UserConfigExistedBeforeInstall or (StatisticsPage = nil) then
+    Exit;
+  if StatisticsPage.Values[StatisticsEnabledIndex] then
+    Exit;
+  if not LoadStringsFromFile(UserConfigPath, Lines) then
+    Exit;
+
+  InStatistics := False;
+  for Index := 0 to GetArrayLength(Lines) - 1 do
+  begin
+    Trimmed := Trim(Lines[Index]);
+    if (Length(Trimmed) > 0) and (Trimmed[1] = '[') then
+      InStatistics := (Trimmed = '[statistics]')
+    else if InStatistics and IsKeyAssignment(Trimmed, 'enabled') then
+    begin
+      Lines[Index] := 'enabled = false';
+      SaveStringsToUTF8FileWithoutBOM(UserConfigPath, Lines, False);
       Exit;
     end;
   end;
@@ -555,6 +624,17 @@ begin
     (CompareText(FileName, 'msime_user.db-journal') = 0);
 end;
 
+function IsStatsDatabaseFile(const FileName: String): Boolean;
+begin
+  { 输入统计是累积出来的历史，装不回来，和用户词库同级：覆盖安装必须整体留住。
+    Server 被安装器强杀时 WAL 里可能还有尚未 checkpoint 的计数，所以伴随文件一起留。}
+  Result :=
+    (CompareText(FileName, 'msime_stats.db') = 0) or
+    (CompareText(FileName, 'msime_stats.db-wal') = 0) or
+    (CompareText(FileName, 'msime_stats.db-shm') = 0) or
+    (CompareText(FileName, 'msime_stats.db-journal') = 0);
+end;
+
 function IsUserConfigFile(const FileName: String): Boolean;
 begin
   { config.toml 是用户配置，config.base.toml 是上次合并用的模板基线：
@@ -576,6 +656,7 @@ begin
     没有它的数据目录就不再被认作我们建的，后续的清理和卸载都会跳过。}
   Result :=
     IsUserDatabaseFile(FileName) or
+    IsStatsDatabaseFile(FileName) or
     IsUserConfigFile(FileName) or
     IsUserSkinDirectory(FileName) or
     (CompareText(FileName, DataDirMarkerName) = 0);
@@ -909,7 +990,8 @@ begin
 end;
 
 { 用户改了数据目录：把上一处的用户数据搬过来。只搬真正属于用户、装不回来的东西——
-  词库主体、前端资源和辅助码都会由本次安装重新写入新目录。
+  词库主体、前端资源和辅助码都会由本次安装重新写入新目录；输入统计库和用户词库一样
+  是累积出来的历史，装不回来，也要一起搬走。
   用 robocopy 而不是 RenameFile：跨盘移动目录时 MoveFile 会直接失败。}
 function MigrateUserDataDir(const OldDir, NewDir: String): String;
 var
@@ -927,6 +1009,7 @@ begin
     ExpandConstant('{sys}\robocopy.exe'),
     '"' + RemoveBackslashUnlessRoot(OldDir) + '" "' + RemoveBackslashUnlessRoot(NewDir) + '" ' +
     'msime_user.db msime_user.db-wal msime_user.db-shm msime_user.db-journal ' +
+    'msime_stats.db msime_stats.db-wal msime_stats.db-shm msime_stats.db-journal ' +
     'config.toml config.base.toml /MOVE /R:2 /W:1 /NJH /NJS /NP /NFL /NDL',
     '',
     SW_HIDE,
@@ -1030,6 +1113,7 @@ begin
 #ifndef LightPackage
     ReplayUserDictionary;
     ApplyNetworkChoiceToUserConfig;
+    ApplyStatisticsChoiceToUserConfig;
 #endif
     CreateWatchdogLogonTask;
     EnsureImeUserDataDir;
