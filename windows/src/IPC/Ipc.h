@@ -185,6 +185,9 @@ inline std::atomic_bool MicrosoftShuangpinEnabled{false};
 inline std::atomic_bool JapaneseInputModeEnabled{false};
 inline std::atomic_bool CapsLockEnabled{false};
 inline std::atomic_bool TsfDiagnosticLogEnabled{false};
+// Default off until the Server sends the persisted setting. Failing to receive
+// the switch must never collect: the user's off choice wins over completeness.
+inline std::atomic_bool StatisticsEnabled{false};
 inline thread_local bool g_connected = false;
 
 } // namespace Global

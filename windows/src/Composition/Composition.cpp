@@ -8,6 +8,7 @@
 #include <string>
 #include "FanyDefines.h"
 #include "Ipc.h"
+#include "stats_collector.h"
 
 namespace
 {
@@ -1051,6 +1052,11 @@ STDAPI CMetasequoiaIME::OnCompositionTerminated(TfEditCookie ecWrite, _In_ ITfCo
                     _pCompositionProcessorEngine ? _pCompositionProcessorEngine->GetVirtualKeyLength() : 0, S_OK,
                     _CaptureCompositionEpoch());
 
+    // Count what the host is about to keep in the document. This path never
+    // wipes the text (see the comment below), so whatever the range holds is
+    // what the user actually got.
+    _CaptureCompositionStats(ecWrite, pComposition);
+
     // The callback already carries a write cookie and the host has already
     // ended this exact composition. Detach ownership before making COM calls,
     // so a re-entrant/stale callback cannot observe it as current or tear down
@@ -1124,11 +1130,57 @@ BOOL CMetasequoiaIME::_IsComposing()
 void CMetasequoiaIME::_SetComposition(_In_ ITfComposition *pComposition)
 {
     _pComposition = pComposition;
+    // A new composition may be captured exactly once by the statistics side
+    // channel. This is the only creation entry (StartComposition.cpp).
+    _compositionStatsCaptured.store(false, std::memory_order_release);
     uint64_t nextEpoch = _compositionEpoch.fetch_add(1, std::memory_order_acq_rel) + 1;
     if (nextEpoch == 0)
     {
         _compositionEpoch.fetch_add(1, std::memory_order_acq_rel);
     }
+}
+
+//+---------------------------------------------------------------------------
+//
+// _CaptureCompositionStats
+//
+// Read-only statistics side channel shared by _TerminateComposition and
+// OnCompositionTerminated. Classifies the composition text and queues the
+// five counters; the text itself never leaves this process. Every failure is
+// silent: statistics must not change input behavior, cleanup order or any
+// HRESULT.
+//---------------------------------------------------------------------------
+
+void CMetasequoiaIME::_CaptureCompositionStats(TfEditCookie ec, _In_ ITfComposition *pComposition)
+{
+    if (_compositionStatsCaptured.exchange(true, std::memory_order_acq_rel))
+    {
+        return;
+    }
+    if (pComposition == nullptr || !Global::StatisticsEnabled.load(std::memory_order_relaxed))
+    {
+        return;
+    }
+
+    ITfRange *pRange = nullptr;
+    if (FAILED(pComposition->GetRange(&pRange)) || pRange == nullptr)
+    {
+        return;
+    }
+
+    // Compositions are preedit-sized. A longer range is truncated instead of
+    // read in chunks: the capture must stay a cheap bypass of the commit path.
+    constexpr ULONG kMaxCapturedUnits = 1024;
+    WCHAR buffer[kMaxCapturedUnits];
+    ULONG fetched = 0;
+    const HRESULT readResult = SafeRangeGetText(pRange, ec, 0, buffer, kMaxCapturedUnits, &fetched);
+    pRange->Release();
+    if (FAILED(readResult) || fetched == 0)
+    {
+        return;
+    }
+
+    MsimeStats::QueueStatisticsCommit(MsimeStats::ClassifyText(buffer, fetched));
 }
 
 //+---------------------------------------------------------------------------

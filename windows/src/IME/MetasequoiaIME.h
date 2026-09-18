@@ -236,6 +236,10 @@ class CMetasequoiaIME : public ITfTextInputProcessorEx,
     // functions for the composition object.
     void _SetComposition(_In_ ITfComposition *pComposition);
     void _TerminateComposition(TfEditCookie ec, _In_ ITfContext *pContext, BOOL isCalledFromDeactivate = FALSE);
+    // Read-only statistics side channel: classifies the composition text once
+    // per composition, before the composition is ended and released. Never
+    // changes input state, cleanup order or HRESULTs; every failure is silent.
+    void _CaptureCompositionStats(TfEditCookie ec, _In_ ITfComposition *pComposition);
     void _SaveCompositionContext(_In_ ITfContext *pContext);
 
     // key event handlers for composition/candidate/phrase common objects.
@@ -736,6 +740,11 @@ class CMetasequoiaIME : public ITfTextInputProcessorEx,
     std::atomic<uint64_t> _expectedWorkerFocusToken;
     std::atomic<uint64_t> _acknowledgedWorkerFocusToken;
     std::atomic<uint64_t> _compositionEpoch;
+    // Per-composition de-duplication for _CaptureCompositionStats:
+    // _TerminateComposition's EndComposition call can re-enter
+    // OnCompositionTerminated, and the two capture points must count once.
+    // Reset only in _SetComposition, the single composition-creation entry.
+    std::atomic<bool> _compositionStatsCaptured;
     std::wstring _voiceCompositionAssemble;
     UINT _voiceCompositionAssembleMsg = 0;
     wchar_t _voiceCompositionAssembleGeneration = 0;

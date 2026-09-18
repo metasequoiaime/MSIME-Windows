@@ -107,6 +107,11 @@ void CMetasequoiaIME::_TerminateComposition(TfEditCookie ec, _In_ ITfContext *pC
         // remove the display attribute from the composition range.
         _ClearCompositionDisplayAttributes(ec, pContext, terminatingComposition);
 
+        // Statistics: classify the committed range text before EndComposition
+        // can re-enter OnCompositionTerminated and detach it. Read-only; any
+        // failure is silent and the HRESULT below is untouched.
+        _CaptureCompositionStats(ec, terminatingComposition);
+
         const HRESULT endResult = SafeEndComposition(terminatingComposition, ec);
         if (FAILED(endResult) && _pComposition == terminatingComposition)
         {

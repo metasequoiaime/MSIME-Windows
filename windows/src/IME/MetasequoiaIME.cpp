@@ -17,6 +17,7 @@
 #include <vector>
 #include "FanyLog.h"
 #include "Ipc.h"
+#include "stats_collector.h"
 #include "CommonUtils.h"
 #include "Global/FanyDefines.h"
 #include "Utils/FanyUtils.h"
@@ -476,6 +477,7 @@ CMetasequoiaIME::CMetasequoiaIME()
     _expectedWorkerFocusToken.store(0);
     _acknowledgedWorkerFocusToken.store(0);
     _compositionEpoch.store(1);
+    _compositionStatsCaptured.store(false);
     _voiceCompositionAssemble.clear();
     _voiceCompositionAssembleMsg = 0;
     _voiceCompositionAssembleGeneration = 0;
@@ -1866,7 +1868,8 @@ void CMetasequoiaIME::IpcWorkerThread(CMetasequoiaIME *pIME)
              buf.msg_type == Global::DataToTsfWorkerThreadMsgType::MicrosoftShuangpinChanged ||
              buf.msg_type == Global::DataToTsfWorkerThreadMsgType::InputModeChanged ||
              buf.msg_type == Global::DataToTsfWorkerThreadMsgType::CapsLockChanged ||
-             buf.msg_type == Global::DataToTsfWorkerThreadMsgType::TsfDiagnosticLogChanged))
+             buf.msg_type == Global::DataToTsfWorkerThreadMsgType::TsfDiagnosticLogChanged ||
+             buf.msg_type == Global::DataToTsfWorkerThreadMsgType::StatisticsEnabledChanged))
         {
             bool hasTerminator = false;
             for (const wchar_t ch : buf.data)
@@ -1948,6 +1951,7 @@ void CMetasequoiaIME::IpcWorkerThread(CMetasequoiaIME *pIME)
                 buf.msg_type == Global::DataToTsfWorkerThreadMsgType::InputModeChanged ||
                 buf.msg_type == Global::DataToTsfWorkerThreadMsgType::CapsLockChanged ||
                 buf.msg_type == Global::DataToTsfWorkerThreadMsgType::TsfDiagnosticLogChanged ||
+                buf.msg_type == Global::DataToTsfWorkerThreadMsgType::StatisticsEnabledChanged ||
                 buf.msg_type == Global::DataToTsfWorkerThreadMsgType::PunctuationLockChanged ||
                 buf.msg_type == Global::DataToTsfWorkerThreadMsgType::PipeReady ||
                 buf.msg_type == Global::DataToTsfWorkerThreadMsgType::FocusSessionReady ||
@@ -2062,6 +2066,17 @@ void CMetasequoiaIME::IpcWorkerThread(CMetasequoiaIME *pIME)
         else if (buf.msg_type == Global::DataToTsfWorkerThreadMsgType::TsfDiagnosticLogChanged)
         {
             Global::TsfDiagnosticLogEnabled.store(buf.data[0] == L'1', std::memory_order_relaxed);
+        }
+        else if (buf.msg_type == Global::DataToTsfWorkerThreadMsgType::StatisticsEnabledChanged)
+        {
+            const bool enabled = buf.data[0] == L'1';
+            Global::StatisticsEnabled.store(enabled, std::memory_order_relaxed);
+            if (!enabled)
+            {
+                // Re-enabling starts a fresh active-time measurement: the gap
+                // while the switch was off must not count as typing time.
+                MsimeStats::ResetStatisticsActiveTimer();
+            }
         }
         else if (buf.msg_type == Global::DataToTsfWorkerThreadMsgType::PunctuationLockChanged)
         {
