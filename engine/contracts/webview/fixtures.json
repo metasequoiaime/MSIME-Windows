@@ -461,41 +461,12 @@
     "direction": "client"
   },
   {
-    "name": "statistics range clear",
+    "name": "statistics clear action is retired",
     "message": {
       "type": "statsRequest",
       "data": {
         "requestId": "stats-2",
-        "action": "clear",
-        "range": "90d"
-      }
-    },
-    "valid": true,
-    "surface": "settings",
-    "direction": "client"
-  },
-  {
-    "name": "statistics forever is a valid retention window",
-    "message": {
-      "type": "statsRequest",
-      "data": {
-        "requestId": "stats-2b",
-        "action": "clear",
-        "range": "forever"
-      }
-    },
-    "valid": true,
-    "surface": "settings",
-    "direction": "client"
-  },
-  {
-    "name": "statistics retired clear range",
-    "message": {
-      "type": "statsRequest",
-      "data": {
-        "requestId": "stats-2c",
-        "action": "clear",
-        "range": "all"
+        "action": "clear"
       }
     },
     "valid": false,
@@ -503,13 +474,13 @@
     "direction": "client"
   },
   {
-    "name": "statistics unknown clear range",
+    "name": "statistics range is retired",
     "message": {
       "type": "statsRequest",
       "data": {
         "requestId": "stats-3",
-        "action": "clear",
-        "range": "7d"
+        "action": "query",
+        "range": "30d"
       }
     },
     "valid": false,

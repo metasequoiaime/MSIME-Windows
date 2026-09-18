@@ -295,18 +295,7 @@
           "action": {
             "type": "string",
             "enum": [
-              "query",
-              "clear"
-            ]
-          },
-          "range": {
-            "type": "string",
-            "enum": [
-              "30d",
-              "90d",
-              "180d",
-              "365d",
-              "forever"
+              "query"
             ]
           }
         },
