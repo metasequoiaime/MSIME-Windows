@@ -145,6 +145,30 @@ it('fills the retention dropdown only with a known window', () => {
   expect(element('statisticsRetention').value).toBe('90d');
 });
 
+it('re-queries after the retention policy changes', () => {
+  setupStatistics();
+  // 先建立基线，不依赖上一个用例在模块级变量里留下了什么。
+  applyStatisticsConfig(true, 'forever');
+  postMessage.mockClear();
+
+  applyStatisticsConfig(true, '30d');
+
+  // Server 收到新策略后会立即清理一次，面板必须重新取数：
+  // 否则下拉写着「保留最近 30 天」而图表还画着清理前的全量数据。
+  expect(postMessage).toHaveBeenCalledTimes(1);
+  expect(lastRequest().data.action).toBe('query');
+});
+
+it('does not re-query when a snapshot repeats the same retention', () => {
+  setupStatistics();
+  applyStatisticsConfig(true, '30d');
+  postMessage.mockClear();
+
+  // 任何配置变更都会重推整份快照，同值重复回填不该反复打库。
+  applyStatisticsConfig(true, '30d');
+  expect(postMessage).not.toHaveBeenCalled();
+});
+
 it('renders cards and details from a response', () => {
   setupStatistics();
   const requestId = lastRequest().data.requestId;

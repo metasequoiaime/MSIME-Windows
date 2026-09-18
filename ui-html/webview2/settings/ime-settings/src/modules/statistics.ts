@@ -43,6 +43,9 @@ const BREAKDOWN_LABELS: Array<[keyof CharacterBreakdown, string]> = [
 let requestCounter = 0;
 // 只认最后一个请求的回包：连续刷新时，旧回包会把新数据盖回去。
 let latestRequestId = '';
+// Server 端生效的保留策略，用来发现「策略变了」：改策略会立即清理一次，面板必须重新取数，
+// 否则下拉写着「保留最近 30 天」而图表还画着清理前的全量数据。
+let appliedRetention: string | null = null;
 
 function byId(id: string): HTMLElement | null {
   return document.getElementById(id);
@@ -299,6 +302,12 @@ export function applyStatisticsConfig(enabled: unknown, retention?: unknown): vo
   if (isRetention(retention)) {
     const select = byId('statisticsRetention') as HTMLSelectElement | null;
     if (select) select.value = retention;
+    // 首次回填不重查（setup 已经取过一次），只在策略真的变了时重取：
+    // Server 在写配置成功后立即按新策略清理，快照回到这里时数据已经变少，
+    // 不重查的话图表会停留在清理前的样子。
+    const changed = appliedRetention !== null && appliedRetention !== retention;
+    appliedRetention = retention;
+    if (changed) requestStats();
   }
 }
 

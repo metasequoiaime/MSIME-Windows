@@ -74,6 +74,10 @@ class StatsStore
 
     // Folds one DLL record into the daily and hourly buckets. Returns false on any storage
     // failure; callers treat statistics as droppable data and never surface the error.
+    //
+    // Seeding helper: it runs the batch default, i.e. policy "forever", so it stamps the day's
+    // retention check WITHOUT trimming. Production writes must go through ApplyBatch with a real
+    // policy -- using this one on the live path would silently skip that day's trim.
     bool Apply(const FanyImeStatsRecord &record);
     // The policy is applied on the first write of a new local day (throttled through stats_meta),
     // in the same transaction as the batch.
