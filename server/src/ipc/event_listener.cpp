@@ -60,6 +60,7 @@
 #include "kaomoji/kaomoji_ime.h"
 #include "log/candidate_diag_log.h"
 #include "log/ftb_diag_log.h"
+#include "statistics/stats_aggregator.h"
 #include "voice-input/voice_input_service.h"
 #include <cwchar>
 
@@ -3217,6 +3218,11 @@ void RegisteredPipeMonitorThread(HANDLE clientPipe, UINT pipeRole, uint64_t hand
             SendToTsfWorkerThreadClientViaNamedpipe(
                 hello.client_id, Global::DataFromServerMsgTypeToTsfWorkerThread::TsfDiagnosticLogChanged,
                 GetConfiguredTsfDiagnosticLogEnabled() ? L"1" : L"0");
+            // The DLL's own initial value is "off": it only starts buffering counters once this
+            // frame says "1". A missed push loses counts, a missing push cannot spy.
+            SendToTsfWorkerThreadClientViaNamedpipe(
+                hello.client_id, Global::DataFromServerMsgTypeToTsfWorkerThread::StatisticsEnabledChanged,
+                GetConfiguredStatisticsEnabled() ? L"1" : L"0");
             SendToTsfWorkerThreadClientViaNamedpipe(
                 hello.client_id, Global::DataFromServerMsgTypeToTsfWorkerThread::PunctuationLockChanged,
                 FormatPunctuationLockWorkerPayload());
@@ -3482,6 +3488,71 @@ void TsfDiagnosticPipeEventListenerLoopThread()
                         }
                         start = end + 1;
                     }
+                }
+            }
+        }
+
+        if (listeningPipe && listeningPipe != INVALID_HANDLE_VALUE)
+        {
+            DisconnectNamedPipe(listeningPipe);
+            CloseHandle(listeningPipe);
+            listeningPipe = INVALID_HANDLE_VALUE;
+        }
+    }
+}
+
+// Statistics batches from the TSF DLL. Same transport shape as the diagnostic listener above, but
+// the payload is structured counters rather than text and collection is gated by its own switch:
+// the DLL classifies characters in-process, so five integers per commit arrive here, never text.
+void StatsPipeEventListenerLoopThread()
+{
+    HANDLE listeningPipe = hStatsPipe;
+    hStatsPipe = INVALID_HANDLE_VALUE;
+    Statistics::StatsAggregator aggregator(Statistics::SharedStatsStore());
+    while (pipe_running)
+    {
+        if (!listeningPipe || listeningPipe == INVALID_HANDLE_VALUE)
+        {
+            listeningPipe = CreateStatsNamedPipeInstance();
+            if (!listeningPipe || listeningPipe == INVALID_HANDLE_VALUE)
+            {
+                Sleep(50);
+                continue;
+            }
+        }
+
+        const BOOL connected = WaitForPipeClient(listeningPipe);
+        if (connected && pipe_running)
+        {
+            std::vector<unsigned char> frame(FANY_IME_STATS_MAX_FRAME_BYTES);
+            DWORD bytesRead = 0;
+            BOOL readResult = FALSE;
+            DWORD pipeMode = PIPE_READMODE_MESSAGE | PIPE_NOWAIT;
+            if (SetNamedPipeHandleState(listeningPipe, &pipeMode, nullptr, nullptr))
+            {
+                // A client that connects without ever writing must not hold the single instance.
+                const auto deadline = std::chrono::steady_clock::now() + kPipeHelloTimeout;
+                while (pipe_running && std::chrono::steady_clock::now() < deadline)
+                {
+                    readResult =
+                        ReadFile(listeningPipe, frame.data(), static_cast<DWORD>(frame.size()), &bytesRead, nullptr);
+                    if (readResult || GetLastError() != ERROR_NO_DATA)
+                    {
+                        break;
+                    }
+                    Sleep(1);
+                }
+            }
+
+            // The switch is re-read per frame so turning statistics off stops new rows even when a
+            // frame was already in flight while the DLL was being told.
+            if (readResult && bytesRead != 0 && GetConfiguredStatisticsEnabled())
+            {
+                ULONG clientProcessId = 0;
+                (void)GetNamedPipeClientProcessId(listeningPipe, &clientProcessId);
+                if (!aggregator.HandleFrame(frame.data(), bytesRead, static_cast<std::uint32_t>(clientProcessId)))
+                {
+                    DIAG_LOGF(L"[stats] dropped frame bytes={} source_pid={}", bytesRead, clientProcessId);
                 }
             }
         }

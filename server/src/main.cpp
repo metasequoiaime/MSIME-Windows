@@ -157,6 +157,8 @@ int CALLBACK WinMain(_In_ HINSTANCE hInstance, _In_ HINSTANCE /*hPrevInstance*/,
     std::thread aux_pipe_listener(FanyNamedPipe::AuxPipeEventListenerLoopThread);
     /* Short-lived TSF diagnostic batches; isolated from all control pipes. */
     std::thread tsf_diagnostic_pipe_listener(FanyNamedPipe::TsfDiagnosticPipeEventListenerLoopThread);
+    /* Aggregated input statistics from TSF; own pipe so its switch stays independent. */
+    std::thread stats_pipe_listener(FanyNamedPipe::StatsPipeEventListenerLoopThread);
 
     if (pipe_probe)
     {
@@ -217,6 +219,7 @@ int CALLBACK WinMain(_In_ HINSTANCE hInstance, _In_ HINSTANCE /*hPrevInstance*/,
     to_tsf_worker_thread_pipe_listener.join();
     aux_pipe_listener.join();
     tsf_diagnostic_pipe_listener.join();
+    stats_pipe_listener.join();
 
     ::CloseIpc();
     CoUninitialize();

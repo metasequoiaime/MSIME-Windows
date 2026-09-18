@@ -37,6 +37,7 @@ void WorkerThread();
 void EventListenerLoopThread();
 void AuxPipeEventListenerLoopThread();
 void TsfDiagnosticPipeEventListenerLoopThread();
+void StatsPipeEventListenerLoopThread();
 void ToTsfPipeEventListenerLoopThread();
 void ToTsfWorkerThreadPipeEventListenerLoopThread();
 

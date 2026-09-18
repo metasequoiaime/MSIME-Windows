@@ -45,6 +45,9 @@ inline HANDLE hToTsfPipe = INVALID_HANDLE_VALUE;
 inline HANDLE hToTsfWorkerThreadPipe = INVALID_HANDLE_VALUE;
 inline HANDLE hAuxPipe = INVALID_HANDLE_VALUE;
 inline HANDLE hTsfDiagnosticPipe = INVALID_HANDLE_VALUE;
+// Aggregated input statistics, written by the TSF DLL. A separate pipe from the diagnostic log so
+// the statistics switch and the log switch stay independent.
+inline HANDLE hStatsPipe = INVALID_HANDLE_VALUE;
 inline HANDLE hVoiceControlPipe = INVALID_HANDLE_VALUE;
 inline bool mainConnected = false;
 inline HANDLE mainPipeThread = NULL;
@@ -96,6 +99,7 @@ int CloseNamedPipe();
 HANDLE CreateMainNamedPipeInstance();
 HANDLE CreateAuxNamedPipeInstance();
 HANDLE CreateTsfDiagnosticNamedPipeInstance();
+HANDLE CreateStatsNamedPipeInstance();
 HANDLE CreateVoiceControlNamedPipeInstance();
 HANDLE CreateToTsfNamedPipeInstance();
 HANDLE CreateToTsfWorkerThreadNamedPipeInstance();

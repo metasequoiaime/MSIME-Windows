@@ -2765,6 +2765,7 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
             const int previous_preedit_font_size = GetConfiguredCandidateWindowPreeditFontSize();
             const std::string previous_cand_text_color = GetConfiguredCandidateTextColor();
             const VoiceInputConfig previous_voice_input = GetConfiguredVoiceInput();
+            const bool previous_statistics_enabled = GetConfiguredStatisticsEnabled();
             if (ReloadImeConfigIfChanged())
             {
                 FanyNamedPipe::EnqueueApplyCandidatePageSizeTask();
@@ -2893,6 +2894,13 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
                     BroadcastToTsfWorkerThreadViaNamedpipe(
                         Global::DataFromServerMsgTypeToTsfWorkerThread::TsfDiagnosticLogChanged,
                         GetConfiguredTsfDiagnosticLogEnabled() ? L"1" : L"0");
+                }
+                if (previous_statistics_enabled != GetConfiguredStatisticsEnabled())
+                {
+                    // The DLL stops buffering counters when told "0"; it never discards history.
+                    BroadcastToTsfWorkerThreadViaNamedpipe(
+                        Global::DataFromServerMsgTypeToTsfWorkerThread::StatisticsEnabledChanged,
+                        GetConfiguredStatisticsEnabled() ? L"1" : L"0");
                 }
                 const VoiceInputConfig &voice_input = GetConfiguredVoiceInput();
                 if (previous_voice_input.enabled != voice_input.enabled ||
@@ -3485,6 +3493,7 @@ LRESULT CALLBACK WndProcSettingsWindow(HWND hwnd, UINT message, WPARAM wParam, L
             const int previous_font_size = GetConfiguredCandidateFontSize();
             const int previous_preedit_font_size = GetConfiguredCandidateWindowPreeditFontSize();
             const std::string previous_cand_text_color = GetConfiguredCandidateTextColor();
+            const bool previous_statistics_enabled = GetConfiguredStatisticsEnabled();
             if (ReloadImeConfigIfChanged())
             {
                 FanyNamedPipe::EnqueueApplyCandidatePageSizeTask();
@@ -3603,6 +3612,13 @@ LRESULT CALLBACK WndProcSettingsWindow(HWND hwnd, UINT message, WPARAM wParam, L
                     BroadcastToTsfWorkerThreadViaNamedpipe(
                         Global::DataFromServerMsgTypeToTsfWorkerThread::TsfDiagnosticLogChanged,
                         GetConfiguredTsfDiagnosticLogEnabled() ? L"1" : L"0");
+                }
+                if (previous_statistics_enabled != GetConfiguredStatisticsEnabled())
+                {
+                    // The DLL stops buffering counters when told "0"; it never discards history.
+                    BroadcastToTsfWorkerThreadViaNamedpipe(
+                        Global::DataFromServerMsgTypeToTsfWorkerThread::StatisticsEnabledChanged,
+                        GetConfiguredStatisticsEnabled() ? L"1" : L"0");
                 }
                 PostSettingsConfig();
             }

@@ -270,6 +270,10 @@ bool GetConfiguredKaomojiMixedInputEnabled();
 bool SetConfiguredKaomojiMixedInputEnabled(bool enabled);
 bool GetConfiguredCloudCandidatesEnabled();
 bool SetConfiguredCloudCandidatesEnabled(bool enabled);
+// Local input statistics (counters only, never input text). On by default; the installer wizard
+// asks about it on a fresh install, and turning it off stops new records without deleting history.
+bool GetConfiguredStatisticsEnabled();
+bool SetConfiguredStatisticsEnabled(bool enabled);
 bool GetConfiguredUnicodeModeEnabled();
 bool SetConfiguredUnicodeModeEnabled(bool enabled);
 bool GetConfiguredQuickPhraseEnabled();

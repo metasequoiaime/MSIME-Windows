@@ -58,6 +58,10 @@ set(TEST_SOURCE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_user_dictionary_journal.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_config_template_merge.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_config_non_ascii_path.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_statistics_config.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_statistics_store.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_statistics_aggregator.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_statistics_settings.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_dictionary_replay_non_ascii_path.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_candidate_skin_catalog_non_ascii_path.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_non_ascii_path_contract.cpp"
@@ -71,6 +75,9 @@ set(TEST_SOURCE_FILES
     "${CMAKE_SOURCE_DIR}/src/utils/common_utils.cpp"
     "${CMAKE_SOURCE_DIR}/src/utils/ime_paths.cpp"
     "${CMAKE_SOURCE_DIR}/src/settings/dictionary_validation.cpp"
+    "${CMAKE_SOURCE_DIR}/src/statistics/stats_store.cpp"
+    "${CMAKE_SOURCE_DIR}/src/statistics/stats_aggregator.cpp"
+    "${CMAKE_SOURCE_DIR}/src/settings/statistics_settings.cpp"
 )
 
 add_executable(${TEST_EXECUTABLE_NAME} ${TEST_SOURCE_FILES})

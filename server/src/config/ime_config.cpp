@@ -116,6 +116,10 @@ bool g_english_candidates_enabled = false;
 bool g_candidate_translations_enabled = true;
 int g_english_mixed_input_min_chars = kEnglishMixedInputMinCharsDefault;
 bool g_cloud_candidates_enabled = true;
+// Local statistics default on: the installer wizard tells the user and offers the opt-out, so an
+// enabled-by-default switch is announced rather than silent. Off means "stop recording", not
+// "delete what was recorded".
+bool g_statistics_enabled = true;
 bool g_emoji_mixed_input_enabled = false;
 bool g_kaomoji_mixed_input_enabled = false;
 bool g_unicode_mode_enabled = true;
@@ -1044,6 +1048,7 @@ bool LoadImeConfig()
                     : kEnglishMixedInputMinCharsDefault;
         }
         g_cloud_candidates_enabled = tbl["general"]["cloud_candidates"].value_or(true);
+        g_statistics_enabled = tbl["statistics"]["enabled"].value_or(true);
         g_emoji_mixed_input_enabled = tbl["general"]["emoji_mixed_input"].value_or(false);
         g_kaomoji_mixed_input_enabled = tbl["general"]["kaomoji_mixed_input"].value_or(false);
         g_unicode_mode_enabled = tbl["utility"]["unicode_mode"].value_or(true);
@@ -3341,6 +3346,23 @@ bool SetConfiguredCloudCandidatesEnabled(bool enabled)
         return false;
     }
     g_cloud_candidates_enabled = enabled;
+    return true;
+}
+
+bool GetConfiguredStatisticsEnabled()
+{
+    return g_statistics_enabled;
+}
+
+bool SetConfiguredStatisticsEnabled(bool enabled)
+{
+    // Persist first, then flip the cached value: a failed write must not make the Server believe a
+    // setting changed that the next reload would silently revert.
+    if (!WriteConfiguredValue("statistics", "enabled", enabled ? "true" : "false"))
+    {
+        return false;
+    }
+    g_statistics_enabled = enabled;
     return true;
 }
 

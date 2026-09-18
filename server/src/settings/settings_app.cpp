@@ -7,6 +7,7 @@
 #include "settings/settings_splash.h"
 #include "settings/dictionary_manager.h"
 #include "settings/serial_task_queue.h"
+#include "settings/statistics_settings.h"
 #include <memory>
 #include <stdexcept>
 #include "skin/candidate_skin_catalog.h"
@@ -391,6 +392,7 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
             {"y_mode", GetConfiguredYModeEnabled()},
             {"r_mode", GetConfiguredRModeEnabled()},
             {"clipboard_history", GetConfiguredClipboardHistoryEnabled()}}},
+          {"statistics", {{"enabled", GetConfiguredStatisticsEnabled()}}},
           {"appearance",
            {{"ui_backend", GetConfiguredUiBackend()},
             {"candidate_window_layout", GetConfiguredCandidateWindowLayout()},
@@ -673,6 +675,8 @@ bool ApplyConfigUpdate(const json::object &data)
         return SetConfiguredKaomojiMixedInputEnabled(json::value_to<bool>(data.at("value")));
     if (path == "general.cloud_candidates")
         return SetConfiguredCloudCandidatesEnabled(json::value_to<bool>(data.at("value")));
+    if (path == "statistics.enabled")
+        return SetConfiguredStatisticsEnabled(json::value_to<bool>(data.at("value")));
     if (path == "utility.unicode_mode")
         return SetConfiguredUnicodeModeEnabled(json::value_to<bool>(data.at("value")));
     if (path == "utility.quick_phrase")
@@ -1026,6 +1030,38 @@ void HandleWebMessage(HWND hwnd, ICoreWebView2WebMessageReceivedEventArgs *args)
                 if (!metasequoia::webview::Validate(response, "server"))
                     throw std::runtime_error("Invalid dictionary response");
                 auto message = string_to_wstring(json::serialize(response));
+                return [message = std::move(message)] {
+                    if (g_webview)
+                        g_webview->PostWebMessageAsJson(message.c_str());
+                };
+            });
+        }
+        else if (type == "statsRequest")
+        {
+            const auto data = value.at("data").as_object();
+            g_worker->Submit([data]() -> SerialTaskQueue::Completion {
+                json::value response;
+                try
+                {
+                    response = SettingsStatistics::HandleRequest(data);
+                }
+                catch (...)
+                {
+                    response = json::object{{"requestId", json::string("")},
+                                            {"ok", false},
+                                            {"message", "统计操作失败，请重试"},
+                                            {"daily", json::array{}},
+                                            {"hourly", json::array{}},
+                                            {"meta", json::object{{"enabled", GetConfiguredStatisticsEnabled()}}}};
+                }
+                auto &object = response.as_object();
+                // The handler answers with the data payload; the envelope and protocol version are
+                // the host's job, exactly as for dictionaryResponse.
+                json::value message_value = {
+                    {"type", "statsResponse"}, {"protocolVersion", metasequoia::webview::Version}, {"data", object}};
+                if (!metasequoia::webview::Validate(message_value, "server"))
+                    throw std::runtime_error("Invalid statistics response");
+                auto message = string_to_wstring(json::serialize(message_value));
                 return [message = std::move(message)] {
                     if (g_webview)
                         g_webview->PostWebMessageAsJson(message.c_str());

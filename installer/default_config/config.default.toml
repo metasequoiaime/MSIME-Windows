@@ -55,6 +55,13 @@ cloud_candidates = true
 clean_mode = false
 
 #
+# 输入统计（只在本机记录计数，不记录输入内容，不联网不上报）
+#
+[statistics]
+# 默认开启；安装向导会向用户说明并可取消勾选。关闭后不再产生新记录，历史数据保留。
+enabled = true
+
+#
 # 腾讯云机器翻译（竖排候选项本地词库未命中时的补全）
 #
 [tencent_tmt]
