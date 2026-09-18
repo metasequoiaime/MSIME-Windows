@@ -111,6 +111,17 @@ Database OpenDatabase(const std::string &db_path)
     }
     Database db(raw);
     sqlite3_busy_timeout(db.get(), 3000);
+    // Statistics are droppable data written every 250ms while the user types, so the write side is
+    // what needs the cheaper durability: WAL plus synchronous=NORMAL collapses the per-batch fsync
+    // and lets the settings panel read while a batch is being written. The cost is losing the last
+    // few seconds of counts on a power loss or a hard kill, which is acceptable here.
+    //
+    // journal_mode is stored in the database file, but synchronous is per connection and this store
+    // opens a fresh connection for every operation -- both have to be set on every open.
+    if (!Execute(db.get(), "PRAGMA journal_mode = WAL;") || !Execute(db.get(), "PRAGMA synchronous = NORMAL;"))
+    {
+        return {};
+    }
     return db;
 }
 
@@ -188,6 +199,86 @@ bool RecomputeFirstDay(sqlite3 *db)
         return false;
     }
     return StepDone(insert.get());
+}
+
+// Shared by Clear and the automatic cross-day cleanup: the mapping from a retention value to a
+// number of days exists once so the two paths cannot drift apart. 0 means "no window" -- either
+// "forever" or an unknown value -- and callers must treat it as "delete nothing".
+int RetentionWindowDays(const std::string &range)
+{
+    if (range == "30d")
+    {
+        return 30;
+    }
+    if (range == "90d")
+    {
+        return 90;
+    }
+    if (range == "180d")
+    {
+        return 180;
+    }
+    if (range == "365d")
+    {
+        return 365;
+    }
+    return 0;
+}
+
+// The single deletion implementation, used both by Clear (retention changed) and by the automatic
+// cleanup inside ApplyBatch. The caller owns the transaction, so a failure here rolls back
+// together with whatever else the transaction was doing.
+bool DeleteRowsOlderThan(sqlite3 *db, int32_t cutoff_day)
+{
+    // cutoff is the oldest day that survives, so the comparison is strict.
+    return DeleteFromDay(db, "DELETE FROM stats_daily WHERE day_key < ?1", cutoff_day) &&
+           DeleteFromDay(db, "DELETE FROM stats_hourly WHERE day_key < ?1", cutoff_day) && RecomputeFirstDay(db);
+}
+
+// stats_meta.last_retention_day throttles the automatic trim to one run per local day, and lives in
+// the database so a server restart cannot re-trim the same day. A missing or unreadable marker
+// means "never ran": trimming twice is idempotent, so that is the safe direction.
+bool ShouldRunRetention(sqlite3 *db, int32_t today)
+{
+    Statement stmt = Prepare(db, "SELECT value FROM stats_meta WHERE key='last_retention_day'");
+    if (!stmt)
+    {
+        return false;
+    }
+    const int step = sqlite3_step(stmt.get());
+    if (step == SQLITE_DONE)
+    {
+        return true;
+    }
+    if (step != SQLITE_ROW)
+    {
+        return false;
+    }
+    const unsigned char *value = sqlite3_column_text(stmt.get(), 0);
+    if (value == nullptr)
+    {
+        return true;
+    }
+    char *end = nullptr;
+    const long parsed = std::strtol(reinterpret_cast<const char *>(value), &end, 10);
+    if (end == reinterpret_cast<const char *>(value))
+    {
+        return true;
+    }
+    return static_cast<int32_t>(parsed) != today;
+}
+
+// Stamped on every batch, not only the ones that trim: otherwise an active "forever" policy would
+// re-run the marker lookup on every single write.
+bool UpdateLastRetentionDay(sqlite3 *db, int32_t today)
+{
+    Statement stmt = Prepare(db, "INSERT INTO stats_meta(key,value) VALUES('last_retention_day',?1)"
+                                 " ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+    if (!stmt || sqlite3_bind_int(stmt.get(), 1, today) != SQLITE_OK)
+    {
+        return false;
+    }
+    return StepDone(stmt.get());
 }
 
 // One accumulated row per day and one per hour bucket. The upsert adds into the existing row so a
@@ -303,7 +394,7 @@ bool StatsStore::Apply(const FanyImeStatsRecord &record)
     return ApplyBatch(&record, 1);
 }
 
-bool StatsStore::ApplyBatch(const FanyImeStatsRecord *records, std::size_t count)
+bool StatsStore::ApplyBatch(const FanyImeStatsRecord *records, std::size_t count, const RetentionPolicy &policy)
 {
     if (count == 0)
     {
@@ -320,12 +411,21 @@ bool StatsStore::ApplyBatch(const FanyImeStatsRecord *records, std::size_t count
         return false;
     }
     // One transaction per batch: a frame is all-or-nothing, so a failed write never leaves a day
-    // half-counted.
+    // half-counted. The automatic trim rides the same transaction for the same reason -- a batch
+    // that fails to land must not leave history trimmed without it.
     if (!Execute(db.get(), "BEGIN IMMEDIATE"))
     {
         return false;
     }
-    if (!ApplyRecords(db.get(), records, count))
+    const int32_t today = LocalDayKey();
+    const int window_days = RetentionWindowDays(policy.range);
+    if (window_days > 0 && ShouldRunRetention(db.get(), today) &&
+        !DeleteRowsOlderThan(db.get(), LocalDayKeyDaysAgo(window_days - 1)))
+    {
+        Execute(db.get(), "ROLLBACK");
+        return false;
+    }
+    if (!UpdateLastRetentionDay(db.get(), today) || !ApplyRecords(db.get(), records, count))
     {
         Execute(db.get(), "ROLLBACK");
         return false;
@@ -394,36 +494,44 @@ bool StatsStore::Query(Snapshot &snapshot)
     return ReadFirstDay(db.get(), snapshot);
 }
 
+bool StatsStore::ReadPragmaState(PragmaState &state)
+{
+    state = PragmaState{};
+    const std::lock_guard<std::mutex> lock(mutex_);
+    Database db = OpenDatabase(db_path_);
+    if (!db)
+    {
+        return false;
+    }
+    Statement journal = Prepare(db.get(), "PRAGMA journal_mode");
+    if (!journal || sqlite3_step(journal.get()) != SQLITE_ROW)
+    {
+        return false;
+    }
+    const unsigned char *mode = sqlite3_column_text(journal.get(), 0);
+    state.journal_mode = mode != nullptr ? reinterpret_cast<const char *>(mode) : "";
+    Statement synchronous = Prepare(db.get(), "PRAGMA synchronous");
+    if (!synchronous || sqlite3_step(synchronous.get()) != SQLITE_ROW)
+    {
+        return false;
+    }
+    state.synchronous = sqlite3_column_int(synchronous.get(), 0);
+    return true;
+}
+
 bool StatsStore::Clear(const std::string &range)
 {
-    // The panel picks a retention window: keep the most recent N local days and drop
-    // everything older. "forever" means the user wants to keep everything, so it is a
-    // successful no-op rather than a rejected value -- it is part of the contract, not an
-    // invalid input. Months and years are approximated by days (3m = 90, 6m = 180, 1y = 365):
-    // the difference of a few days is immaterial for trimming old history.
+    // The panel picks a retention window: keep the most recent N local days and drop everything
+    // older. "forever" means the user wants to keep everything, so it is a successful no-op rather
+    // than a rejected value -- it is part of the contract, not an invalid input. Months and years
+    // are approximated by days (3m = 90, 6m = 180, 1y = 365): the difference of a few days is
+    // immaterial for trimming old history.
     if (range == "forever")
     {
         return true;
     }
-
-    int days = 0;
-    if (range == "30d")
-    {
-        days = 30;
-    }
-    else if (range == "90d")
-    {
-        days = 90;
-    }
-    else if (range == "180d")
-    {
-        days = 180;
-    }
-    else if (range == "365d")
-    {
-        days = 365;
-    }
-    else
+    const int window_days = RetentionWindowDays(range);
+    if (window_days <= 0)
     {
         return false;
     }
@@ -438,13 +546,7 @@ bool StatsStore::Clear(const std::string &range)
     {
         return false;
     }
-
-    // cutoff is the oldest day that survives, so the comparison is strict.
-    const int32_t cutoff = LocalDayKeyDaysAgo(days - 1);
-    bool ok = DeleteFromDay(db.get(), "DELETE FROM stats_daily WHERE day_key < ?1", cutoff) &&
-              DeleteFromDay(db.get(), "DELETE FROM stats_hourly WHERE day_key < ?1", cutoff) &&
-              RecomputeFirstDay(db.get());
-    if (!ok)
+    if (!DeleteRowsOlderThan(db.get(), LocalDayKeyDaysAgo(window_days - 1)))
     {
         Execute(db.get(), "ROLLBACK");
         return false;

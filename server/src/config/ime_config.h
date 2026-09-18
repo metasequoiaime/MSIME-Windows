@@ -274,6 +274,10 @@ bool SetConfiguredCloudCandidatesEnabled(bool enabled);
 // asks about it on a fresh install, and turning it off stops new records without deleting history.
 bool GetConfiguredStatisticsEnabled();
 bool SetConfiguredStatisticsEnabled(bool enabled);
+// Retention policy for local statistics: "30d"/"90d"/"180d"/"365d" trim rows older than the
+// window on the first write of a new day (and once when the value changes); "forever" keeps all.
+const std::string &GetConfiguredStatisticsRetention();
+bool SetConfiguredStatisticsRetention(const std::string &retention);
 bool GetConfiguredUnicodeModeEnabled();
 bool SetConfiguredUnicodeModeEnabled(bool enabled);
 bool GetConfiguredQuickPhraseEnabled();

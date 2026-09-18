@@ -101,11 +101,13 @@ TEST_CASE(statistics_config_defaults_on_for_a_fresh_install)
     // next upgrade merge, and the user's choice would silently revert to the code default.
     const std::string template_text = ReadText(config_dir / L"config.default.toml");
     REQUIRE(template_text.find("[statistics]") != std::string::npos);
+    REQUIRE(template_text.find("retention = \"forever\"") != std::string::npos);
 
     {
         const ScopedConfigLocation location(config_dir);
         InitImeConfig();
         REQUIRE(GetConfiguredStatisticsEnabled());
+        REQUIRE_EQ(GetConfiguredStatisticsRetention(), std::string("forever"));
     }
 
     std::filesystem::remove_all(root, ec);
@@ -126,6 +128,96 @@ TEST_CASE(statistics_config_key_missing_reads_the_code_default)
         const ScopedConfigLocation location(config_dir);
         InitImeConfig();
         REQUIRE(GetConfiguredStatisticsEnabled());
+        // Retention has no history on either side of the upgrade: the default must trim nothing.
+        REQUIRE_EQ(GetConfiguredStatisticsRetention(), std::string("forever"));
+    }
+
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_config_retention_round_trips_and_rejects_unknown_values)
+{
+    const std::filesystem::path root = MakeProfileRoot(L"msime-stats-config-保留策略");
+    const std::filesystem::path config_dir = root / L"metasequoiaime";
+    std::error_code ec;
+    std::filesystem::create_directories(config_dir, ec);
+    SeedShippedTemplate(config_dir);
+
+    {
+        const ScopedConfigLocation location(config_dir);
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredStatisticsRetention(), std::string("forever"));
+
+        REQUIRE(SetConfiguredStatisticsRetention("30d"));
+        REQUIRE_EQ(GetConfiguredStatisticsRetention(), std::string("30d"));
+        REQUIRE(ReadText(config_dir / L"config.toml").find("retention = \"30d\"") != std::string::npos);
+
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredStatisticsRetention(), std::string("30d"));
+
+        // Unknown or empty values are refused without touching memory or disk.
+        REQUIRE(!SetConfiguredStatisticsRetention("7d"));
+        REQUIRE(!SetConfiguredStatisticsRetention(""));
+        REQUIRE(!SetConfiguredStatisticsRetention("monthly"));
+        REQUIRE_EQ(GetConfiguredStatisticsRetention(), std::string("30d"));
+        const std::string text = ReadText(config_dir / L"config.toml");
+        REQUIRE(text.find("retention = \"30d\"") != std::string::npos);
+        REQUIRE(text.find("7d") == std::string::npos);
+
+        REQUIRE(SetConfiguredStatisticsRetention("forever"));
+    }
+
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_config_retention_normalizes_a_bad_file_value_to_forever)
+{
+    const std::filesystem::path root = MakeProfileRoot(L"msime-stats-config-非法策略");
+    const std::filesystem::path config_dir = root / L"metasequoiaime";
+    std::error_code ec;
+    std::filesystem::create_directories(config_dir, ec);
+    SeedShippedTemplate(config_dir);
+    // A hand-edited file can carry anything; reading it must fall back to "keep everything"
+    // rather than letting a typo decide how much history is deleted.
+    WriteText(config_dir / L"config.toml", "[statistics]\nenabled = true\nretention = \"weekly\"\n");
+
+    {
+        const ScopedConfigLocation location(config_dir);
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredStatisticsRetention(), std::string("forever"));
+    }
+
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_config_retention_write_failure_keeps_the_cached_value)
+{
+    const std::filesystem::path root = MakeProfileRoot(L"msime-stats-config-策略写失败");
+    const std::filesystem::path config_dir = root / L"metasequoiaime";
+    std::error_code ec;
+    std::filesystem::create_directories(config_dir, ec);
+    SeedShippedTemplate(config_dir);
+    const std::filesystem::path blocker = root / L"not-a-directory";
+    WriteText(blocker, "x");
+
+    {
+        const ScopedConfigLocation location(config_dir);
+        InitImeConfig();
+        REQUIRE(SetConfiguredStatisticsRetention("90d"));
+
+        const ScopedConfigLocation blocked(blocker);
+        InitImeConfig();
+        REQUIRE(!SetConfiguredStatisticsRetention("30d"));
+        // The in-memory policy must not move when the file was not written: the next reload would
+        // silently revert it while the trim had already run under the unwritten value.
+        REQUIRE_EQ(GetConfiguredStatisticsRetention(), std::string("90d"));
+    }
+
+    {
+        const ScopedConfigLocation location(config_dir);
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredStatisticsRetention(), std::string("90d"));
+        REQUIRE(SetConfiguredStatisticsRetention("forever"));
     }
 
     std::filesystem::remove_all(root, ec);

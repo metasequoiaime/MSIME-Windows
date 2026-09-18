@@ -108,17 +108,33 @@ std::vector<std::pair<std::string, std::string>> TableColumns(const std::filesys
     return columns;
 }
 
-std::int64_t ScalarInt(const std::filesystem::path &db_path, const char *sql)
+std::int64_t ScalarInt(const std::filesystem::path &db_path, const std::string &sql)
 {
     sqlite3 *db = nullptr;
     REQUIRE_EQ(sqlite3_open_v2(test::Utf8(db_path).c_str(), &db, SQLITE_OPEN_READONLY, nullptr), SQLITE_OK);
     sqlite3_stmt *stmt = nullptr;
-    REQUIRE_EQ(sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr), SQLITE_OK);
+    REQUIRE_EQ(sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr), SQLITE_OK);
     REQUIRE_EQ(sqlite3_step(stmt), SQLITE_ROW);
     const std::int64_t value = sqlite3_column_int64(stmt, 0);
     sqlite3_finalize(stmt);
     sqlite3_close(db);
     return value;
+}
+
+// Raw SQL for arranging states the public API cannot reach -- a throttle marker that belongs to
+// yesterday, a row that appears after the trim ran, a trigger that makes a batch fail.
+void ExecuteSql(const std::filesystem::path &db_path, const std::string &sql)
+{
+    sqlite3 *db = nullptr;
+    REQUIRE_EQ(sqlite3_open_v2(test::Utf8(db_path).c_str(), &db, SQLITE_OPEN_READWRITE, nullptr), SQLITE_OK);
+    char *error = nullptr;
+    const int result = sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &error);
+    if (error != nullptr)
+    {
+        sqlite3_free(error);
+    }
+    sqlite3_close(db);
+    REQUIRE_EQ(result, SQLITE_OK);
 }
 } // namespace
 
@@ -375,10 +391,196 @@ TEST_CASE(statistics_store_can_be_read_safely_without_any_text_columns)
         REQUIRE_EQ(hourly_columns[index].first, expected_hourly[index]);
         REQUIRE_EQ(hourly_columns[index].second, std::string("INTEGER"));
     }
-    // stats_meta holds a schema version and the first recorded day, nothing else.
+    // stats_meta holds a schema version, the first recorded day and the last automatic-retention
+    // date, nothing else.
     const auto meta_columns = TableColumns(db_path, "stats_meta");
     REQUIRE_EQ(meta_columns.size(), std::size_t{2});
-    REQUIRE_EQ(ScalarInt(db_path, "SELECT COUNT(*) FROM stats_meta"), std::int64_t{2});
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT COUNT(*) FROM stats_meta"), std::int64_t{3});
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_store_retention_trims_on_the_first_write_of_a_new_day)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-store-跨天清理");
+    const std::filesystem::path db_path = root / L"msime_stats.db";
+    Statistics::StatsStore store(test::Utf8(db_path));
+    const int32_t today = DayKeyDaysAgo(0);
+    const int32_t yesterday = DayKeyDaysAgo(1);
+    const int32_t old = DayKeyDaysAgo(100);
+
+    // Default policy: both rows land untouched while the policy is still "forever".
+    REQUIRE(store.Apply(MakeRecord(old, 9, 7, 0, 0, 0, 0, 100)));
+    REQUIRE(store.Apply(MakeRecord(today, 8, 1, 0, 0, 0, 0, 100)));
+
+    // Move the throttle marker back a day so this batch is the first write of the new local day.
+    ExecuteSql(db_path,
+               "UPDATE stats_meta SET value='" + std::to_string(yesterday) + "' WHERE key='last_retention_day'");
+    Statistics::RetentionPolicy policy;
+    policy.range = "30d";
+    const FanyImeStatsRecord record = MakeRecord(today, 9, 2, 0, 0, 0, 0, 100);
+    REQUIRE(store.ApplyBatch(&record, 1, policy));
+
+    Statistics::Snapshot snapshot;
+    REQUIRE(store.Query(snapshot));
+    REQUIRE_EQ(snapshot.daily.size(), std::size_t{1});
+    REQUIRE_EQ(snapshot.daily[0].day, today);
+    REQUIRE_EQ(snapshot.daily[0].cjk, std::int64_t{3});
+    REQUIRE_EQ(snapshot.hourly.size(), std::size_t{2});
+    // first_day follows what is left rather than staying on the deleted row.
+    REQUIRE(snapshot.has_first_day);
+    REQUIRE_EQ(snapshot.first_day, today);
+    // The check date is stamped in the same transaction, so the next write today skips the check.
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT value FROM stats_meta WHERE key='last_retention_day'"), std::int64_t{today});
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_store_retention_runs_at_most_once_per_day)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-store-节流");
+    const std::filesystem::path db_path = root / L"msime_stats.db";
+    Statistics::StatsStore store(test::Utf8(db_path));
+    const int32_t today = DayKeyDaysAgo(0);
+    const int32_t yesterday = DayKeyDaysAgo(1);
+    const int32_t old = DayKeyDaysAgo(100);
+
+    Statistics::RetentionPolicy policy;
+    policy.range = "30d";
+    // The first write of the day runs the trim and stamps today.
+    const FanyImeStatsRecord first = MakeRecord(today, 9, 1, 0, 0, 0, 0, 100);
+    REQUIRE(store.ApplyBatch(&first, 1, policy));
+
+    // A row old enough to be trimmed shows up after the trim. A same-day write must not touch it:
+    // that would mean the delete runs on every batch instead of once a day.
+    ExecuteSql(db_path, "INSERT INTO stats_daily(day_key,cjk) VALUES(" + std::to_string(old) + ",5)");
+    const FanyImeStatsRecord second = MakeRecord(today, 10, 1, 0, 0, 0, 0, 100);
+    REQUIRE(store.ApplyBatch(&second, 1, policy));
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT COUNT(*) FROM stats_daily WHERE day_key=" + std::to_string(old)),
+               std::int64_t{1});
+
+    // Once the marker belongs to another day, the next write trims it.
+    ExecuteSql(db_path,
+               "UPDATE stats_meta SET value='" + std::to_string(yesterday) + "' WHERE key='last_retention_day'");
+    REQUIRE(store.ApplyBatch(&second, 1, policy));
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT COUNT(*) FROM stats_daily WHERE day_key=" + std::to_string(old)),
+               std::int64_t{0});
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT value FROM stats_meta WHERE key='last_retention_day'"), std::int64_t{today});
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_store_forever_keeps_every_row_and_still_stamps_the_check_day)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-store-永久");
+    const std::filesystem::path db_path = root / L"msime_stats.db";
+    Statistics::StatsStore store(test::Utf8(db_path));
+    const int32_t today = DayKeyDaysAgo(0);
+    const int32_t old = DayKeyDaysAgo(500);
+
+    Statistics::RetentionPolicy forever;
+    forever.range = "forever";
+    const FanyImeStatsRecord old_record = MakeRecord(old, 9, 7, 0, 0, 0, 0, 100);
+    const FanyImeStatsRecord today_record = MakeRecord(today, 9, 1, 0, 0, 0, 0, 100);
+    REQUIRE(store.ApplyBatch(&old_record, 1, forever));
+    REQUIRE(store.ApplyBatch(&today_record, 1));
+
+    Statistics::Snapshot snapshot;
+    REQUIRE(store.Query(snapshot));
+    REQUIRE_EQ(snapshot.daily.size(), std::size_t{2});
+    REQUIRE_EQ(snapshot.daily[0].day, old);
+    // "forever" still stamps the check date: otherwise every write would re-run the lookup.
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT value FROM stats_meta WHERE key='last_retention_day'"), std::int64_t{today});
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_store_unknown_policy_deletes_nothing)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-store-未知策略");
+    const std::filesystem::path db_path = root / L"msime_stats.db";
+    Statistics::StatsStore store(test::Utf8(db_path));
+    const int32_t today = DayKeyDaysAgo(0);
+    const int32_t old = DayKeyDaysAgo(500);
+
+    REQUIRE(store.Apply(MakeRecord(old, 9, 7, 0, 0, 0, 0, 100)));
+    Statistics::RetentionPolicy unknown;
+    unknown.range = "7d";
+    const FanyImeStatsRecord record = MakeRecord(today, 9, 1, 0, 0, 0, 0, 100);
+    REQUIRE(store.ApplyBatch(&record, 1, unknown));
+
+    // A policy the store does not recognise must fail safe (delete nothing), never guess a window.
+    Statistics::Snapshot snapshot;
+    REQUIRE(store.Query(snapshot));
+    REQUIRE_EQ(snapshot.daily.size(), std::size_t{2});
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT COUNT(*) FROM stats_daily WHERE day_key=" + std::to_string(old)),
+               std::int64_t{1});
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_store_rolls_back_retention_together_with_a_failed_batch)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-store-回滚");
+    const std::filesystem::path db_path = root / L"msime_stats.db";
+    Statistics::StatsStore store(test::Utf8(db_path));
+    const int32_t today = DayKeyDaysAgo(0);
+    const int32_t yesterday = DayKeyDaysAgo(1);
+    const int32_t old = DayKeyDaysAgo(100);
+
+    REQUIRE(store.Apply(MakeRecord(old, 9, 7, 0, 0, 0, 0, 100)));
+    REQUIRE(store.Apply(MakeRecord(today, 8, 1, 0, 0, 0, 0, 100)));
+    ExecuteSql(db_path,
+               "UPDATE stats_meta SET value='" + std::to_string(yesterday) + "' WHERE key='last_retention_day'");
+    // Make the daily insert fail so the whole batch is rolled back after the trim already ran.
+    ExecuteSql(db_path, "CREATE TRIGGER reject_daily_insert BEFORE INSERT ON stats_daily"
+                        " BEGIN SELECT RAISE(ABORT,'test'); END");
+
+    Statistics::RetentionPolicy policy;
+    policy.range = "30d";
+    const FanyImeStatsRecord record = MakeRecord(today, 9, 2, 0, 0, 0, 0, 100);
+    REQUIRE(!store.ApplyBatch(&record, 1, policy));
+
+    // Nothing may survive a failed batch: not the trim, not the marker, not the counters.
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT COUNT(*) FROM stats_daily WHERE day_key=" + std::to_string(old)),
+               std::int64_t{1});
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT cjk FROM stats_daily WHERE day_key=" + std::to_string(today)),
+               std::int64_t{1});
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT value FROM stats_meta WHERE key='last_retention_day'"),
+               std::int64_t{yesterday});
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_store_sets_wal_and_normal_synchronous_on_every_connection)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-store-pragma");
+    const std::filesystem::path db_path = root / L"msime_stats.db";
+    Statistics::StatsStore store(test::Utf8(db_path));
+    REQUIRE(store.Apply(MakeRecord(DayKeyDaysAgo(0), 9, 1, 0, 0, 0, 0, 100)));
+
+    Statistics::PragmaState state;
+    REQUIRE(store.ReadPragmaState(state));
+    REQUIRE_EQ(state.journal_mode, std::string("wal"));
+    REQUIRE_EQ(state.synchronous, 1);
+
+    // A fresh store and a write-then-read cycle both open a new connection. synchronous is
+    // per connection, so a value of 1 here is the proof it is applied on every open rather than
+    // only on the first one of the process.
+    Statistics::StatsStore reopened(test::Utf8(db_path));
+    Statistics::PragmaState reopened_state;
+    REQUIRE(reopened.ReadPragmaState(reopened_state));
+    REQUIRE_EQ(reopened_state.journal_mode, std::string("wal"));
+    REQUIRE_EQ(reopened_state.synchronous, 1);
+    REQUIRE(reopened.Apply(MakeRecord(DayKeyDaysAgo(0), 10, 1, 0, 0, 0, 0, 100)));
+    REQUIRE(reopened.ReadPragmaState(reopened_state));
+    REQUIRE_EQ(reopened_state.synchronous, 1);
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);

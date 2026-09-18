@@ -11,6 +11,8 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 
 namespace
@@ -26,6 +28,70 @@ std::filesystem::path MakeTempRoot(const wchar_t *name)
     std::filesystem::create_directories(root, ec);
     REQUIRE(!ec);
     return root;
+}
+
+class ScopedEnv
+{
+  public:
+    ScopedEnv(const wchar_t *name, const std::wstring &value) : name_(name)
+    {
+        wchar_t buffer[32768];
+        const DWORD length = GetEnvironmentVariableW(name, buffer, 32768);
+        had_previous_ = length != 0 || GetLastError() != ERROR_ENVVAR_NOT_FOUND;
+        previous_.assign(buffer, length);
+        SetEnvironmentVariableW(name, value.c_str());
+    }
+    ~ScopedEnv()
+    {
+        SetEnvironmentVariableW(name_.c_str(), had_previous_ ? previous_.c_str() : nullptr);
+    }
+
+    ScopedEnv(const ScopedEnv &) = delete;
+    ScopedEnv &operator=(const ScopedEnv &) = delete;
+
+  private:
+    std::wstring name_;
+    std::wstring previous_;
+    bool had_previous_ = false;
+};
+
+// Pins every path the config loader consults, so a machine with the IME installed cannot decide
+// where these tests read and write.
+class ScopedConfigLocation
+{
+  public:
+    explicit ScopedConfigLocation(const std::filesystem::path &config_dir)
+        : local_app_data_(L"LOCALAPPDATA", config_dir.parent_path().wstring()),
+          config_dir_(L"METASEQUOIA_IME_CONFIG_DIR", config_dir.wstring()),
+          data_dir_(L"METASEQUOIA_IME_DATA_DIR", config_dir.wstring())
+    {
+    }
+
+  private:
+    ScopedEnv local_app_data_;
+    ScopedEnv config_dir_;
+    ScopedEnv data_dir_;
+};
+
+void WriteText(const std::filesystem::path &path, const std::string &text)
+{
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    REQUIRE(static_cast<bool>(output));
+    output.write(text.data(), static_cast<std::streamsize>(text.size()));
+}
+
+std::string ReadText(const std::filesystem::path &path)
+{
+    std::ifstream input(path, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+}
+
+void SeedShippedTemplate(const std::filesystem::path &config_dir)
+{
+    std::error_code ec;
+    std::filesystem::copy_file(MSIME_DEFAULT_CONFIG_PATH, config_dir / L"config.default.toml",
+                               std::filesystem::copy_options::overwrite_existing, ec);
+    REQUIRE(!ec);
 }
 
 int32_t DayKeyDaysAgo(int days_ago)
@@ -141,58 +207,126 @@ TEST_CASE(statistics_settings_query_serializes_the_recorded_rows)
     std::filesystem::remove_all(root, ec);
 }
 
-TEST_CASE(statistics_settings_clear_answers_with_what_is_left)
+TEST_CASE(statistics_settings_retired_clear_action_is_an_unknown_action)
 {
-    const std::filesystem::path root = MakeTempRoot(L"msime-stats-settings-清理");
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-settings-退役清理");
     Statistics::StatsStore store(test::Utf8(root / L"msime_stats.db"));
     const int32_t today = DayKeyDaysAgo(0);
     const int32_t old = DayKeyDaysAgo(100);
     REQUIRE(store.Apply(MakeRecord(today, 9, 5, 0, 0, 0, 0, 100)));
     REQUIRE(store.Apply(MakeRecord(old, 9, 7, 0, 0, 0, 0, 100)));
 
-    const json::object cleared = SettingsStatistics::HandleRequest(Request("req-3", "clear", "30d"), &store);
-    RequireValidResponse(cleared);
-    REQUIRE(cleared.at("ok").as_bool());
-    // 30d keeps the most recent 30 days, so the 100-day-old row is the one that goes.
-    const json::array &daily = cleared.at("daily").as_array();
-    REQUIRE_EQ(daily.size(), std::size_t{1});
-    REQUIRE_EQ(json::value_to<int>(daily[0].as_object().at("day")), today);
-    REQUIRE_EQ(json::value_to<int>(cleared.at("meta").as_object().at("firstDay")), today);
-
-    // "forever" means keep everything, so it answers with the same row still there.
-    const json::object kept = SettingsStatistics::HandleRequest(Request("req-4", "clear", "forever"), &store);
-    RequireValidResponse(kept);
-    REQUIRE(kept.at("ok").as_bool());
-    REQUIRE_EQ(kept.at("daily").as_array().size(), std::size_t{1});
-    REQUIRE_EQ(kept.at("hourly").as_array().size(), std::size_t{1});
-    REQUIRE_EQ(json::value_to<int>(kept.at("meta").as_object().at("firstDay")), today);
+    // "clear" retired with the manual button: retention is a standing policy now. A stale page
+    // asking for it must be answered as unknown rather than deleting anything.
+    const json::object clear = SettingsStatistics::HandleRequest(Request("req-3", "clear", "30d"), &store);
+    RequireValidResponse(clear);
+    REQUIRE(!clear.at("ok").as_bool());
+    REQUIRE(!json::value_to<std::string>(clear.at("message")).empty());
+    REQUIRE_EQ(clear.at("daily").as_array().size(), std::size_t{2});
+    REQUIRE_EQ(clear.at("hourly").as_array().size(), std::size_t{2});
+    REQUIRE_EQ(json::value_to<int>(clear.at("meta").as_object().at("firstDay")), old);
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
 }
 
-TEST_CASE(statistics_settings_rejects_unknown_actions_and_ranges)
+TEST_CASE(statistics_settings_retention_change_trims_immediately)
 {
-    const std::filesystem::path root = MakeTempRoot(L"msime-stats-settings-拒绝");
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-settings-变更即清理");
+    SeedShippedTemplate(root);
     Statistics::StatsStore store(test::Utf8(root / L"msime_stats.db"));
-    REQUIRE(store.Apply(MakeRecord(DayKeyDaysAgo(0), 9, 1, 0, 0, 0, 0, 100)));
+    const int32_t today = DayKeyDaysAgo(0);
+    const int32_t old = DayKeyDaysAgo(100);
+    REQUIRE(store.Apply(MakeRecord(old, 9, 7, 0, 0, 0, 0, 100)));
+    REQUIRE(store.Apply(MakeRecord(today, 9, 5, 0, 0, 0, 0, 100)));
 
-    const json::object unknown_action = SettingsStatistics::HandleRequest(Request("req-5", "erase"), &store);
-    RequireValidResponse(unknown_action);
-    REQUIRE(!unknown_action.at("ok").as_bool());
-    REQUIRE(!json::value_to<std::string>(unknown_action.at("message")).empty());
-    REQUIRE_EQ(unknown_action.at("daily").as_array().size(), std::size_t{1});
+    {
+        const ScopedConfigLocation location(root);
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredStatisticsRetention(), std::string("forever"));
+        REQUIRE(SettingsStatistics::ApplyRetentionPolicy("30d", &store));
+        REQUIRE_EQ(GetConfiguredStatisticsRetention(), std::string("30d"));
+        REQUIRE(ReadText(root / L"config.toml").find("retention = \"30d\"") != std::string::npos);
 
-    const json::object missing_range = SettingsStatistics::HandleRequest(Request("req-6", "clear"), &store);
-    RequireValidResponse(missing_range);
-    REQUIRE(!missing_range.at("ok").as_bool());
-    REQUIRE(!json::value_to<std::string>(missing_range.at("message")).empty());
-    REQUIRE_EQ(missing_range.at("daily").as_array().size(), std::size_t{1});
+        // The trim happened in the same call, not at the next day boundary.
+        Statistics::Snapshot snapshot;
+        REQUIRE(store.Query(snapshot));
+        REQUIRE_EQ(snapshot.daily.size(), std::size_t{1});
+        REQUIRE_EQ(snapshot.daily[0].day, today);
+        REQUIRE_EQ(snapshot.hourly.size(), std::size_t{1});
+        REQUIRE(snapshot.has_first_day);
+        REQUIRE_EQ(snapshot.first_day, today);
 
-    const json::object bad_range = SettingsStatistics::HandleRequest(Request("req-7", "clear", "7d"), &store);
-    RequireValidResponse(bad_range);
-    REQUIRE(!bad_range.at("ok").as_bool());
-    REQUIRE_EQ(bad_range.at("daily").as_array().size(), std::size_t{1});
+        // An unknown value is refused before anything is written or deleted.
+        REQUIRE(!SettingsStatistics::ApplyRetentionPolicy("weekly", &store));
+        REQUIRE_EQ(GetConfiguredStatisticsRetention(), std::string("30d"));
+        REQUIRE(store.Query(snapshot));
+        REQUIRE_EQ(snapshot.daily.size(), std::size_t{1});
+    }
+
+    // The policy survives a reopen of the settings page (and of the process).
+    {
+        const ScopedConfigLocation location(root);
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredStatisticsRetention(), std::string("30d"));
+        REQUIRE(SettingsStatistics::ApplyRetentionPolicy("forever", &store));
+    }
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_settings_retention_forever_keeps_every_row)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-settings-永久保留");
+    SeedShippedTemplate(root);
+    Statistics::StatsStore store(test::Utf8(root / L"msime_stats.db"));
+    const int32_t today = DayKeyDaysAgo(0);
+    const int32_t old = DayKeyDaysAgo(500);
+    REQUIRE(store.Apply(MakeRecord(old, 9, 7, 0, 0, 0, 0, 100)));
+    REQUIRE(store.Apply(MakeRecord(today, 9, 5, 0, 0, 0, 0, 100)));
+
+    {
+        const ScopedConfigLocation location(root);
+        InitImeConfig();
+        REQUIRE(SettingsStatistics::ApplyRetentionPolicy("forever", &store));
+
+        // "forever" writes the policy and deletes nothing, even rows older than any window.
+        Statistics::Snapshot snapshot;
+        REQUIRE(store.Query(snapshot));
+        REQUIRE_EQ(snapshot.daily.size(), std::size_t{2});
+        REQUIRE_EQ(snapshot.daily[0].day, old);
+    }
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_settings_retention_write_failure_trims_nothing)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-settings-策略写失败");
+    SeedShippedTemplate(root);
+    const std::filesystem::path blocker = root / L"not-a-directory";
+    WriteText(blocker, "x");
+    Statistics::StatsStore store(test::Utf8(root / L"msime_stats.db"));
+    const int32_t today = DayKeyDaysAgo(0);
+    const int32_t old = DayKeyDaysAgo(100);
+    REQUIRE(store.Apply(MakeRecord(old, 9, 7, 0, 0, 0, 0, 100)));
+    REQUIRE(store.Apply(MakeRecord(today, 9, 5, 0, 0, 0, 0, 100)));
+
+    {
+        const ScopedConfigLocation blocked(blocker);
+        InitImeConfig();
+        // The order matters: no config write, no deletion. A failed save must never look like a
+        // successful policy change.
+        REQUIRE(!SettingsStatistics::ApplyRetentionPolicy("30d", &store));
+        REQUIRE_EQ(GetConfiguredStatisticsRetention(), std::string("forever"));
+    }
+
+    Statistics::Snapshot snapshot;
+    REQUIRE(store.Query(snapshot));
+    REQUIRE_EQ(snapshot.daily.size(), std::size_t{2});
+    REQUIRE_EQ(snapshot.daily[0].day, old);
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);

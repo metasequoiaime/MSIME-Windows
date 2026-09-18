@@ -1,5 +1,7 @@
 #include "statistics/stats_aggregator.h"
 
+#include "config/ime_config.h"
+
 #include <cstring>
 #include <vector>
 
@@ -70,6 +72,10 @@ bool StatsAggregator::HandleFrame(const unsigned char *frame, std::size_t size, 
             return false;
         }
     }
-    return store_.ApplyBatch(records.data(), records.size());
+    // The policy is re-read per frame like the enabled switch, so changing it applies to the very
+    // next batch instead of waiting for a restart.
+    RetentionPolicy policy;
+    policy.range = GetConfiguredStatisticsRetention();
+    return store_.ApplyBatch(records.data(), records.size(), policy);
 }
 } // namespace Statistics

@@ -44,6 +44,14 @@ constexpr int kEnglishMixedInputMinCharsMin = 1;
 constexpr int kEnglishMixedInputMinCharsMax = 8;
 constexpr int kEnglishMixedInputMinCharsDefault = 2;
 
+// The retention windows the settings page offers. Anything else is read as "forever" and refused
+// on write, so a typo can never turn into a deletion policy.
+bool IsStatisticsRetentionValue(const std::string &retention)
+{
+    return retention == "30d" || retention == "90d" || retention == "180d" || retention == "365d" ||
+           retention == "forever";
+}
+
 std::string g_session_backend = "legacy";
 SchemeType g_input_scheme = SchemeType::Shuangpin;
 std::string g_input_mode = "chinese";
@@ -120,6 +128,8 @@ bool g_cloud_candidates_enabled = true;
 // enabled-by-default switch is announced rather than silent. Off means "stop recording", not
 // "delete what was recorded".
 bool g_statistics_enabled = true;
+// Retention is a standing policy, not a one-off command: "forever" (the default) never deletes.
+std::string g_statistics_retention = "forever";
 bool g_emoji_mixed_input_enabled = false;
 bool g_kaomoji_mixed_input_enabled = false;
 bool g_unicode_mode_enabled = true;
@@ -1049,6 +1059,10 @@ bool LoadImeConfig()
         }
         g_cloud_candidates_enabled = tbl["general"]["cloud_candidates"].value_or(true);
         g_statistics_enabled = tbl["statistics"]["enabled"].value_or(true);
+        {
+            const std::string retention = tbl["statistics"]["retention"].value_or(std::string("forever"));
+            g_statistics_retention = IsStatisticsRetentionValue(retention) ? retention : "forever";
+        }
         g_emoji_mixed_input_enabled = tbl["general"]["emoji_mixed_input"].value_or(false);
         g_kaomoji_mixed_input_enabled = tbl["general"]["kaomoji_mixed_input"].value_or(false);
         g_unicode_mode_enabled = tbl["utility"]["unicode_mode"].value_or(true);
@@ -3363,6 +3377,25 @@ bool SetConfiguredStatisticsEnabled(bool enabled)
         return false;
     }
     g_statistics_enabled = enabled;
+    return true;
+}
+
+const std::string &GetConfiguredStatisticsRetention()
+{
+    return g_statistics_retention;
+}
+
+bool SetConfiguredStatisticsRetention(const std::string &retention)
+{
+    if (!IsStatisticsRetentionValue(retention))
+    {
+        return false;
+    }
+    if (!WriteConfiguredValue("statistics", "retention", EscapeTomlBasicString(retention)))
+    {
+        return false;
+    }
+    g_statistics_retention = retention;
     return true;
 }
 

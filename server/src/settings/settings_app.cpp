@@ -392,7 +392,8 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
             {"y_mode", GetConfiguredYModeEnabled()},
             {"r_mode", GetConfiguredRModeEnabled()},
             {"clipboard_history", GetConfiguredClipboardHistoryEnabled()}}},
-          {"statistics", {{"enabled", GetConfiguredStatisticsEnabled()}}},
+          {"statistics",
+           {{"enabled", GetConfiguredStatisticsEnabled()}, {"retention", GetConfiguredStatisticsRetention()}}},
           {"appearance",
            {{"ui_backend", GetConfiguredUiBackend()},
             {"candidate_window_layout", GetConfiguredCandidateWindowLayout()},
@@ -677,6 +678,10 @@ bool ApplyConfigUpdate(const json::object &data)
         return SetConfiguredCloudCandidatesEnabled(json::value_to<bool>(data.at("value")));
     if (path == "statistics.enabled")
         return SetConfiguredStatisticsEnabled(json::value_to<bool>(data.at("value")));
+    // Persist first, trim second: a failed save must never delete history the user has not
+    // actually committed to dropping.
+    if (path == "statistics.retention")
+        return SettingsStatistics::ApplyRetentionPolicy(json::value_to<std::string>(data.at("value")));
     if (path == "utility.unicode_mode")
         return SetConfiguredUnicodeModeEnabled(json::value_to<bool>(data.at("value")));
     if (path == "utility.quick_phrase")

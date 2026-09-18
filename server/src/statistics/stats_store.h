@@ -46,6 +46,24 @@ struct Snapshot
     int32_t first_day = 0;
 };
 
+// Effective SQLite settings of the connection OpenDatabase hands out. Exposed for tests: WAL is
+// persisted in the database file, but synchronous is per connection, and the only way to prove it
+// is applied on every open -- not just the first one of the process -- is to read it back through
+// the same open path the store uses.
+struct PragmaState
+{
+    std::string journal_mode;
+    int synchronous = 0;
+};
+
+// One deletion policy, shared by the automatic cross-day cleanup and the settings host's trim on
+// change. The store never reads configuration; the caller resolves the policy and passes it in.
+struct RetentionPolicy
+{
+    // "30d" | "90d" | "180d" | "365d" | "forever".
+    std::string range = "forever";
+};
+
 // One connection per operation. The aggregator thread and the settings worker both touch this
 // store, and a sqlite3 handle is never shared across threads; the mutex serializes the whole
 // operation so a write batch cannot interleave with a clear.
@@ -57,12 +75,18 @@ class StatsStore
     // Folds one DLL record into the daily and hourly buckets. Returns false on any storage
     // failure; callers treat statistics as droppable data and never surface the error.
     bool Apply(const FanyImeStatsRecord &record);
-    bool ApplyBatch(const FanyImeStatsRecord *records, std::size_t count);
+    // The policy is applied on the first write of a new local day (throttled through stats_meta),
+    // in the same transaction as the batch.
+    bool ApplyBatch(const FanyImeStatsRecord *records, std::size_t count, const RetentionPolicy &policy = {});
 
     bool Query(Snapshot &snapshot);
 
-    // range: "30d" | "90d" | "all". Keeps the most recent 30/90 local days and deletes everything
-    // older; "all" deletes everything. Keeps stats_meta.first_day consistent with what is left.
+    // Reads the pragmas back through a freshly opened connection.
+    bool ReadPragmaState(PragmaState &state);
+
+    // range: "30d" | "90d" | "180d" | "365d" | "forever". Keeps the most recent 30/90/180/365
+    // local days and deletes everything older; "forever" keeps everything (a no-op). Keeps
+    // stats_meta.first_day consistent with what is left.
     bool Clear(const std::string &range);
 
   private:

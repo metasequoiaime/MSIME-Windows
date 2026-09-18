@@ -51,8 +51,8 @@ json::array BuildHourly(const std::vector<Statistics::HourlyRow> &rows)
     return result;
 }
 
-// Every response carries the full current data set: a clear answers with what is left, so the
-// panel refreshes from one round trip instead of querying again after every deletion.
+// Every response carries the full current data set, so the panel renders from one round trip and
+// does not need a follow-up query.
 json::object BuildResponse(const json::object &request, Statistics::StatsStore &store, bool ok,
                            const std::string &message)
 {
@@ -91,17 +91,23 @@ json::object HandleRequest(const json::object &request, Statistics::StatsStore *
     {
         return BuildResponse(request, target, true, {});
     }
-    if (action == "clear")
-    {
-        // Clears history older than the selected window: 30d/90d keep the most recent 30/90 local
-        // days, "all" drops everything. An empty or unknown range is refused rather than treated
-        // as "all".
-        if (!target.Clear(StringField(request, "range")))
-        {
-            return BuildResponse(request, target, false, "清理参数无效或清理失败");
-        }
-        return BuildResponse(request, target, true, {});
-    }
+    // "clear" retired with the manual button: retention is a standing policy now, applied when the
+    // value changes and on the first write of a new day. A request that still asks for it is an
+    // unknown action, not a silently accepted deletion.
     return BuildResponse(request, target, false, "未知统计操作");
+}
+
+bool ApplyRetentionPolicy(const std::string &range, Statistics::StatsStore *store)
+{
+    if (!SetConfiguredStatisticsRetention(range))
+    {
+        return false;
+    }
+    if (range == "forever")
+    {
+        return true;
+    }
+    Statistics::StatsStore &target = store != nullptr ? *store : Statistics::SharedStatsStore();
+    return target.Clear(range);
 }
 } // namespace SettingsStatistics
