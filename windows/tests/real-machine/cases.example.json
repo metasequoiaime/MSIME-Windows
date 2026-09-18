@@ -1,0 +1,189 @@
+{
+  "_comment": "TSF 真机按键用例示例。host 留空 = 用脚本内置 WinForms 文本框（无需本机编辑器）；填路径则驱动外部宿主。按 tag 选择当前生效的方案：-Tag quanpin / xiaohe / microsoft / wubi / japanese / localmodes / steps / diag。host 请填本机宿主路径（CLI -HostPath 优先）。",
+  "host": "",
+  "hostArguments": [],
+  "imeToggle": true,
+  "reuseHost": false,
+  "reportPath": "",
+  "diagnosticLog": "",
+  "cases": [
+    {
+      "name": "quanpin: 输入 nihaoma 提交首候选",
+      "tags": ["quanpin"],
+      "preset": "probe",
+      "text": "nihaoma ",
+      "expect": "你好吗"
+    },
+    {
+      "name": "quanpin: Ctrl+Backspace 删一个音节",
+      "tags": ["quanpin"],
+      "preset": "seg",
+      "text": "nihaoma",
+      "expect": "nihao"
+    },
+    {
+      "name": "quanpin: 普通退格只删一个字母",
+      "tags": ["quanpin"],
+      "preset": "bs",
+      "text": "nihaoma",
+      "expect": "nihaom"
+    },
+    {
+      "name": "quanpin: 删空剩余拼音后退选已选分词",
+      "tags": ["quanpin"],
+      "preset": "retreat",
+      "text": "womendejiax",
+      "expect": "womendejia"
+    },
+    {
+      "name": "quanpin: Ctrl+Left 跳到上一音节起点",
+      "tags": ["quanpin"],
+      "preset": "segleft",
+      "text": "nihaoma",
+      "expect": "nihaoxma"
+    },
+    {
+      "name": "通用步骤写法：Ctrl+Left 后插入 x（与 segleft 等价）",
+      "tags": ["quanpin", "steps"],
+      "steps": [
+        { "type": "text", "value": "nihaoma" },
+        { "type": "chord", "key": "LEFT", "mods": ["CTRL"] },
+        { "type": "text", "value": "x" },
+        { "type": "key", "key": "ENTER" }
+      ],
+      "expect": { "equals": "nihaoxma" }
+    },
+    {
+      "name": "正则期望：probe 提交的是汉字",
+      "tags": ["quanpin", "steps"],
+      "preset": "probe",
+      "text": "nihaoma ",
+      "expect": { "regex": "^[\\u4e00-\\u9fff]+$" }
+    },
+    {
+      "name": "长按不外溢：文档前缀原样保留（依赖诊断日志，先开 tsf_diagnostic_log）",
+      "tags": ["diag"],
+      "steps": [
+        { "type": "paste", "value": "KEEP" },
+        { "type": "text", "value": "nihaoma" },
+        { "type": "repeat", "key": "BACKSPACE", "count": 20, "intervalMs": 35 }
+      ],
+      "expect": {
+        "equals": "KEEP",
+        "diag": { "event": "backspace-repeat-suppressed", "minCount": 1 }
+      }
+    },
+    {
+      "name": "小鹤双拼: 输入 shou",
+      "tags": ["xiaohe"],
+      "preset": "probe",
+      "text": "uz ",
+      "expect": "手"
+    },
+    {
+      "name": "小鹤双拼: Ctrl+Backspace 删整段 2 键",
+      "tags": ["xiaohe"],
+      "preset": "seg",
+      "text": "nihcma",
+      "expect": "nihc"
+    },
+    {
+      "name": "小鹤双拼: 普通退格只删 1 键",
+      "tags": ["xiaohe"],
+      "preset": "bs",
+      "text": "nihcma",
+      "expect": "nihcm"
+    },
+    {
+      "name": "微软双拼: 输入 hao（ao 在 k 上）",
+      "tags": ["microsoft"],
+      "preset": "probe",
+      "text": "ub ",
+      "expect": "手"
+    },
+    {
+      "name": "微软双拼: ; 尾键出字（bing）",
+      "tags": ["microsoft"],
+      "preset": "probe",
+      "text": "b; ",
+      "expect": "并"
+    },
+    {
+      "name": "微软双拼: Ctrl+Backspace 删整个 b; 音节",
+      "tags": ["microsoft"],
+      "preset": "seg",
+      "text": "nihkb;",
+      "expect": "nihk"
+    },
+    {
+      "name": "微软双拼: 贪心最长配对下删除跟随 preedit（nihcb; 的最后单元是 ;）",
+      "tags": ["microsoft"],
+      "preset": "seg",
+      "text": "nihcb;",
+      "expect": "nihcb"
+    },
+    {
+      "name": "五笔: 输入 wqiy",
+      "tags": ["wubi"],
+      "preset": "probe",
+      "text": "wqiy ",
+      "expect": "你"
+    },
+    {
+      "name": "五笔: Ctrl+Backspace 与普通退格等价（单字符回退）",
+      "tags": ["wubi"],
+      "preset": "seg",
+      "text": "wqiy",
+      "expect": "wqi"
+    },
+    {
+      "name": "日语: 输入 nihon",
+      "tags": ["japanese"],
+      "preset": "probe",
+      "text": "nihon ",
+      "expect": "日本"
+    },
+    {
+      "name": "日语: Ctrl+Backspace 与普通退格等价",
+      "tags": ["japanese"],
+      "preset": "seg",
+      "text": "nihon",
+      "expect": "niho"
+    },
+    {
+      "name": "本地模式 U: Ctrl+Backspace 退化为单字符",
+      "tags": ["localmodes"],
+      "preset": "shiftseg",
+      "text": "U4f6",
+      "expect": "U4f"
+    },
+    {
+      "name": "本地模式 U: 普通退格对照",
+      "tags": ["localmodes"],
+      "preset": "shiftbs",
+      "text": "U4f6",
+      "expect": "U4f"
+    },
+    {
+      "name": "本地模式 K: Ctrl+Backspace 退化为单字符",
+      "tags": ["localmodes"],
+      "preset": "shiftseg",
+      "text": "Kabc",
+      "expect": "Kab"
+    },
+    {
+      "name": "本地模式 J: Ctrl+Backspace 退化为单字符",
+      "tags": ["localmodes"],
+      "preset": "shiftseg",
+      "text": "Jabc",
+      "expect": "Jab"
+    },
+    {
+      "name": "本地模式 R: Ctrl+Backspace 退化为单字符",
+      "tags": ["localmodes"],
+      "preset": "shiftseg",
+      "text": "Rabc",
+      "expect": "Rab"
+    }
+  ]
+}

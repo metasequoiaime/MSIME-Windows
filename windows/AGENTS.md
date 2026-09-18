@@ -152,6 +152,8 @@ Release：
 - composition 中与空 composition 下切换中英文、标点、全半角；
 - 失焦/回焦、切换输入法、Server 未启动/重启/断管恢复；
 - 涉及兼容性时覆盖 Win32 EDIT、Excel、Chromium 系浏览器及 UWP/现代 TSF 宿主。
+- 想先用脚本过一轮自动回归：`windows/tests/real-machine/Invoke-TsfKeyBehaviorTests.ps1`（本地运行、不接 CI，
+  用法与已知注入伪影见该目录 [README](tests/real-machine/README.md)）。
 
 本地注册脚本会执行提权后的 `regsvr32`，属于系统状态修改，不应作为普通验证自动运行。只有用户明确
 要求安装/卸载时才执行：
