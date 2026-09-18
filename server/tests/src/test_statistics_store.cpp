@@ -320,6 +320,28 @@ TEST_CASE(statistics_store_clear_keeps_only_the_recent_window)
     std::filesystem::remove_all(root, ec);
 }
 
+TEST_CASE(statistics_store_clear_that_drops_every_row_reports_an_empty_panel)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-store-清空");
+    const std::filesystem::path db_path = root / L"msime_stats.db";
+    Statistics::StatsStore store(test::Utf8(db_path));
+    REQUIRE(store.Apply(MakeRecord(DayKeyDaysAgo(100), 9, 7, 0, 0, 0, 0, 100)));
+    REQUIRE(store.Apply(MakeRecord(DayKeyDaysAgo(40), 9, 3, 0, 0, 0, 0, 100)));
+
+    // A window that keeps none of the recorded days must drop first_day together with the rows. A
+    // leftover first_day would make the panel render an all-zero chart instead of its empty state.
+    REQUIRE(store.Clear("30d"));
+    Statistics::Snapshot snapshot;
+    REQUIRE(store.Query(snapshot));
+    REQUIRE(snapshot.daily.empty());
+    REQUIRE(snapshot.hourly.empty());
+    REQUIRE(!snapshot.has_first_day);
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT COUNT(*) FROM stats_meta WHERE key='first_day'"), std::int64_t{0});
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
 TEST_CASE(statistics_store_serializes_concurrent_writes)
 {
     const std::filesystem::path root = MakeTempRoot(L"msime-stats-store-并发");
