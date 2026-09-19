@@ -23,6 +23,9 @@ import {
 
 type StatsRequest = Extract<SettingsMessage, { type: 'statsRequest' }>['data'];
 type StatsResponse = Extract<ServerMessage, { type: 'statsResponse' }>['data'];
+type StatsRecentRequest = Extract<SettingsMessage, { type: 'statsRecentRequest' }>['data'];
+type StatsRecentResponse = Extract<ServerMessage, { type: 'statsRecentResponse' }>['data'];
+type RecentWindow = StatsRecentResponse['m5'];
 
 // 与 [statistics].retention 同值域；下拉是唯一入口，选中即写入配置，Server 回收到后才生效。
 const RETENTION_VALUES = ['30d', '90d', '180d', '365d', 'forever'] as const;
@@ -43,6 +46,16 @@ const BREAKDOWN_LABELS: Array<[keyof CharacterBreakdown, string]> = [
 let requestCounter = 0;
 // 只认最后一个请求的回包：连续刷新时，旧回包会把新数据盖回去。
 let latestRequestId = '';
+// 实时窗口有自己的一套请求序列：与历史查询各自丢过期回包，互不干扰。
+let recentRequestCounter = 0;
+let latestRecentRequestId = '';
+let recentTimer: number | null = null;
+
+// 与 DLL 切分打字停顿的阈值同值：窗口内活跃不足 5 秒就不给数。含义是「至少要有一段真实输入」——
+// 没有这个门槛，「2 个字符间隔 0.2 秒」会算出 600 字/分钟。
+const RECENT_MIN_ACTIVE_MS = 5_000;
+// 面板可见时按秒刷新；只写这三个数字，不重绘图表、不重新请求历史数据。
+const RECENT_REFRESH_INTERVAL_MS = 1_000;
 // Server 端生效的保留策略，用来发现「策略变了」：改策略会立即清理一次，面板必须重新取数，
 // 否则下拉写着「保留最近 30 天」而图表还画着清理前的全量数据。
 let appliedRetention: string | null = null;
@@ -280,15 +293,65 @@ function handleResponse(data: StatsResponse): void {
   renderPanel(data);
 }
 
+function formatRecentSpeed(window: RecentWindow | undefined): string {
+  if (!window) return '—';
+  const chars = Number(window.chars);
+  const activeMs = Number(window.activeMs);
+  if (!Number.isFinite(chars) || !Number.isFinite(activeMs)) return '—';
+  if (activeMs < RECENT_MIN_ACTIVE_MS) return '—';
+  return `${formatSpeed(charsPerMinute(chars, activeMs))} 字/分钟`;
+}
+
+function requestRecent(): void {
+  const requestId = `stats-recent-${++recentRequestCounter}`;
+  latestRecentRequestId = requestId;
+  const data: StatsRecentRequest = { requestId };
+  window.chrome?.webview?.postMessage(serializeHostMessage({ type: 'statsRecentRequest', data }));
+}
+
+function handleRecentResponse(data: StatsRecentResponse): void {
+  // 过期回包直接丢弃；失败（ok=false）时保留上一次的数值，不清零、不弹错。
+  if (data.requestId !== latestRecentRequestId) return;
+  if (!data.ok) return;
+  setText('statisticsRecentM5', formatRecentSpeed(data.m5));
+  setText('statisticsRecentH1', formatRecentSpeed(data.h1));
+  setText('statisticsRecentD1', formatRecentSpeed(data.d1));
+}
+
 function isPanelVisible(): boolean {
   const container = byId('statistics');
   return container !== null && container.style.display === 'block';
 }
 
+function stopRecentRefresh(): void {
+  if (recentTimer !== null) {
+    window.clearInterval(recentTimer);
+    recentTimer = null;
+  }
+}
+
+function startRecentRefresh(): void {
+  // 装上之前先清旧的：切换面板会重复触发 msime:module-shown，装两次定时器会让请求翻倍。
+  stopRecentRefresh();
+  if (!isPanelVisible()) return;
+  requestRecent();
+  recentTimer = window.setInterval(() => {
+    // 没有 module-hidden 事件，所以每个 tick 自查一次可见性；不可见就停表，不再空转。
+    if (!isPanelVisible()) {
+      stopRecentRefresh();
+      return;
+    }
+    requestRecent();
+  }, RECENT_REFRESH_INTERVAL_MS);
+}
+
 function setupRefreshHooks(): void {
   // 模块只装配一次，重新打开面板不会重跑 setup：不主动刷新的话数字会停在首次加载的时刻。
   window.addEventListener('msime:module-shown', (event: Event) => {
-    if ((event as CustomEvent<{ module?: string }>).detail?.module === 'statistics') requestStats();
+    if ((event as CustomEvent<{ module?: string }>).detail?.module === 'statistics') {
+      requestStats();
+      startRecentRefresh();
+    }
   });
   window.addEventListener('focus', () => {
     if (isPanelVisible()) requestStats();
@@ -322,6 +385,11 @@ export function setupStatistics(): void {
     if (select && isRetention(select.value)) updateConfig('statistics.retention', select.value);
   });
   onHostMessage('statsResponse', (message) => handleResponse(message.data));
+  onHostMessage('statsRecentResponse', (message) => handleRecentResponse(message.data));
   setupRefreshHooks();
   requestStats();
+  // setup 跑在面板变可见之前（sidebar 先 loadContent 再 showOnlyCurrentModule），所以这里通常
+  // 不会启动轮询；真正启动它的是紧随其后的 msime:module-shown。若将来改成先显示后加载，这里
+  // 也能自洽地工作。
+  startRecentRefresh();
 }

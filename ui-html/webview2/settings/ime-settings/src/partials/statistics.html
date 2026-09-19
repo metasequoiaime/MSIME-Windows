@@ -86,6 +86,28 @@
       <div class="statistics-details" id="statisticsDetails"></div>
       <div class="statistics-note">速度 = 字数 ÷ 活跃时长；相邻两次上屏间隔不超过 5 秒才计入活跃。最快速度只统计活跃满 1 分钟的时段。</div>
     </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">实时速度</div>
+        <div class="statistics-section-note">停手后随时间自然下降</div>
+      </div>
+      <div class="statistics-details">
+        <div class="statistics-detail-row">
+          <span class="statistics-detail-label">最近 5 分钟</span>
+          <span class="statistics-detail-value" id="statisticsRecentM5">—</span>
+        </div>
+        <div class="statistics-detail-row">
+          <span class="statistics-detail-label">最近 1 小时</span>
+          <span class="statistics-detail-value" id="statisticsRecentH1">—</span>
+        </div>
+        <div class="statistics-detail-row">
+          <span class="statistics-detail-label">最近 24 小时</span>
+          <span class="statistics-detail-value" id="statisticsRecentD1">—</span>
+        </div>
+      </div>
+      <div class="statistics-note">窗口内活跃不足 5 秒时显示「—」；秒级采样与统计同在本地数据库，超过 24 小时自动删除。</div>
+    </div>
   </div>
 
   <div class="section">

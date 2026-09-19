@@ -71,8 +71,25 @@ function lastRequest(): { type: string; data: { requestId: string; action: strin
   return JSON.parse(postMessage.mock.calls.at(-1)![0] as string);
 }
 
+function lastRecentRequest(): { type: string; data: { requestId: string } } {
+  return JSON.parse(postMessage.mock.calls.at(-1)![0] as string);
+}
+
 function respond(data: Record<string, unknown>): void {
   hostHandlers.get('statsResponse')!({ type: 'statsResponse', data } as unknown as { data: unknown });
+}
+
+function respondRecent(data: Record<string, unknown>): void {
+  hostHandlers.get('statsRecentResponse')!({ type: 'statsRecentResponse', data } as unknown as { data: unknown });
+}
+
+function recentResponse(
+  requestId: string,
+  m5: { chars: number; activeMs: number },
+  h1: { chars: number; activeMs: number },
+  d1: { chars: number; activeMs: number },
+): Record<string, unknown> {
+  return { requestId, ok: true, m5, h1, d1 };
 }
 
 function dailyResponse(requestId: string): Record<string, unknown> {
@@ -100,7 +117,10 @@ beforeEach(() => {
       const handlers = windowListeners.get(type) ?? [];
       handlers.push(handler);
       windowListeners.set(type, handlers);
-    }
+    },
+    // 投影真实定时器（可被 vi.useFakeTimers 接管），让面板的每秒轮询在测试里可控。
+    setInterval: (handler: () => void, timeout?: number) => globalThis.setInterval(handler, timeout),
+    clearInterval: (id: number) => globalThis.clearInterval(id),
   });
   vi.stubGlobal('document', {
     getElementById: (id: string) => element(id),
@@ -108,7 +128,10 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 it('asks for the current statistics when the panel is assembled', () => {
   setupStatistics();
@@ -246,4 +269,76 @@ it('refreshes when the panel is shown again and drops superseded responses', () 
 
   respond(dailyResponse(secondRequest));
   expect(element('statisticsTodayChars').textContent).toBe('128 字');
+});
+
+it('shows a dash for a recent window with no or too little activity', () => {
+  vi.useFakeTimers();
+  element('statistics').style.display = 'block';
+  setupStatistics();
+  const requestId = lastRecentRequest().data.requestId;
+  respondRecent(
+    recentResponse(
+      requestId,
+      { chars: 0, activeMs: 0 },
+      { chars: 10, activeMs: 4_999 },
+      { chars: 30, activeMs: 10_000 }
+    )
+  );
+
+  // 空窗口与不足 5 秒活跃都不出数字：否则「2 个字间隔 0.2 秒」会算出三位数。
+  expect(element('statisticsRecentM5').textContent).toBe('—');
+  expect(element('statisticsRecentH1').textContent).toBe('—');
+  // 30 字 / 10 秒 = 180 字/分钟。
+  expect(element('statisticsRecentD1').textContent).toBe('180 字/分钟');
+});
+
+it('keeps the previous recent numbers when a poll fails', () => {
+  vi.useFakeTimers();
+  element('statistics').style.display = 'block';
+  setupStatistics();
+  const first = lastRecentRequest().data.requestId;
+  respondRecent(recentResponse(first, { chars: 30, activeMs: 10_000 }, { chars: 0, activeMs: 0 }, { chars: 0, activeMs: 0 }));
+  expect(element('statisticsRecentM5').textContent).toBe('180 字/分钟');
+
+  // ok=false（或请求失败）时保留上一次的数值，不清零、不弹错。
+  windowListeners.get('msime:module-shown')!.forEach((handler) => handler({ detail: { module: 'statistics' } }));
+  const second = lastRecentRequest().data.requestId;
+  expect(second).not.toBe(first);
+  respondRecent({
+    requestId: second,
+    ok: false,
+    message: '读取统计失败',
+    m5: { chars: 0, activeMs: 0 },
+    h1: { chars: 0, activeMs: 0 },
+    d1: { chars: 0, activeMs: 0 }
+  });
+  expect(element('statisticsRecentM5').textContent).toBe('180 字/分钟');
+});
+
+it('polls the recent windows once per second only while the panel is visible', () => {
+  vi.useFakeTimers();
+  element('statistics').style.display = 'block';
+  setupStatistics();
+  // 面板已可见：setup 立即取一次。
+  expect(lastRecentRequest().type).toBe('statsRecentRequest');
+  postMessage.mockClear();
+
+  windowListeners.get('msime:module-shown')!.forEach((handler) => handler({ detail: { module: 'statistics' } }));
+  expect(postMessage).toHaveBeenCalledTimes(2);
+
+  vi.advanceTimersByTime(3_000);
+  expect(postMessage).toHaveBeenCalledTimes(2 + 3);
+
+  // 切走后不再发请求：下一个 tick 发现不可见就停表。
+  element('statistics').style.display = 'none';
+  vi.advanceTimersByTime(3_000);
+  expect(postMessage).toHaveBeenCalledTimes(2 + 3);
+
+  // 切回则重新启动；连着两次 module-shown 也不能叠加成每秒两条。
+  element('statistics').style.display = 'block';
+  windowListeners.get('msime:module-shown')!.forEach((handler) => handler({ detail: { module: 'statistics' } }));
+  windowListeners.get('msime:module-shown')!.forEach((handler) => handler({ detail: { module: 'statistics' } }));
+  postMessage.mockClear();
+  vi.advanceTimersByTime(3_000);
+  expect(postMessage).toHaveBeenCalledTimes(3);
 });
