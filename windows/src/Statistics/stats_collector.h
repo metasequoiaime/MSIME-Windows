@@ -18,7 +18,16 @@ inline constexpr size_t kMaxRecordsPerBatch = 256;
 inline constexpr size_t kMaxQueuedRecords = 256;
 // Two commits further apart than this are a thinking pause: the gap is not
 // typing time and must not inflate the speed numbers.
-inline constexpr uint64_t kActiveIdleThresholdMs = 5000;
+//
+// Ten seconds, not five. The first commit after a pause has no previous commit
+// inside the session, so `ComputeActiveDeltaMs` gives it a zero gap: its
+// characters land in the numerator while contributing nothing to the
+// denominator. Every pause the threshold fails to absorb therefore biases the
+// reported speed upward. Five seconds marked an ordinary "think for a moment
+// before the next word" gap as a pause — measured on a real session, 24
+// characters over a 23 s stretch with two 5.5 s gaps reported 132/min, while
+// the same stretch as one session reports 65/min.
+inline constexpr uint64_t kActiveIdleThresholdMs = 10000;
 // Mirrors the diagnostic channel's deferred batched flush.
 inline constexpr uint32_t kFlushDelayMs = 250;
 

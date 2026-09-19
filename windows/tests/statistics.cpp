@@ -179,13 +179,13 @@ int main()
             return 41;
         if (int code = CheckActiveDelta(2000, lastCommitMs, 1000, 42))
             return code; // 1 s
-        if (int code = CheckActiveDelta(6900, lastCommitMs, 4900, 43))
-            return code; // 4.9 s
-        if (int code = CheckActiveDelta(12000, lastCommitMs, 0, 44))
-            return code; // 5.1 s is idle
-        if (int code = CheckActiveDelta(22000, lastCommitMs, 0, 45))
-            return code; // 10 s is idle
-        if (int code = CheckActiveDelta(23000, lastCommitMs, 1000, 46))
+        if (int code = CheckActiveDelta(11900, lastCommitMs, 9900, 43))
+            return code; // 9.9 s is still the same session
+        if (int code = CheckActiveDelta(22000, lastCommitMs, 0, 44))
+            return code; // 10.1 s is a pause
+        if (int code = CheckActiveDelta(32000, lastCommitMs, 10000, 45))
+            return code; // exactly 10 s still counts: the comparison is strict
+        if (int code = CheckActiveDelta(33000, lastCommitMs, 1000, 46))
             return code; // typing resumed
         lastCommitMs = 5000;
         if (int code = CheckActiveDelta(4000, lastCommitMs, 0, 47))

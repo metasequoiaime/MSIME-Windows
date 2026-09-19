@@ -51,8 +51,10 @@ let recentRequestCounter = 0;
 let latestRecentRequestId = '';
 let recentTimer: number | null = null;
 
-// 与 DLL 切分打字停顿的阈值同值：窗口内活跃不足 5 秒就不给数。含义是「至少要有一段真实输入」——
+// 窗口内活跃时长低于此值就不给数：含义是「至少要有一段真实输入」——
 // 没有这个门槛，「2 个字符间隔 0.2 秒」会算出 600 字/分钟。
+// 注意它不等于 DLL 的停顿阈值（那个是 10 秒，决定一段输入算不算同一段）；
+// 这里是防小样本的最低量，两者目的不同。
 const RECENT_MIN_ACTIVE_MS = 5_000;
 // 面板可见时按秒刷新；只写这三个数字，不重绘图表、不重新请求历史数据。
 const RECENT_REFRESH_INTERVAL_MS = 1_000;
