@@ -622,5 +622,91 @@
     "valid": false,
     "surface": "settings",
     "direction": "server"
+  },
+  {
+    "name": "statistics recent request",
+    "message": {
+      "type": "statsRecentRequest",
+      "data": {
+        "requestId": "recent-1"
+      }
+    },
+    "valid": true,
+    "surface": "settings",
+    "direction": "client"
+  },
+  {
+    "name": "statistics recent response",
+    "message": {
+      "type": "statsRecentResponse",
+      "data": {
+        "requestId": "recent-1",
+        "ok": true,
+        "m5": {
+          "chars": 42,
+          "activeMs": 12000
+        },
+        "h1": {
+          "chars": 300,
+          "activeMs": 90000
+        },
+        "d1": {
+          "chars": 5000,
+          "activeMs": 1800000
+        }
+      }
+    },
+    "valid": true,
+    "surface": "settings",
+    "direction": "server"
+  },
+  {
+    "name": "statistics recent response missing chars",
+    "message": {
+      "type": "statsRecentResponse",
+      "data": {
+        "requestId": "recent-2",
+        "ok": true,
+        "m5": {
+          "activeMs": 1000
+        },
+        "h1": {
+          "chars": 0,
+          "activeMs": 0
+        },
+        "d1": {
+          "chars": 0,
+          "activeMs": 0
+        }
+      }
+    },
+    "valid": false,
+    "surface": "settings",
+    "direction": "server"
+  },
+  {
+    "name": "statistics recent response activeMs wrong type",
+    "message": {
+      "type": "statsRecentResponse",
+      "data": {
+        "requestId": "recent-3",
+        "ok": true,
+        "m5": {
+          "chars": 1,
+          "activeMs": "1000"
+        },
+        "h1": {
+          "chars": 0,
+          "activeMs": 0
+        },
+        "d1": {
+          "chars": 0,
+          "activeMs": 0
+        }
+      }
+    },
+    "valid": false,
+    "surface": "settings",
+    "direction": "server"
   }
 ]

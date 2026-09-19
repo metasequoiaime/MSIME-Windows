@@ -306,6 +306,23 @@
         "additionalProperties": false
       }
     },
+    "statsRecentRequest": {
+      "surfaces": [
+        "settings"
+      ],
+      "data": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId"
+        ],
+        "additionalProperties": false
+      }
+    },
     "openKeyboardPanel": {
       "surfaces": [
         "settings",
@@ -874,6 +891,78 @@
           "daily",
           "hourly",
           "meta"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "statsRecentResponse": {
+      "data": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "m5": {
+            "type": "object",
+            "properties": {
+              "chars": {
+                "type": "integer"
+              },
+              "activeMs": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "chars",
+              "activeMs"
+            ],
+            "additionalProperties": false
+          },
+          "h1": {
+            "type": "object",
+            "properties": {
+              "chars": {
+                "type": "integer"
+              },
+              "activeMs": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "chars",
+              "activeMs"
+            ],
+            "additionalProperties": false
+          },
+          "d1": {
+            "type": "object",
+            "properties": {
+              "chars": {
+                "type": "integer"
+              },
+              "activeMs": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "chars",
+              "activeMs"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "requestId",
+          "ok",
+          "m5",
+          "h1",
+          "d1"
         ],
         "additionalProperties": false
       }

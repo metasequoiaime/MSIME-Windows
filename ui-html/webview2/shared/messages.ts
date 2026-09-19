@@ -19,6 +19,7 @@ export type ClientMessage =
   | { "type": "apiCredentialTest"; "protocolVersion"?: 1; "data": { "requestId": string; "service": "translation.tencent" | "translation.niutrans" | "translation.custom" | "voice.asr" | "voice.polish" | "ai.assistant"; "config": { [key: string]: unknown } } }
   | { "type": "dictionaryRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "dictionary": "quanpin" | "wubi" | "english" | "quick"; "action": "query" | "create" | "update" | "delete" | "import" | "importHans" | "export"; "word"?: string; "code"?: string; "content"?: string; "weight"?: number; "oldWord"?: string; "oldCode"?: string; "display"?: string; "oldDisplay"?: string; "offset"?: number; "limit"?: number } }
   | { "type": "statsRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "action": "query" } }
+  | { "type": "statsRecentRequest"; "protocolVersion"?: 1; "data": { "requestId": string } }
   | { "type": "openKeyboardPanel"; "protocolVersion"?: 1 }
   | { "type": "candidate"; "protocolVersion"?: 1; "data": number }
   | { "type": "delete"; "protocolVersion"?: 1; "data": number }
@@ -54,7 +55,8 @@ export type ServerMessage =
   | { "type": "maxButtonEvent"; "protocolVersion"?: 1; "data": { "event": "enter" | "leave" | "down" | "up" | "click" } }
   | { "type": "apiCredentialTestResult"; "protocolVersion"?: 1; "requestId": string; "ok": boolean; "message": string }
   | { "type": "dictionaryResponse"; "protocolVersion"?: 1; "requestId": string; "action"?: string; "dictionary"?: string; "ok": boolean; "message": string; "rows": Array<{ "word": string; "code"?: string; "display"?: string; "weight"?: number }>; "content"?: string; "filename"?: string; "offset"?: number; "hasMore"?: boolean; [key: string]: unknown }
-  | { "type": "statsResponse"; "protocolVersion"?: 1; "data": { "requestId": string; "ok": boolean; "message"?: string; "daily": Array<{ "day": number; "cjk": number; "latin": number; "digit": number; "punct": number; "other": number; "activeMs": number }>; "hourly": Array<{ "day": number; "hour": number; "chars": number; "activeMs": number }>; "meta": { "firstDay"?: number; "enabled": boolean } } };
+  | { "type": "statsResponse"; "protocolVersion"?: 1; "data": { "requestId": string; "ok": boolean; "message"?: string; "daily": Array<{ "day": number; "cjk": number; "latin": number; "digit": number; "punct": number; "other": number; "activeMs": number }>; "hourly": Array<{ "day": number; "hour": number; "chars": number; "activeMs": number }>; "meta": { "firstDay"?: number; "enabled": boolean } } }
+  | { "type": "statsRecentResponse"; "protocolVersion"?: 1; "data": { "requestId": string; "ok": boolean; "message"?: string; "m5": { "chars": number; "activeMs": number }; "h1": { "chars": number; "activeMs": number }; "d1": { "chars": number; "activeMs": number } } };
 export type SettingsMessage =
   | { "type": "configRequest"; "protocolVersion"?: 1 }
   | { "type": "skinCatalogRequest"; "protocolVersion"?: 1 }
@@ -73,6 +75,7 @@ export type SettingsMessage =
   | { "type": "apiCredentialTest"; "protocolVersion"?: 1; "data": { "requestId": string; "service": "translation.tencent" | "translation.niutrans" | "translation.custom" | "voice.asr" | "voice.polish" | "ai.assistant"; "config": { [key: string]: unknown } } }
   | { "type": "dictionaryRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "dictionary": "quanpin" | "wubi" | "english" | "quick"; "action": "query" | "create" | "update" | "delete" | "import" | "importHans" | "export"; "word"?: string; "code"?: string; "content"?: string; "weight"?: number; "oldWord"?: string; "oldCode"?: string; "display"?: string; "oldDisplay"?: string; "offset"?: number; "limit"?: number } }
   | { "type": "statsRequest"; "protocolVersion"?: 1; "data": { "requestId": string; "action": "query" } }
+  | { "type": "statsRecentRequest"; "protocolVersion"?: 1; "data": { "requestId": string } }
   | { "type": "openKeyboardPanel"; "protocolVersion"?: 1 };
 declare global {
   var MsimeProtocol: {
