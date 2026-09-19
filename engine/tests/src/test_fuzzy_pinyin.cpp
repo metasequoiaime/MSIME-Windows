@@ -91,6 +91,13 @@ int main()
         // 原始键长比较时，即使模糊音没有产出任何变体也会把它顶到第一。
         insert_weighted("xian", "先", 1662684);
         insert_weighted("xi'an", "西安", 55003);
+        // 填充到首页之外：西安 的自然位置必须真的掉出前 6，保护位才有事可做。
+        insert_weighted("xian", "现", 1500000);
+        insert_weighted("xian", "线", 1400000);
+        insert_weighted("xian", "县", 1300000);
+        insert_weighted("xian", "限", 1200000);
+        insert_weighted("xian", "显", 1100000);
+        insert_weighted("xian", "险", 1000000);
         insert_weighted("xie", "些", 3752167);
         insert_weighted("xie", "蟹", 10000);
         insert_weighted("xi'e", "西鄂", 6);
@@ -99,6 +106,17 @@ int main()
         insert_weighted("ji'ang", "激昂", 23740);
         insert_weighted("you'dian", "邮电", 999);
         insert_weighted("you'di'an", "尤迪安", 7);
+        // 调频之后的备选切分：吉安 的权重（766925）是用户按 promote 调出来的，它已经把自己
+        // 排到自然第 5 位。保护位不能再把它拽到第 2 位——那等于用一个固定槽位覆盖掉调频的
+        // 结果，用户看到的就是「选一次就跳到第二，再怎么调也只能是第二」。
+        insert_weighted("jian", "见", 3460998);
+        insert_weighted("jian", "间", 3067939);
+        insert_weighted("jian", "剑", 1151704);
+        insert_weighted("jian", "件", 935235);
+        insert_weighted("jian", "建", 598616);
+        insert_weighted("jian", "检", 500000);
+        insert_weighted("ji'an", "吉安", 766925);
+        insert_weighted("ji'an", "积案", 9420);
         sqlite3_close(db);
         std::filesystem::create_directories(directory / "helpcodes");
         std::ofstream(directory / "helpcodes" / "helpcode.txt") << "中=ab\n宗=cd\n国=ef\n";
@@ -130,6 +148,8 @@ int main()
         const auto jiang_list = dictionary.query("jiang", "jiang", 0u, fuzzy_on);
         require(jiang_list.at(0).word == "将" && jiang_list.at(1).word == "僵" && position(jiang_list, "激昂") > 1,
                 "rare homophone word outranked the exact reading");
+        const auto jian_list = dictionary.query("jian", "jian", 0u, fuzzy_on);
+        require(position(jian_list, "吉安") == 4, "protected slot overrode a tuned candidate's earned rank");
         const auto youdian_list = dictionary.query("youdian", "you'dian", 0u, fuzzy_on);
         require(youdian_list.at(0).word == "邮电" && position(youdian_list, "尤迪安") > 0,
                 "longer alternative key outranked the exact reading");

@@ -48,6 +48,13 @@ std::filesystem::path CreatePinyinCacheDatabase()
         "INSERT INTO tbl_1_x VALUES('xian','x','__primary_xian_1__',1000);"
         "INSERT INTO tbl_1_x VALUES('xian','x','__primary_xian_2__',900);"
         "INSERT INTO tbl_1_x VALUES('xian','x','__primary_xian_3__',800);"
+        // 4..8 只为把备选切分挤出首页：保护位只对首页之外的候选生效，夹具里若只有三条
+        // 主候选，__alternative_xi_an__ 自然就在第 4 位，测不到提升这条路径。
+        "INSERT INTO tbl_1_x VALUES('xian','x','__primary_xian_4__',700);"
+        "INSERT INTO tbl_1_x VALUES('xian','x','__primary_xian_5__',600);"
+        "INSERT INTO tbl_1_x VALUES('xian','x','__primary_xian_6__',500);"
+        "INSERT INTO tbl_1_x VALUES('xian','x','__primary_xian_7__',400);"
+        "INSERT INTO tbl_1_x VALUES('xian','x','__primary_xian_8__',300);"
         "INSERT INTO tbl_2_x VALUES('xi''an','xa','__alternative_xi_an__',100);"
         "INSERT INTO tbl_4_x VALUES('xi''an''xian''xian','xaxx','__three_syllable_alternative__',100);"
         "INSERT INTO tbl_5_x VALUES('xi''an''xian''xian''xian','xaxxx','__four_syllable_alternative__',100);"
@@ -221,6 +228,31 @@ TEST_CASE(QuanpinDictionaryKeepsPlausibleAlternativeSegmentationNearTheFront)
         });
         REQUIRE(alternative != candidates.end());
         REQUIRE(static_cast<size_t>(std::distance(candidates.begin(), alternative)) <= static_cast<size_t>(1));
+    }
+    std::filesystem::remove(db_path);
+}
+
+// 保护位只把首页之外的备选切分拉进来，不给已经在首页的候选重排座次。调频写的就是权重，
+// 一个被用户调到第 5 位的备选切分（吉安）若再被钉回第 2 位，用户就再也调不动它了。
+TEST_CASE(QuanpinDictionaryLeavesAnAlternativeSegmentationAtItsEarnedRankOnTheFirstPage)
+{
+    const auto db_path = CreatePinyinCacheDatabase();
+    {
+        sqlite3 *db = nullptr;
+        REQUIRE_EQ(sqlite3_open(test::Utf8(db_path).c_str(), &db), SQLITE_OK);
+        // 权重 650 让它落在 700 和 600 之间，也就是自然第 5 位，仍然满足 1/100 的提升门槛。
+        REQUIRE_EQ(sqlite3_exec(db, "UPDATE tbl_2_x SET weight=650 WHERE value='__alternative_xi_an__';", nullptr,
+                                nullptr, nullptr),
+                   SQLITE_OK);
+        sqlite3_close(db);
+
+        QuanpinDictionary dictionary(test::Utf8(db_path));
+        const auto candidates = dictionary.query("xian", "xian");
+        const auto alternative = std::find_if(candidates.begin(), candidates.end(), [](const WordItem &item) {
+            return item.word == "__alternative_xi_an__";
+        });
+        REQUIRE(alternative != candidates.end());
+        REQUIRE_EQ(static_cast<size_t>(std::distance(candidates.begin(), alternative)), static_cast<size_t>(4));
     }
     std::filesystem::remove(db_path);
 }

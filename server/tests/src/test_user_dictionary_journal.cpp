@@ -3,6 +3,8 @@
 #include "engine/user_dictionary/user_dictionary_journal.h"
 
 #include <sqlite3.h>
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -404,11 +406,11 @@ TEST_CASE(UserDictionaryPromoteDoesNotCrushPrefixSinglesFromSeriesQuery)
     std::filesystem::remove_all(directory);
 }
 
-// 回归：调频的权重基准只能取与选中词同尺度（同音节数）的候选。备选切分词（xi'e 的
-// 西鄂 w=6）在旧显示排序下会坐在 xie 列表最前面，拿它当基准会把写（原 605147）写成
+// 回归：调频的权重基准必须取自按权重排好序的比较集，不能按显示顺序取。备选切分词
+// （xi'e 的西鄂 w=6）会坐在 xie 显示列表最前面，拿它当基准会把写（原 605147）写成
 // 6+500=506，权重反而低于些/血/谢——这就是用户机器上「置顶写之后写还是不在前排」的根因。
 // 同音节的多个表（九宫格数字上下混多个单字表）仍互相比权，不受影响。
-TEST_CASE(UserDictionaryPromoteBasesWeightOnTheSelectedCandidatesOwnScale)
+TEST_CASE(UserDictionaryPromoteBasesWeightOnTheHeaviestCandidateNotTheTopmost)
 {
     const auto directory =
         std::filesystem::temp_directory_path() / ("msime-cross-table-ranking-" + std::to_string(GetCurrentProcessId()));
@@ -454,6 +456,121 @@ TEST_CASE(UserDictionaryPromoteBasesWeightOnTheSelectedCandidatesOwnScale)
     {
         TestDatabase db(main_path);
         REQUIRE_EQ(db.scalar_int64("SELECT weight FROM tbl_1_x WHERE value='些'"), 3752167);
+    }
+    std::filesystem::remove_all(directory);
+}
+
+// 回归：调频必须能把另一种切分的词调到整个列表的首位。打 jian 时列表里混着 ji'an 的
+// 吉安（出货词库权重是 1，压在同组的积案 9420 底下），旧实现按音节数圈比较集，吉安
+// 只跟积案/几案比，可学权重封顶一万出头，怎么调都追不上 见 的 3460998——用户看到的就是
+// 「调多少次都没用」。比较集不再按音节数切开之后，基准取到 见，一次置顶就越过它。
+TEST_CASE(UserDictionaryPromoteLiftsAnAlternativeSegmentationAcrossKeys)
+{
+    const auto directory =
+        std::filesystem::temp_directory_path() / ("msime-cross-key-ranking-" + std::to_string(GetCurrentProcessId()));
+    std::filesystem::create_directories(directory);
+    const auto user_path = directory / "msime_user.db";
+    const auto main_path = directory / "msime.db";
+    {
+        TestDatabase db(main_path);
+        db.exec("CREATE TABLE tbl_1_j(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                "CREATE TABLE tbl_2_j(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                "INSERT INTO tbl_1_j VALUES("
+                "'jian','j','见',3460998),"
+                "('jian','j','间',3067939),"
+                "('jian','j','剑',1151704);"
+                "INSERT INTO tbl_2_j VALUES("
+                "'ji''an','ja','积案',9420),"
+                "('ji''an','ja','几案',5999),"
+                "('ji''an','ja','吉安',1);");
+    }
+    std::vector<WordItem> candidates = {
+        {"jian", "见", 3460998, CandidateSource::Database, "jian"},
+        {"jian", "间", 3067939, CandidateSource::Database, "jian"},
+        {"jian", "剑", 1151704, CandidateSource::Database, "jian"},
+        {"jian", "积案", 9420, CandidateSource::Database, "ji'an"},
+        {"jian", "几案", 5999, CandidateSource::Database, "ji'an"},
+        {"jian", "吉安", 1, CandidateSource::Database, "ji'an"},
+    };
+
+    bool ranking_changed = false;
+    REQUIRE(user_dictionary::adjust_candidate_ranking(test::Utf8(main_path), test::Utf8(user_path), "jian", candidates,
+                                                      "ji'an", "吉安", "pin", 1, 1, true, &ranking_changed));
+    REQUIRE(ranking_changed);
+    {
+        TestDatabase db(main_path);
+        // 基准是整个列表最重的 见，不再是 ji'an 这一组的头部 积案。
+        REQUIRE(db.scalar_int64("SELECT weight FROM tbl_2_j WHERE value='吉安'") > 3460998);
+        // 写入仍只落在 entry_key 的行上：jian 那张表一行都没动（#36 的护栏）。
+        REQUIRE_EQ(db.scalar_int64("SELECT weight FROM tbl_1_j WHERE value='见'"), 3460998);
+        REQUIRE_EQ(db.scalar_int64("SELECT weight FROM tbl_1_j WHERE value='间'"), 3067939);
+        REQUIRE_EQ(db.scalar_int64("SELECT weight FROM tbl_2_j WHERE value='积案'"), 9420);
+    }
+    std::filesystem::remove_all(directory);
+}
+
+// 回归：不置顶、按 promote 模式连着选几次，也要能把吉安一路顶到首位。每一轮都照着
+// 库里的新权重重排候选列表，模拟用户重新打一遍 jian 看到的顺序。
+TEST_CASE(UserDictionaryRepeatedPromotionWalksAnAlternativeSegmentationToTheTop)
+{
+    const auto directory =
+        std::filesystem::temp_directory_path() / ("msime-cross-key-walk-" + std::to_string(GetCurrentProcessId()));
+    std::filesystem::create_directories(directory);
+    const auto user_path = directory / "msime_user.db";
+    const auto main_path = directory / "msime.db";
+    {
+        TestDatabase db(main_path);
+        db.exec("CREATE TABLE tbl_1_j(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                "CREATE TABLE tbl_2_j(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                "INSERT INTO tbl_1_j VALUES("
+                "'jian','j','见',3460998),"
+                "('jian','j','间',3067939),"
+                "('jian','j','剑',1151704),"
+                "('jian','j','件',935235),"
+                "('jian','j','建',598616);"
+                "INSERT INTO tbl_2_j VALUES("
+                "'ji''an','ja','积案',9420),"
+                "('ji''an','ja','几案',5999),"
+                "('ji''an','ja','吉安',1);");
+    }
+    const std::vector<std::pair<std::string, std::string>> rows = {
+        {"jian", "见"}, {"jian", "间"},    {"jian", "剑"},    {"jian", "件"},
+        {"jian", "建"}, {"ji'an", "积案"}, {"ji'an", "几案"}, {"ji'an", "吉安"},
+    };
+    const auto current_list = [&]() {
+        TestDatabase db(main_path);
+        std::vector<WordItem> list;
+        for (const auto &row : rows)
+        {
+            const std::string table = row.first == "jian" ? "tbl_1_j" : "tbl_2_j";
+            const auto sql = "SELECT weight FROM " + table + " WHERE value='" + row.second + "'";
+            list.push_back({"jian", row.second, db.scalar_int64(sql.c_str()), CandidateSource::Database, row.first});
+        }
+        std::stable_sort(list.begin(), list.end(),
+                         [](const WordItem &lhs, const WordItem &rhs) { return lhs.weight > rhs.weight; });
+        return list;
+    };
+    const auto rank_of = [](const std::vector<WordItem> &list, const std::string &word) {
+        for (std::size_t i = 0; i < list.size(); ++i)
+            if (list[i].word == word)
+                return i;
+        return list.size();
+    };
+
+    // promote 模式一次最多前进到第 5 位，所以从第 8 位走到首位需要几轮。上限给 8 轮，
+    // 断言的是「会收敛」，不是精确的轮数。
+    std::size_t rounds = 0;
+    while (rank_of(current_list(), "吉安") != 0 && rounds < 8)
+    {
+        const auto list = current_list();
+        REQUIRE(user_dictionary::adjust_candidate_ranking(test::Utf8(main_path), test::Utf8(user_path), "jian", list,
+                                                          "ji'an", "吉安", "promote", 1, 1, false));
+        ++rounds;
+    }
+    REQUIRE_EQ(rank_of(current_list(), "吉安"), static_cast<std::size_t>(0));
+    {
+        TestDatabase db(main_path);
+        REQUIRE_EQ(db.scalar_int64("SELECT weight FROM tbl_1_j WHERE value='见'"), 3460998);
     }
     std::filesystem::remove_all(directory);
 }
@@ -571,7 +688,9 @@ TEST_CASE(UserDictionaryLocalRebalanceKeepsPositiveSameKeyWeights)
     std::filesystem::remove_all(directory);
 }
 
-TEST_CASE(UserDictionaryRankingIgnoresShorterKeysWithoutCanonicalPinyin)
+// 候选没带 canonical_pinyin 时，键要从 context_key 按字数截出来（先 -> xian，
+// 现网 -> xian'wang）。较短的那个键现在也参与比权，但写入必须只落在 entry_key 的行上。
+TEST_CASE(UserDictionaryRankingKeepsWritesOnTheEntryKeyWhenKeysAreReconstructed)
 {
     const auto directory = std::filesystem::temp_directory_path() /
                            ("msime-reconstructed-key-ranking-" + std::to_string(GetCurrentProcessId()));

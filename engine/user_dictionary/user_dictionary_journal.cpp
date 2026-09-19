@@ -917,33 +917,42 @@ bool adjust_candidate_ranking(const std::string &main_db_path, const std::string
         }
     }
 
-    // Single-letter and jianpin contexts show several entry keys in one list
-    // (context "y" mixes 一/yi with 有/you, nine-key digit contexts mix whole
-    // single-char tables). Rank within the selected word's own scale: ranking
-    // against only the rows sharing entry_key made the selection permanently
-    // rank 0 and no weight was ever written, but ranking against the whole
-    // visible list lets different weight scales mix (single-char corpus counts
-    // vs phrase weights). A promoted alternative-segmentation word at the top
-    // of the list then became the weight basis and the midpoint math wrote
-    // garbage (西鄂 w=6 as top of "xie" turned 写 into 506). The scale is the
-    // syllable count: tables of equal length stay comparable. Writes still go
-    // to entry_key rows only, so a rebalance can never land on another key's
-    // row the way it did in #36.
-    const auto ranking_scale = [kind](const std::string &key) -> std::size_t {
-        return kind == DictionaryKind::Wubi ? 0 : pinyin_segments(key).size();
-    };
-    const std::size_t entry_scale = ranking_scale(entry_key);
+    // One list mixes several entry keys: single-letter and jianpin contexts show
+    // 一/yi next to 有/you, nine-key digits mix whole single-char tables, and a
+    // re-segmentation shows 吉安 (ji'an) inside the jian list. All of them have to
+    // share one scale, because the user's 调频 is "move this above what I can see".
+    //
+    // The midpoint math below assumes this vector is sorted by weight, descending:
+    // it brackets the target position between its neighbours' weights and splits
+    // the gap. The displayed order does NOT satisfy that -- an alternative
+    // segmentation takes a protected slot near the top and pinned candidates are
+    // hoisted to fixed positions, both regardless of weight. Ranking on display
+    // order is what wrote 写 as 506 (= 西鄂's weight 6 + 500) in #400. Sorting by
+    // weight fixes that at its source, so no weight basis can ever come from a row
+    // sitting above its own weight.
+    //
+    // #400 instead restricted the set to keys with the same syllable count. That
+    // also kept 西鄂 out, but it walled every candidate into its own group: 吉安
+    // (ji'an, w=1) could only ever be compared against 积案/几案/急案/即按, so its
+    // learnable weight was capped around 10k and it could never pass 见 (jian,
+    // w=3460998) no matter how many times the user picked it. Weight order removes
+    // the wall without bringing the bug back. Writes still go to entry_key rows
+    // only, so a rebalance cannot land on another key's row the way it did in #36.
     std::vector<WordItem> database_candidates;
-    std::vector<bool> owns_entry_key;
     for (const auto &item : ordered_candidates)
     {
         if (item.source != CandidateSource::Database && item.source != CandidateSource::UserDatabase)
             continue;
+        database_candidates.push_back(item);
+    }
+    std::stable_sort(database_candidates.begin(), database_candidates.end(),
+                     [](const WordItem &lhs, const WordItem &rhs) { return lhs.weight > rhs.weight; });
+    std::vector<bool> owns_entry_key;
+    owns_entry_key.reserve(database_candidates.size());
+    for (const auto &item : database_candidates)
+    {
         const std::string item_key =
             kind == DictionaryKind::Wubi ? item.pinyin : candidate_dictionary_key(item, context_key);
-        if (entry_scale != 0 && ranking_scale(item_key) != entry_scale)
-            continue;
-        database_candidates.push_back(item);
         owns_entry_key.push_back(item_key == entry_key);
     }
     const auto selected = std::find_if(database_candidates.begin(), database_candidates.end(),

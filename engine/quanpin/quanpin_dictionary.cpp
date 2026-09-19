@@ -20,6 +20,11 @@ constexpr size_t kSyllableGraphPathLimit = 32;
 constexpr size_t kMaxSyllablesForMultipleSegmentations = 4;
 constexpr int kAlternativeSegmentationCandidateLimit = 128;
 constexpr size_t kBestAlternativeSegmentationMaxIndex = 1;
+// 保护位只对「排在首页之外」的备选读音生效。默认 page_size 是 6，所以自然排序已经
+// 进了前 6 的候选一律按权重原样呈现——用户调频写的就是权重，再钉一次等于把刚调出来
+// 的名次覆盖掉。page_size 可配（3..9），这里取默认值：调大页长最多是少提升一两个
+// 本来就看得见的词，不会把该提升的漏掉。
+constexpr size_t kAlternativeSegmentationFirstPageSize = 6;
 // 备选切分保护位的词频门槛：备选读音的最佳词权重达到主切分首位的 1/RATIO 以上
 // 才配保护位。跨表权重不可直接比（单字是语料计数、词组是小尺度词权），这个量级
 // 判断只负责把「真歧义」和「罕见重码」分开：xian -> 西安(55K) 对 先(1.66M)，
@@ -732,9 +737,17 @@ std::vector<WordItem> QuanpinDictionary::merge_alternative_segmentations(
     const auto best_alternative = std::find_if(merged_full.begin(), merged_full.end(), [&](const WordItem &item) {
         return item.word == best_alternative_word;
     });
+    // 这个保护位只负责「把首页外的备选读音拉进首页」，不负责给它排座次。已经排进首页的
+    // 候选一律不动：它的位置是权重排出来的，而用户调频写的就是权重，再钉一次等于把调频
+    // 的结果覆盖掉。吉安 就是这么被弹到第 2 位的——调频按 promote 把它放到 index 4，
+    // 它因此成了 ji'an 组里权重最高的词、过了上面的门槛，于是又被拽到 index 1，用户看到
+    // 的是「选一次就跳到第二」。西安（自然位置 16，在首页外）不受影响，照旧进 index 1。
+    const size_t best_alternative_index =
+        best_alternative == merged_full.end()
+            ? 0
+            : static_cast<size_t>(std::distance(merged_full.begin(), best_alternative));
     if (promote_alternative && best_alternative != merged_full.end() &&
-        static_cast<size_t>(std::distance(merged_full.begin(), best_alternative)) >
-            kBestAlternativeSegmentationMaxIndex)
+        best_alternative_index >= kAlternativeSegmentationFirstPageSize)
     {
         WordItem promoted = std::move(*best_alternative);
         merged_full.erase(best_alternative);
