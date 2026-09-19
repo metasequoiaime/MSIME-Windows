@@ -146,6 +146,20 @@ void RequireValidResponse(const json::object &payload)
         {"type", "statsResponse"}, {"protocolVersion", metasequoia::webview::Version}, {"data", payload}};
     REQUIRE(metasequoia::webview::Validate(envelope, "server"));
 }
+
+void RequireValidRecentResponse(const json::object &payload)
+{
+    json::value envelope = {
+        {"type", "statsRecentResponse"}, {"protocolVersion", metasequoia::webview::Version}, {"data", payload}};
+    REQUIRE(metasequoia::webview::Validate(envelope, "server"));
+}
+
+void RequireZeroWindow(const json::object &response, const char *key)
+{
+    const json::object &window = response.at(key).as_object();
+    REQUIRE_EQ(json::value_to<int>(window.at("chars")), 0);
+    REQUIRE_EQ(json::value_to<int>(window.at("activeMs")), 0);
+}
 } // namespace
 
 TEST_CASE(statistics_settings_query_reports_the_empty_state)
@@ -225,6 +239,75 @@ TEST_CASE(statistics_settings_retired_clear_action_is_an_unknown_action)
     REQUIRE_EQ(clear.at("daily").as_array().size(), std::size_t{2});
     REQUIRE_EQ(clear.at("hourly").as_array().size(), std::size_t{2});
     REQUIRE_EQ(json::value_to<int>(clear.at("meta").as_object().at("firstDay")), old);
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_settings_recent_reports_zeroed_windows_before_any_input)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-settings-近期空");
+    Statistics::StatsStore store(test::Utf8(root / L"msime_stats.db"));
+
+    const json::object response =
+        SettingsStatistics::BuildRecentResponse(json::object{{"requestId", "recent-1"}}, &store);
+    RequireValidRecentResponse(response);
+
+    REQUIRE_EQ(json::value_to<std::string>(response.at("requestId")), std::string("recent-1"));
+    REQUIRE(response.at("ok").as_bool());
+    RequireZeroWindow(response, "m5");
+    RequireZeroWindow(response, "h1");
+    RequireZeroWindow(response, "d1");
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_settings_recent_serializes_the_recorded_samples)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-settings-近期计数");
+    Statistics::StatsStore store(test::Utf8(root / L"msime_stats.db"));
+    const int32_t today = DayKeyDaysAgo(0);
+    // Two batches: the response must carry the folded sums, exactly as the persistent store folds
+    // its rows (five character classes plus active_ms).
+    REQUIRE(store.Apply(MakeRecord(today, 9, 3, 1, 2, 4, 0, 1000)));
+    REQUIRE(store.Apply(MakeRecord(today, 9, 1, 1, 1, 1, 1, 500)));
+
+    const json::object response =
+        SettingsStatistics::BuildRecentResponse(json::object{{"requestId", "recent-2"}}, &store);
+    RequireValidRecentResponse(response);
+    REQUIRE(response.at("ok").as_bool());
+
+    const json::object &m5 = response.at("m5").as_object();
+    REQUIRE_EQ(json::value_to<int>(m5.at("chars")), 15);
+    REQUIRE_EQ(json::value_to<int>(m5.at("activeMs")), 1500);
+    const json::object &h1 = response.at("h1").as_object();
+    REQUIRE_EQ(json::value_to<int>(h1.at("chars")), 15);
+    REQUIRE_EQ(json::value_to<int>(h1.at("activeMs")), 1500);
+    const json::object &d1 = response.at("d1").as_object();
+    REQUIRE_EQ(json::value_to<int>(d1.at("chars")), 15);
+    REQUIRE_EQ(json::value_to<int>(d1.at("activeMs")), 1500);
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_settings_recent_rejects_a_request_without_request_id)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-settings-近期非法");
+    Statistics::StatsStore store(test::Utf8(root / L"msime_stats.db"));
+    REQUIRE(store.Apply(MakeRecord(DayKeyDaysAgo(0), 9, 5, 0, 0, 0, 0, 100)));
+
+    // Without a requestId the response cannot be correlated with the poll that asked for it. It is
+    // refused with the full shape and zeroed windows so the page keeps its previous numbers.
+    const json::object response = SettingsStatistics::BuildRecentResponse(json::object{}, &store);
+    RequireValidRecentResponse(response);
+    REQUIRE(!response.at("ok").as_bool());
+    REQUIRE(!json::value_to<std::string>(response.at("message")).empty());
+    REQUIRE_EQ(json::value_to<std::string>(response.at("requestId")), std::string(""));
+    RequireZeroWindow(response, "m5");
+    RequireZeroWindow(response, "h1");
+    RequireZeroWindow(response, "d1");
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);

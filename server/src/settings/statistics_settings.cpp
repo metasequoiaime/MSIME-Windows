@@ -51,6 +51,28 @@ json::array BuildHourly(const std::vector<Statistics::HourlyRow> &rows)
     return result;
 }
 
+json::object BuildWindowEntry(const Statistics::RecentWindow &window)
+{
+    return json::object{{"chars", window.chars}, {"activeMs", window.active_ms}};
+}
+
+// The failure shape is the success shape with zeroed windows: the page only needs a structurally
+// complete message so a rejected request keeps its previous numbers instead of clearing them.
+json::object BuildRecent(const std::string &request_id, bool ok, const std::string &message,
+                         const Statistics::RecentWindows &windows)
+{
+    json::object response{{"requestId", request_id},
+                          {"ok", ok},
+                          {"m5", BuildWindowEntry(windows.m5)},
+                          {"h1", BuildWindowEntry(windows.h1)},
+                          {"d1", BuildWindowEntry(windows.d1)}};
+    if (!message.empty())
+    {
+        response["message"] = message;
+    }
+    return response;
+}
+
 // Every response carries the full current data set, so the panel renders from one round trip and
 // does not need a follow-up query.
 json::object BuildResponse(const json::object &request, Statistics::StatsStore &store, bool ok,
@@ -95,6 +117,26 @@ json::object HandleRequest(const json::object &request, Statistics::StatsStore *
     // value changes and on the first write of a new day. A request that still asks for it is an
     // unknown action, not a silently accepted deletion.
     return BuildResponse(request, target, false, "未知统计操作");
+}
+
+json::object BuildRecentResponse(const json::object &request, Statistics::StatsStore *store)
+{
+    const std::string request_id = StringField(request, "requestId");
+    // A request without a requestId cannot be correlated with its response, so it is refused
+    // instead of answered. The page drops any response whose id it does not recognise, which is
+    // exactly the "keep the previous numbers" behaviour a rejected request should have.
+    if (request_id.empty())
+    {
+        return BuildRecent("", false, "无效的统计请求", {});
+    }
+
+    Statistics::StatsStore &target = store != nullptr ? *store : Statistics::SharedStatsStore();
+    Statistics::RecentWindows windows;
+    if (!target.QueryRecent(Statistics::NowSeconds(), windows))
+    {
+        return BuildRecent(request_id, false, "读取统计失败", {});
+    }
+    return BuildRecent(request_id, true, {}, windows);
 }
 
 bool ApplyRetentionPolicy(const std::string &range, Statistics::StatsStore *store)

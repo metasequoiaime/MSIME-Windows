@@ -88,6 +88,10 @@ FanyImeStatsRecord MakeRecord(int32_t day, int hour, int cjk, int latin, int dig
     return record;
 }
 
+// Fixed timeline for the sliding-window tests. They pass `now_seconds` in explicitly, so nothing
+// here depends on the machine's real clock.
+constexpr std::int64_t kRecentNow = 1'700'000'000;
+
 // Reads the schema the way an inspector would: straight from the file, no store API involved.
 std::vector<std::pair<std::string, std::string>> TableColumns(const std::filesystem::path &db_path,
                                                               const std::string &table)
@@ -260,6 +264,242 @@ TEST_CASE(statistics_store_applies_a_batch_in_one_transaction)
     std::filesystem::remove_all(root, ec);
 }
 
+TEST_CASE(statistics_store_records_and_merges_the_samples_of_each_batch)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-store-采样写入");
+    const std::filesystem::path db_path = root / L"msime_stats.db";
+    Statistics::StatsStore store(test::Utf8(db_path));
+    const int32_t today = DayKeyDaysAgo(0);
+
+    // No table yet is the same answer as an empty one: three zeros, not an error.
+    Statistics::RecentWindows windows;
+    REQUIRE(store.QueryRecent(kRecentNow, windows));
+    REQUIRE_EQ(windows.m5.chars, std::int64_t{0});
+    REQUIRE_EQ(windows.h1.active_ms, std::int64_t{0});
+    REQUIRE_EQ(windows.d1.chars, std::int64_t{0});
+
+    // The sample is the sum of the five character classes and of active_ms across the batch.
+    std::vector<FanyImeStatsRecord> batch;
+    batch.push_back(MakeRecord(today, 9, 3, 1, 2, 4, 0, 1000));
+    batch.push_back(MakeRecord(today, 9, 1, 1, 1, 1, 1, 500));
+    REQUIRE(store.ApplyBatch(batch.data(), batch.size(), {}, kRecentNow));
+    REQUIRE(store.QueryRecent(kRecentNow, windows));
+    REQUIRE_EQ(windows.m5.chars, std::int64_t{15});
+    REQUIRE_EQ(windows.m5.active_ms, std::int64_t{1500});
+    REQUIRE_EQ(windows.h1.chars, std::int64_t{15});
+    REQUIRE_EQ(windows.d1.active_ms, std::int64_t{1500});
+
+    // A second batch inside the same second adds into that row instead of replacing it.
+    const FanyImeStatsRecord second = MakeRecord(today, 9, 5, 0, 0, 0, 0, 250);
+    REQUIRE(store.ApplyBatch(&second, 1, {}, kRecentNow));
+    REQUIRE(store.QueryRecent(kRecentNow, windows));
+    REQUIRE_EQ(windows.m5.chars, std::int64_t{20});
+    REQUIRE_EQ(windows.m5.active_ms, std::int64_t{1750});
+    // One merged row, not two: the primary key pins the second.
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT COUNT(*) FROM stats_recent"), std::int64_t{1});
+
+    // An empty batch writes nothing, so it samples nothing either.
+    REQUIRE(store.ApplyBatch(nullptr, 0));
+    REQUIRE(store.QueryRecent(kRecentNow, windows));
+    REQUIRE_EQ(windows.m5.chars, std::int64_t{20});
+
+    // A fresh store over the same file sees the samples: the live windows are on disk, so they
+    // survive a server restart (design.md §8).
+    {
+        Statistics::StatsStore reopened(test::Utf8(db_path));
+        Statistics::RecentWindows reopened_windows;
+        REQUIRE(reopened.QueryRecent(kRecentNow, reopened_windows));
+        REQUIRE_EQ(reopened_windows.m5.chars, std::int64_t{20});
+        REQUIRE_EQ(reopened_windows.m5.active_ms, std::int64_t{1750});
+    }
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_store_recent_windows_include_only_samples_inside_their_bounds)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-store-窗口边界");
+    const std::filesystem::path db_path = root / L"msime_stats.db";
+    Statistics::StatsStore store(test::Utf8(db_path));
+    // Create the schema without writing any sample, then arrange the rows directly: this keeps the
+    // window arithmetic separate from the write path (which has its own test).
+    Statistics::Snapshot snapshot;
+    REQUIRE(store.Query(snapshot));
+    ExecuteSql(db_path, "INSERT INTO stats_recent(second,chars,active_ms) VALUES"
+                        "(" +
+                            std::to_string(kRecentNow - 86401) +
+                            ",256,2560),"
+                            "(" +
+                            std::to_string(kRecentNow - 86400) +
+                            ",128,1280),"
+                            "(" +
+                            std::to_string(kRecentNow - 86399) +
+                            ",64,640),"
+                            "(" +
+                            std::to_string(kRecentNow - 3601) +
+                            ",32,320),"
+                            "(" +
+                            std::to_string(kRecentNow - 3600) +
+                            ",16,160),"
+                            "(" +
+                            std::to_string(kRecentNow - 301) +
+                            ",8,80),"
+                            "(" +
+                            std::to_string(kRecentNow - 300) +
+                            ",4,40),"
+                            "(" +
+                            std::to_string(kRecentNow) + ",2,20)");
+
+    // Each row carries a distinct count, so a boundary that is off by one second shows up as a
+    // wrong sum instead of two errors cancelling out. The bounds are inclusive: exactly
+    // 5 minutes / 1 hour / 24 hours old still counts.
+    Statistics::RecentWindows windows;
+    REQUIRE(store.QueryRecent(kRecentNow, windows));
+    REQUIRE_EQ(windows.m5.chars, std::int64_t{4 + 2});
+    REQUIRE_EQ(windows.m5.active_ms, std::int64_t{40 + 20});
+    REQUIRE_EQ(windows.h1.chars, std::int64_t{16 + 8 + 4 + 2});
+    REQUIRE_EQ(windows.h1.active_ms, std::int64_t{160 + 80 + 40 + 20});
+    REQUIRE_EQ(windows.d1.chars, std::int64_t{128 + 64 + 32 + 16 + 8 + 4 + 2});
+    REQUIRE_EQ(windows.d1.active_ms, std::int64_t{1280 + 640 + 320 + 160 + 80 + 40 + 20});
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_store_recent_windows_decay_as_time_moves_forward)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-store-窗口衰减");
+    const std::filesystem::path db_path = root / L"msime_stats.db";
+    Statistics::StatsStore store(test::Utf8(db_path));
+    Statistics::Snapshot snapshot;
+    REQUIRE(store.Query(snapshot));
+    ExecuteSql(db_path, "INSERT INTO stats_recent(second,chars,active_ms) VALUES(" + std::to_string(kRecentNow - 10) +
+                            ",100,60000)");
+
+    Statistics::RecentWindows windows;
+    REQUIRE(store.QueryRecent(kRecentNow, windows));
+    REQUIRE_EQ(windows.m5.chars, std::int64_t{100});
+    REQUIRE_EQ(windows.h1.chars, std::int64_t{100});
+    REQUIRE_EQ(windows.d1.chars, std::int64_t{100});
+
+    // Stopping for five minutes empties the 5-minute window while the longer ones keep the sample.
+    REQUIRE(store.QueryRecent(kRecentNow + 5 * 60, windows));
+    REQUIRE_EQ(windows.m5.chars, std::int64_t{0});
+    REQUIRE_EQ(windows.m5.active_ms, std::int64_t{0});
+    REQUIRE_EQ(windows.h1.chars, std::int64_t{100});
+    REQUIRE_EQ(windows.d1.chars, std::int64_t{100});
+
+    // An hour of silence empties the hourly window as well.
+    REQUIRE(store.QueryRecent(kRecentNow + 60 * 60, windows));
+    REQUIRE_EQ(windows.h1.chars, std::int64_t{0});
+    REQUIRE_EQ(windows.d1.chars, std::int64_t{100});
+
+    // A day later nothing is left anywhere.
+    REQUIRE(store.QueryRecent(kRecentNow + 24 * 60 * 60, windows));
+    REQUIRE_EQ(windows.m5.chars, std::int64_t{0});
+    REQUIRE_EQ(windows.h1.chars, std::int64_t{0});
+    REQUIRE_EQ(windows.d1.chars, std::int64_t{0});
+    REQUIRE_EQ(windows.d1.active_ms, std::int64_t{0});
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_store_prunes_recent_samples_older_than_24_hours)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-store-采样剪枝");
+    const std::filesystem::path db_path = root / L"msime_stats.db";
+    Statistics::StatsStore store(test::Utf8(db_path));
+    const int32_t today = DayKeyDaysAgo(0);
+    const int32_t yesterday = DayKeyDaysAgo(1);
+    // Creates the schema and stamps the daily marker, which is moved back below so the batch under
+    // test counts as the first write of a new day.
+    REQUIRE(store.Apply(MakeRecord(today, 9, 1, 0, 0, 0, 0, 100)));
+    ExecuteSql(db_path, "DELETE FROM stats_recent");
+    ExecuteSql(db_path,
+               "UPDATE stats_meta SET value='" + std::to_string(yesterday) + "' WHERE key='last_retention_day'");
+    ExecuteSql(db_path, "INSERT INTO stats_recent(second,chars,active_ms) VALUES"
+                        "(" +
+                            std::to_string(kRecentNow - 90000) +
+                            ",111,1110),"
+                            "(" +
+                            std::to_string(kRecentNow - 3600) + ",222,2220)");
+
+    // The daily maintenance prunes the samples no window can read any more: the cutoff is
+    // `arrival - 24 h`, so the 25-hour-old row goes and the 1-hour-old row stays.
+    const FanyImeStatsRecord record = MakeRecord(today, 9, 2, 0, 0, 0, 0, 100);
+    REQUIRE(store.ApplyBatch(&record, 1, {}, kRecentNow));
+    REQUIRE_EQ(
+        ScalarInt(db_path, "SELECT COUNT(*) FROM stats_recent WHERE second=" + std::to_string(kRecentNow - 90000)),
+        std::int64_t{0});
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT chars FROM stats_recent WHERE second=" + std::to_string(kRecentNow - 3600)),
+               std::int64_t{222});
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT COUNT(*) FROM stats_recent WHERE second=" + std::to_string(kRecentNow)),
+               std::int64_t{1});
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_store_recent_sampling_survives_retention_clears)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-store-近期不受清理");
+    const std::filesystem::path db_path = root / L"msime_stats.db";
+    Statistics::StatsStore store(test::Utf8(db_path));
+    const int32_t today = DayKeyDaysAgo(0);
+    const int32_t old = DayKeyDaysAgo(100);
+
+    const FanyImeStatsRecord old_record = MakeRecord(old, 9, 7, 0, 0, 0, 0, 100);
+    const FanyImeStatsRecord today_record = MakeRecord(today, 9, 5, 0, 0, 0, 0, 200);
+    REQUIRE(store.ApplyBatch(&old_record, 1, {}, kRecentNow - 3600));
+    REQUIRE(store.ApplyBatch(&today_record, 1, {}, kRecentNow));
+
+    // Retention trims historical aggregates only: it must not touch the 24-hour samples.
+    REQUIRE(store.Clear("30d"));
+    Statistics::Snapshot snapshot;
+    REQUIRE(store.Query(snapshot));
+    REQUIRE_EQ(snapshot.daily.size(), std::size_t{1});
+    REQUIRE_EQ(snapshot.daily[0].day, today);
+
+    Statistics::RecentWindows windows;
+    REQUIRE(store.QueryRecent(kRecentNow, windows));
+    REQUIRE_EQ(windows.m5.chars, std::int64_t{5});
+    REQUIRE_EQ(windows.m5.active_ms, std::int64_t{200});
+    REQUIRE_EQ(windows.h1.chars, std::int64_t{12});
+    REQUIRE_EQ(windows.h1.active_ms, std::int64_t{300});
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT COUNT(*) FROM stats_recent"), std::int64_t{2});
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE(statistics_store_does_not_sample_a_rolled_back_batch)
+{
+    const std::filesystem::path root = MakeTempRoot(L"msime-stats-store-采样回滚");
+    const std::filesystem::path db_path = root / L"msime_stats.db";
+    Statistics::StatsStore store(test::Utf8(db_path));
+    const int32_t today = DayKeyDaysAgo(0);
+    const FanyImeStatsRecord first = MakeRecord(today, 9, 1, 0, 0, 0, 0, 100);
+    REQUIRE(store.ApplyBatch(&first, 1, {}, kRecentNow));
+
+    ExecuteSql(db_path, "CREATE TRIGGER reject_daily_insert BEFORE INSERT ON stats_daily"
+                        " BEGIN SELECT RAISE(ABORT,'test'); END");
+    const FanyImeStatsRecord failed = MakeRecord(today, 10, 9, 9, 9, 9, 9, 900);
+    REQUIRE(!store.ApplyBatch(&failed, 1, {}, kRecentNow));
+
+    // The sample upsert rides the batch transaction: a failed batch leaves no trace, not even in
+    // the second the successful one used.
+    Statistics::RecentWindows windows;
+    REQUIRE(store.QueryRecent(kRecentNow, windows));
+    REQUIRE_EQ(windows.m5.chars, std::int64_t{1});
+    REQUIRE_EQ(windows.m5.active_ms, std::int64_t{100});
+    REQUIRE_EQ(ScalarInt(db_path, "SELECT COUNT(*) FROM stats_recent"), std::int64_t{1});
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
 TEST_CASE(statistics_store_clear_keeps_only_the_recent_window)
 {
     const std::filesystem::path root = MakeTempRoot(L"msime-stats-store-清理");
@@ -412,6 +652,16 @@ TEST_CASE(statistics_store_can_be_read_safely_without_any_text_columns)
     {
         REQUIRE_EQ(hourly_columns[index].first, expected_hourly[index]);
         REQUIRE_EQ(hourly_columns[index].second, std::string("INTEGER"));
+    }
+    // The live samples carry the same counters as the hourly bucket on a second-level timeline,
+    // and nothing else.
+    const std::vector<std::string> expected_recent = {"second", "chars", "active_ms"};
+    const auto recent_columns = TableColumns(db_path, "stats_recent");
+    REQUIRE_EQ(recent_columns.size(), expected_recent.size());
+    for (std::size_t index = 0; index < expected_recent.size(); ++index)
+    {
+        REQUIRE_EQ(recent_columns[index].first, expected_recent[index]);
+        REQUIRE_EQ(recent_columns[index].second, std::string("INTEGER"));
     }
     // stats_meta holds a schema version, the first recorded day and the last automatic-retention
     // date, nothing else.
@@ -603,6 +853,20 @@ TEST_CASE(statistics_store_sets_wal_and_normal_synchronous_on_every_connection)
     REQUIRE(reopened.Apply(MakeRecord(DayKeyDaysAgo(0), 10, 1, 0, 0, 0, 0, 100)));
     REQUIRE(reopened.ReadPragmaState(reopened_state));
     REQUIRE_EQ(reopened_state.synchronous, 1);
+
+    // Opening a connection must not ask for the write lock while another one is writing: the
+    // settings process polls once a second, and a mode change would contend with every batch.
+    // Holding a write transaction here proves the open path still succeeds (journal_mode is only
+    // written when it is not WAL yet) and still reports the WAL settings.
+    sqlite3 *writer = nullptr;
+    REQUIRE_EQ(sqlite3_open_v2(test::Utf8(db_path).c_str(), &writer, SQLITE_OPEN_READWRITE, nullptr), SQLITE_OK);
+    REQUIRE_EQ(sqlite3_exec(writer, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr), SQLITE_OK);
+    Statistics::PragmaState under_lock;
+    REQUIRE(reopened.ReadPragmaState(under_lock));
+    REQUIRE_EQ(under_lock.journal_mode, std::string("wal"));
+    REQUIRE_EQ(under_lock.synchronous, 1);
+    sqlite3_exec(writer, "ROLLBACK", nullptr, nullptr, nullptr);
+    sqlite3_close(writer);
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);

@@ -4,6 +4,7 @@
 
 #include <sqlite3.h>
 
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
@@ -78,6 +79,14 @@ bool EnsureSchema(sqlite3 *db)
                                  "CREATE TABLE IF NOT EXISTS stats_meta ("
                                  "  key   TEXT PRIMARY KEY,"
                                  "  value TEXT NOT NULL"
+                                 ");"
+                                 // One merged row per second that saw input. The day/hour buckets
+                                 // cannot answer "how fast am I typing right now": the sliding
+                                 // windows need a second-level timeline (design.md §1).
+                                 "CREATE TABLE IF NOT EXISTS stats_recent ("
+                                 "  second    INTEGER PRIMARY KEY,"
+                                 "  chars     INTEGER NOT NULL DEFAULT 0,"
+                                 "  active_ms INTEGER NOT NULL DEFAULT 0"
                                  ");";
     if (!Execute(db, schema))
     {
@@ -116,9 +125,27 @@ Database OpenDatabase(const std::string &db_path)
     // and lets the settings panel read while a batch is being written. The cost is losing the last
     // few seconds of counts on a power loss or a hard kill, which is acceptable here.
     //
-    // journal_mode is stored in the database file, but synchronous is per connection and this store
-    // opens a fresh connection for every operation -- both have to be set on every open.
-    if (!Execute(db.get(), "PRAGMA journal_mode = WAL;") || !Execute(db.get(), "PRAGMA synchronous = NORMAL;"))
+    // journal_mode lives in the database file and changing it may need a write lock, while the
+    // settings process now opens a connection every second to poll the live windows. Read it back
+    // and only write when it is not WAL yet, so the polling connection never competes with a batch
+    // for the lock. The read is scoped on purpose: an unfinalized statement would keep a read
+    // transaction open and the WAL switch would fail with "cannot change into wal mode from within
+    // a transaction". synchronous is per connection and lock-free, so it is still set every open.
+    std::string current_mode;
+    {
+        Statement journal = Prepare(db.get(), "PRAGMA journal_mode");
+        if (!journal || sqlite3_step(journal.get()) != SQLITE_ROW)
+        {
+            return {};
+        }
+        const unsigned char *mode = sqlite3_column_text(journal.get(), 0);
+        if (mode != nullptr)
+        {
+            current_mode = reinterpret_cast<const char *>(mode);
+        }
+    }
+    if ((current_mode != "wal" && !Execute(db.get(), "PRAGMA journal_mode = WAL;")) ||
+        !Execute(db.get(), "PRAGMA synchronous = NORMAL;"))
     {
         return {};
     }
@@ -131,6 +158,12 @@ int32_t LocalDayKey()
     GetLocalTime(&local);
     return static_cast<int32_t>(local.wYear) * 10000 + static_cast<int32_t>(local.wMonth) * 100 + local.wDay;
 }
+
+// Window lengths of the live typing speed, defined once so the query bounds and the daily prune
+// cannot drift apart (design.md §2).
+constexpr std::int64_t kFiveMinutesSeconds = 5 * 60;
+constexpr std::int64_t kOneHourSeconds = 60 * 60;
+constexpr std::int64_t kRecentRetentionSeconds = 24 * 60 * 60;
 
 // Local calendar date `days_ago` days before today, as YYYYMMDD. The wall-clock fields are fed
 // through file-time arithmetic on purpose: no timezone conversion happens, so the result is simply
@@ -268,8 +301,8 @@ bool ShouldRunRetention(sqlite3 *db, int32_t today)
     return static_cast<int32_t>(parsed) != today;
 }
 
-// Stamped on every batch, not only the ones that trim: otherwise an active "forever" policy would
-// re-run the marker lookup on every single write.
+// Stamped on every batch so the marker always means "maintenance was attempted today", whether or
+// not the policy asked for a history trim.
 bool UpdateLastRetentionDay(sqlite3 *db, int32_t today)
 {
     Statement stmt = Prepare(db, "INSERT INTO stats_meta(key,value) VALUES('last_retention_day',?1)"
@@ -343,6 +376,37 @@ bool ApplyRecords(sqlite3 *db, const FanyImeStatsRecord *records, std::size_t co
     return true;
 }
 
+// One merged row per second: repeated batches inside the same second add into it instead of
+// overwriting (design.md §2). The caller owns the transaction, so a failure rolls back together
+// with the batch that produced it.
+bool ApplyRecentSample(sqlite3 *db, std::int64_t second, std::int64_t chars, std::int64_t active_ms)
+{
+    Statement stmt = Prepare(db, "INSERT INTO stats_recent(second,chars,active_ms) VALUES(?1,?2,?3)"
+                                 " ON CONFLICT(second) DO UPDATE SET"
+                                 "  chars = chars + excluded.chars,"
+                                 "  active_ms = active_ms + excluded.active_ms");
+    if (!stmt || sqlite3_bind_int64(stmt.get(), 1, second) != SQLITE_OK ||
+        sqlite3_bind_int64(stmt.get(), 2, chars) != SQLITE_OK ||
+        sqlite3_bind_int64(stmt.get(), 3, active_ms) != SQLITE_OK)
+    {
+        return false;
+    }
+    return StepDone(stmt.get());
+}
+
+// Samples older than the longest window can never be read again, so they only have to survive
+// until the next daily maintenance. That is the whole growth bound on stats_recent: the caller
+// runs this at most once a day, and the worst case is ~48 hours of rows.
+bool PruneRecentSamples(sqlite3 *db, std::int64_t cutoff_second)
+{
+    Statement stmt = Prepare(db, "DELETE FROM stats_recent WHERE second < ?1");
+    if (!stmt || sqlite3_bind_int64(stmt.get(), 1, cutoff_second) != SQLITE_OK)
+    {
+        return false;
+    }
+    return StepDone(stmt.get());
+}
+
 bool ReadFirstDay(sqlite3 *db, Snapshot &snapshot)
 {
     Statement stmt = Prepare(db, "SELECT value FROM stats_meta WHERE key='first_day'");
@@ -385,6 +449,12 @@ std::string default_stats_db_path()
     return directory + "\\msime_stats.db";
 }
 
+std::int64_t NowSeconds()
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
 StatsStore::StatsStore(std::string db_path) : db_path_(std::move(db_path))
 {
 }
@@ -394,7 +464,8 @@ bool StatsStore::Apply(const FanyImeStatsRecord &record)
     return ApplyBatch(&record, 1);
 }
 
-bool StatsStore::ApplyBatch(const FanyImeStatsRecord *records, std::size_t count, const RetentionPolicy &policy)
+bool StatsStore::ApplyBatch(const FanyImeStatsRecord *records, std::size_t count, const RetentionPolicy &policy,
+                            std::int64_t now_seconds)
 {
     if (count == 0)
     {
@@ -404,6 +475,20 @@ bool StatsStore::ApplyBatch(const FanyImeStatsRecord *records, std::size_t count
     {
         return false;
     }
+    // The live sample is one second of merged activity: the five character classes and the active
+    // time of the whole batch. `arrival` is the second the frame arrived on -- the records
+    // themselves only carry hour precision (design.md §2).
+    const std::int64_t arrival = now_seconds < 0 ? NowSeconds() : now_seconds;
+    std::int64_t recent_chars = 0;
+    std::int64_t recent_active_ms = 0;
+    for (std::size_t index = 0; index < count; ++index)
+    {
+        const FanyImeStatsRecord &record = records[index];
+        recent_chars +=
+            static_cast<std::int64_t>(record.cjk) + record.latin + record.digit + record.punct + record.other;
+        recent_active_ms += record.active_ms;
+    }
+
     const std::lock_guard<std::mutex> lock(mutex_);
     Database db = OpenDatabase(db_path_);
     if (!db || !EnsureSchema(db.get()))
@@ -411,21 +496,28 @@ bool StatsStore::ApplyBatch(const FanyImeStatsRecord *records, std::size_t count
         return false;
     }
     // One transaction per batch: a frame is all-or-nothing, so a failed write never leaves a day
-    // half-counted. The automatic trim rides the same transaction for the same reason -- a batch
-    // that fails to land must not leave history trimmed without it.
+    // half-counted. The sample row and the daily trim ride the same transaction for the same
+    // reason -- a batch that fails to land must not leave activity counted or history trimmed.
     if (!Execute(db.get(), "BEGIN IMMEDIATE"))
     {
         return false;
     }
     const int32_t today = LocalDayKey();
     const int window_days = RetentionWindowDays(policy.range);
-    if (window_days > 0 && ShouldRunRetention(db.get(), today) &&
-        !DeleteRowsOlderThan(db.get(), LocalDayKeyDaysAgo(window_days - 1)))
+    // The first write of a new local day also does the daily maintenance. The per-second samples
+    // are always pruned to 24 hours (the live window is one day whatever the policy is), while the
+    // historical aggregates follow the retention policy.
+    if (ShouldRunRetention(db.get(), today))
     {
-        Execute(db.get(), "ROLLBACK");
-        return false;
+        if (!PruneRecentSamples(db.get(), arrival - kRecentRetentionSeconds) ||
+            (window_days > 0 && !DeleteRowsOlderThan(db.get(), LocalDayKeyDaysAgo(window_days - 1))))
+        {
+            Execute(db.get(), "ROLLBACK");
+            return false;
+        }
     }
-    if (!UpdateLastRetentionDay(db.get(), today) || !ApplyRecords(db.get(), records, count))
+    if (!UpdateLastRetentionDay(db.get(), today) || !ApplyRecords(db.get(), records, count) ||
+        !ApplyRecentSample(db.get(), arrival, recent_chars, recent_active_ms))
     {
         Execute(db.get(), "ROLLBACK");
         return false;
@@ -435,6 +527,55 @@ bool StatsStore::ApplyBatch(const FanyImeStatsRecord *records, std::size_t count
         Execute(db.get(), "ROLLBACK");
         return false;
     }
+    return true;
+}
+
+bool StatsStore::QueryRecent(std::int64_t now_seconds, RecentWindows &windows) const
+{
+    windows = RecentWindows{};
+    const std::lock_guard<std::mutex> lock(mutex_);
+    Database db = OpenDatabase(db_path_);
+    if (!db)
+    {
+        return false;
+    }
+    // No EnsureSchema here on purpose: this query runs once a second, and CREATE TABLE IF NOT
+    // EXISTS still takes the write lock when the table already exists, which would make the
+    // polling settings process contend with every batch the server writes. The table is missing
+    // only when no batch has ever landed, which is the same "no activity yet" answer as an empty
+    // table (design.md §3).
+    Statement exists = Prepare(db.get(), "SELECT 1 FROM sqlite_master WHERE type='table' AND name='stats_recent'");
+    if (!exists)
+    {
+        return false;
+    }
+    if (sqlite3_step(exists.get()) != SQLITE_ROW)
+    {
+        return true;
+    }
+    // One scan for all three windows: the panel polls this once a second, so walking the table
+    // three times (or reading the daily/hourly history) is not an option (design.md §2). The
+    // boundaries are inclusive: a sample exactly `window` seconds old still counts.
+    Statement stmt = Prepare(db.get(), "SELECT"
+                                       " COALESCE(SUM(CASE WHEN second >= ?1 THEN chars END), 0),"
+                                       " COALESCE(SUM(CASE WHEN second >= ?1 THEN active_ms END), 0),"
+                                       " COALESCE(SUM(CASE WHEN second >= ?2 THEN chars END), 0),"
+                                       " COALESCE(SUM(CASE WHEN second >= ?2 THEN active_ms END), 0),"
+                                       " COALESCE(SUM(chars), 0), COALESCE(SUM(active_ms), 0)"
+                                       " FROM stats_recent WHERE second >= ?3");
+    if (!stmt || sqlite3_bind_int64(stmt.get(), 1, now_seconds - kFiveMinutesSeconds) != SQLITE_OK ||
+        sqlite3_bind_int64(stmt.get(), 2, now_seconds - kOneHourSeconds) != SQLITE_OK ||
+        sqlite3_bind_int64(stmt.get(), 3, now_seconds - kRecentRetentionSeconds) != SQLITE_OK ||
+        sqlite3_step(stmt.get()) != SQLITE_ROW)
+    {
+        return false;
+    }
+    windows.m5.chars = sqlite3_column_int64(stmt.get(), 0);
+    windows.m5.active_ms = sqlite3_column_int64(stmt.get(), 1);
+    windows.h1.chars = sqlite3_column_int64(stmt.get(), 2);
+    windows.h1.active_ms = sqlite3_column_int64(stmt.get(), 3);
+    windows.d1.chars = sqlite3_column_int64(stmt.get(), 4);
+    windows.d1.active_ms = sqlite3_column_int64(stmt.get(), 5);
     return true;
 }
 

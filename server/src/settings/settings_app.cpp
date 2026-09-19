@@ -1073,6 +1073,40 @@ void HandleWebMessage(HWND hwnd, ICoreWebView2WebMessageReceivedEventArgs *args)
                 };
             });
         }
+        else if (type == "statsRecentRequest")
+        {
+            const auto data = value.at("data").as_object();
+            // Polled once a second while the statistics panel is visible, so this handler reads
+            // only the per-second sample rows -- never the daily/hourly history, and without
+            // running schema DDL that would contend with the server's batch writes.
+            g_worker->Submit([data]() -> SerialTaskQueue::Completion {
+                json::value response;
+                try
+                {
+                    response = SettingsStatistics::BuildRecentResponse(data);
+                }
+                catch (...)
+                {
+                    response = json::object{{"requestId", json::string("")},
+                                            {"ok", false},
+                                            {"message", "统计操作失败，请重试"},
+                                            {"m5", json::object{{"chars", 0}, {"activeMs", 0}}},
+                                            {"h1", json::object{{"chars", 0}, {"activeMs", 0}}},
+                                            {"d1", json::object{{"chars", 0}, {"activeMs", 0}}}};
+                }
+                auto &object = response.as_object();
+                json::value message_value = {{"type", "statsRecentResponse"},
+                                             {"protocolVersion", metasequoia::webview::Version},
+                                             {"data", object}};
+                if (!metasequoia::webview::Validate(message_value, "server"))
+                    throw std::runtime_error("Invalid statistics recent response");
+                auto message = string_to_wstring(json::serialize(message_value));
+                return [message = std::move(message)] {
+                    if (g_webview)
+                        g_webview->PostWebMessageAsJson(message.c_str());
+                };
+            });
+        }
     }
     catch (const std::exception &)
     {
