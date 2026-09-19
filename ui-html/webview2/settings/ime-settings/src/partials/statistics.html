@@ -84,13 +84,13 @@
     <div class="section">
       <div class="section-title">输入详情</div>
       <div class="statistics-details" id="statisticsDetails"></div>
-      <div class="statistics-note">速度 = 字数 ÷ 活跃时长；相邻两次上屏间隔不超过 5 秒才计入活跃。最快速度只统计活跃满 1 分钟的时段。</div>
+      <div class="statistics-note">速度 = 字数 ÷ 活跃时长；只有相邻两次上屏间隔不超过 10 秒的时间才计入活跃。最快速度只统计活跃满 1 分钟的时段。</div>
     </div>
 
     <div class="section">
       <div class="section-header">
         <div class="section-title">实时速度</div>
-        <div class="statistics-section-note">停手后随时间自然下降</div>
+        <div class="statistics-section-note">只计打字中的时间，停手后保持不变</div>
       </div>
       <div class="statistics-details">
         <div class="statistics-detail-row">
@@ -106,7 +106,7 @@
           <span class="statistics-detail-value" id="statisticsRecentD1">—</span>
         </div>
       </div>
-      <div class="statistics-note">窗口内活跃不足 5 秒时显示「—」；秒级采样与统计同在本地数据库，超过 24 小时自动删除。</div>
+      <div class="statistics-note">窗口内活跃不足 5 秒不显示数字；活跃只计相邻上屏间隔不超过 10 秒的部分。秒级采样与统计同在本地数据库，超过 24 小时自动删除。</div>
     </div>
   </div>
 
