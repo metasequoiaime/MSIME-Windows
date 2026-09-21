@@ -601,8 +601,9 @@ jobs:
       # This runs after publishing on purpose. If the dispatch fails the release is already out and
       # correct; what the failure means is that the website is now stale and someone has to act, so
       # it is reported as a failure rather than swallowed.
+      #
+      # No event condition: the enclosing job already only runs when a release is being published, and gating this on workflow_dispatch limited the notification to the repair path -- the one branch of this workflow that almost never runs. Every release from the normal push path published in silence, MSIME-Web received no dispatch at all, and the site waited for a cron that GitHub delivers roughly seven times a day rather than the forty-eight the schedule asks for. 0.8.0 reached msime.app a day late that way.
       - name: Refresh the download manifest on msime.app
-        if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
