@@ -63,6 +63,10 @@ if(MSVC)
         _HAS_AUTO_PTR_ETC=1 NOMINMAX _CRT_SECURE_NO_WARNINGS)
     # 上游副本，不为它改代码风格，也不逐个修收窄转换告警。
     target_compile_options(metasequoia_ime_ngram PRIVATE /wd4244 /wd4267 /wd4996 /wd4018 /wd4334)
+    # language_model.{h,cpp} 带中文 UTF-8 注释，而本目标没继承 engine 的 /utf-8：
+    # MSVC 按系统代码页（GBK）解码时注释尾字节会吞掉换行，直接编不过。kenlm 上游源码
+    # 是纯 ASCII，/utf-8 对它们无感。
+    target_compile_options(metasequoia_ime_ngram PRIVATE /utf-8)
 endif()
 
 # kenlm 的 _open 走 ANSI 代码页，本仓的路径是 UTF-8。强制包含一个只声明

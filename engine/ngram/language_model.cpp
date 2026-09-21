@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <exception>
+#include <filesystem>
 #include <map>
 #include <mutex>
 #include <new>
@@ -69,6 +70,15 @@ LanguageModel::LanguageModel(const std::filesystem::path &model_file) : impl_(st
     if (model_file.empty())
     {
         impl_->error = "empty model path";
+        return;
+    }
+    if (!std::filesystem::exists(model_file))
+    {
+        // kenlm 打不开文件时抛 ErrnoException，而它的错误消息经 StringStream::AdvanceTo
+        // 解引用 std::string 的 end 迭代器（kenlm 上游代码，MSVC Debug STL 下是断言 +
+        // fastfail，任何 catch 都接不住）。缺失的模型先在这里拦下，让「文件不存在」走
+        // 正常的 error 通道；exists 对目录也返回 true，那种边缘错误仍留给 kenlm。
+        impl_->error = "language model file not found";
         return;
     }
     try
