@@ -92,7 +92,7 @@ function fillToolbar(host: HTMLElement): void {
 }
 
 function resourceUrl(id: string, relativePath: string): string {
-  return `https://candidate-skins/${encodeURIComponent(id)}/${relativePath.split('/').map(encodeURIComponent).join('/')}?v=${catalogRevision}`;
+  return `https://candidate-skins.example/${encodeURIComponent(id)}/${relativePath.split('/').map(encodeURIComponent).join('/')}?v=${catalogRevision}`;
 }
 
 function rewriteSkinCssUrls(css: string, skinId: string): string {

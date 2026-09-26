@@ -10,7 +10,10 @@
 #include "settings/serial_task_queue.h"
 #include "statistics/stats_overview.h"
 #include "statistics/stats_store.h"
+#include <chrono>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include "skin/candidate_skin_catalog.h"
 #include "utils/common_utils.h"
@@ -88,6 +91,38 @@ std::wstring g_last_config_message;
 bool g_worker_com_initialized = false; // worker-only
 void CloseSettings(HWND hwnd);
 void HideSettings(HWND hwnd);
+
+// 冷启动打点：设置 METASEQUOIA_IME_SETTINGS_TRACE=1 后，各阶段距进程启动的毫秒数追加到
+// %TEMP%\metasequoia-settings-startup.log。UI 线程和 worker 都会调用。
+void TraceStartup(const char *stage)
+{
+    static const bool enabled = [] {
+        wchar_t value[8]{};
+        return GetEnvironmentVariableW(L"METASEQUOIA_IME_SETTINGS_TRACE", value, 8) > 0 && value[0] == L'1';
+    }();
+    if (!enabled)
+        return;
+    static const LONGLONG start = [] {
+        FILETIME creation{}, exit{}, kernel{}, user{};
+        GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user);
+        return static_cast<LONGLONG>((static_cast<ULONGLONG>(creation.dwHighDateTime) << 32) | creation.dwLowDateTime);
+    }();
+    FILETIME now_ft{};
+    GetSystemTimePreciseAsFileTime(&now_ft);
+    const LONGLONG now =
+        static_cast<LONGLONG>((static_cast<ULONGLONG>(now_ft.dwHighDateTime) << 32) | now_ft.dwLowDateTime);
+    static std::mutex mutex;
+    std::lock_guard lock(mutex);
+    wchar_t temp[MAX_PATH]{};
+    GetTempPathW(MAX_PATH, temp);
+    const std::filesystem::path path = std::filesystem::path(temp) / L"metasequoia-settings-startup.log";
+    FILE *file = nullptr;
+    if (_wfopen_s(&file, path.c_str(), L"a") == 0 && file)
+    {
+        fprintf(file, "%lu %8.1f ms  %s\n", GetCurrentProcessId(), static_cast<double>(now - start) / 10000.0, stage);
+        fclose(file);
+    }
+}
 
 nlohmann::json CandidateColorsToJson(const CandidateSkinCatalog::CandidateColors &colors)
 {
@@ -531,7 +566,9 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
 
 SerialTaskQueue::Completion ConfigCompletion(bool refresh_skin_catalog = false)
 {
+    TraceStartup(refresh_skin_catalog ? "worker: BuildConfigMessage(skins) begin" : "worker: BuildConfigMessage begin");
     auto message = BuildConfigMessage(refresh_skin_catalog);
+    TraceStartup("worker: BuildConfigMessage end");
     const bool light = ResolveConfiguredTheme(GetConfiguredThemeSettings()) == "light";
     return [message = std::move(message), light] {
         g_settings_light = light;
@@ -540,7 +577,14 @@ SerialTaskQueue::Completion ConfigCompletion(bool refresh_skin_catalog = false)
         if (g_webview && message != g_last_config_message)
         {
             if (SUCCEEDED(g_webview->PostWebMessageAsJson(message.c_str())))
+            {
                 g_last_config_message = message;
+                TraceStartup("ui: config posted to page");
+            }
+        }
+        else if (!g_webview)
+        {
+            TraceStartup("ui: config dropped (webview not ready)");
         }
     };
 }
@@ -1122,6 +1166,7 @@ void HandleWebMessage(HWND hwnd, ICoreWebView2WebMessageReceivedEventArgs *args)
         }
         else if (type == "configRequest")
         {
+            TraceStartup("ui: page configRequest (DOMContentLoaded)");
             // A snapshot sent before the new document installed its listener may be lost.
             g_last_config_message.clear();
             PostConfig(false);
@@ -1308,6 +1353,7 @@ HRESULT EnsureCompositionTree(HWND hwnd)
 
 HRESULT OnControllerCreated(HWND hwnd, HRESULT result, ICoreWebView2CompositionController *controller)
 {
+    TraceStartup("ui: controller created");
     if (FAILED(result) || !controller)
     {
         SettingsSplash::Dismiss();
@@ -1333,14 +1379,16 @@ HRESULT OnControllerCreated(HWND hwnd, HRESULT result, ICoreWebView2CompositionC
 
     if (SUCCEEDED(g_webview.As(&g_webview3)))
     {
+        // 虚拟主机名必须带保留 TLD `.example`。不带点的单标签主机名会先走一轮网络名称解析，
+        // 实测导航前要空等约 2 秒才开始加载内容。
         const std::filesystem::path assets =
             std::filesystem::path(CommonUtils::get_ime_data_path_w()) / "html/webview2/settings/ime-settings/dist";
-        g_webview3->SetVirtualHostNameToFolderMapping(L"imesettings", assets.c_str(),
+        g_webview3->SetVirtualHostNameToFolderMapping(L"imesettings.example", assets.c_str(),
                                                       COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
         const std::filesystem::path skins = std::filesystem::path(CommonUtils::get_ime_data_path_w()) / L"skins";
         std::error_code ec;
         std::filesystem::create_directories(skins, ec);
-        g_webview3->SetVirtualHostNameToFolderMapping(L"candidate-skins", skins.c_str(),
+        g_webview3->SetVirtualHostNameToFolderMapping(L"candidate-skins.example", skins.c_str(),
                                                       COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
     }
     if (SUCCEEDED(g_controller.As(&g_controller2)))
@@ -1364,6 +1412,7 @@ HRESULT OnControllerCreated(HWND hwnd, HRESULT result, ICoreWebView2CompositionC
     g_webview->add_ContentLoading(
         Callback<ICoreWebView2ContentLoadingEventHandler>([](ICoreWebView2 *,
                                                              ICoreWebView2ContentLoadingEventArgs *) -> HRESULT {
+            TraceStartup("ui: ContentLoading");
             g_last_config_message.clear();
             g_webview_content_started = true;
             SettingsSplash::Dismiss();
@@ -1376,6 +1425,7 @@ HRESULT OnControllerCreated(HWND hwnd, HRESULT result, ICoreWebView2CompositionC
                                                                    -> HRESULT {
             BOOL success = FALSE;
             args->get_IsSuccess(&success);
+            TraceStartup("ui: NavigationCompleted");
             SettingsSplash::Dismiss();
             if (success)
             {
@@ -1400,12 +1450,14 @@ HRESULT OnControllerCreated(HWND hwnd, HRESULT result, ICoreWebView2CompositionC
             return S_OK;
         }).Get(),
         &token);
-    return g_webview->Navigate(L"https://imesettings/index.html");
+    return g_webview->Navigate(L"https://imesettings.example/index.html");
 }
 
 void InitWebView(HWND hwnd)
 {
+    TraceStartup("ui: InitWebView begin");
     std::filesystem::path user_data = CommonUtils::get_webview2_user_data_path(L"webview2-settings");
+    TraceStartup("ui: get_webview2_user_data_path end");
     std::error_code ec;
     std::filesystem::create_directories(user_data, ec);
     auto options = Make<CoreWebView2EnvironmentOptions>();
@@ -1419,6 +1471,7 @@ void InitWebView(HWND hwnd)
         nullptr, user_data.c_str(), options.Get(),
         Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
             [hwnd](HRESULT result, ICoreWebView2Environment *environment) -> HRESULT {
+                TraceStartup("ui: environment created");
                 if (FAILED(result) || !environment)
                 {
                     SettingsSplash::Dismiss();
@@ -1852,6 +1905,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_pa
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_command)
 {
+    TraceStartup("wWinMain");
     g_open_about_on_ready = command_line && std::wstring(command_line).find(L"--about") != std::wstring::npos;
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     const HRESULT com_result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -1901,11 +1955,28 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
             if (g_worker_com_initialized)
                 CoUninitialize();
         });
-    g_worker->Submit([] {
+    auto initial_theme = std::make_shared<std::promise<bool>>();
+    std::future<bool> initial_light = initial_theme->get_future();
+    g_worker->Submit([initial_theme] {
         g_worker_com_initialized = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
+        TraceStartup("worker: InitImeConfig begin");
         InitImeConfig();
+        TraceStartup("worker: InitImeConfig end");
+        initial_theme->set_value(ResolveConfiguredTheme(GetConfiguredThemeSettings()) == "light");
         return ConfigCompletion();
     });
+    // 配置加载通常只要几毫秒，先短暂等它拿到主题再画窗口框架和 splash，免得浅色主题先闪一下深色。
+    // 等不到就按深色先亮出来，之后由 ConfigCompletion 切换。
+    if (initial_light.wait_for(std::chrono::milliseconds(150)) == std::future_status::ready)
+    {
+        try
+        {
+            g_settings_light = initial_light.get();
+        }
+        catch (...)
+        {
+        }
+    }
 
     DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
     DWM_SYSTEMBACKDROP_TYPE backdrop = DWMSBT_NONE;
@@ -1921,10 +1992,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 
     SetTimer(hwnd, kConfigReloadTimer, 300, nullptr);
-    InitWebView(hwnd);
+    // 先把窗口和 splash 亮出来，再做 WebView2 用户数据目录的准备和 environment 创建。
     ShowWindow(hwnd, show_command == SW_HIDE ? SW_SHOWNORMAL : show_command);
     UpdateWindow(hwnd);
     SettingsSplash::Show(hwnd, g_settings_light);
+    TraceStartup("ui: window + splash shown");
+    InitWebView(hwnd);
+    TraceStartup("ui: InitWebView returned");
     if (g_webview_content_started)
         SettingsSplash::Dismiss();
 
