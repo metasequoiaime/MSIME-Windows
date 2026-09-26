@@ -169,71 +169,57 @@
     .context-menu-parent:hover>.context-submenu { display:block; }
     .context-menu-separator { height:1px; margin:3px 5px; background:#ffffff20; }
 
-    /* Willow green: full-bleed column highlight, like weasel 杨柳青. */
-    :root { --cand-text: #d8dbd8; --cand-num: #a6aba7; }
-    body { border-radius: 9px; }
-    .containerParent {
-      border-radius: 9px;
-      box-shadow: 8px 10px 24px rgba(0, 0, 0, .34), 2px 3px 8px rgba(0, 0, 0, .22);
-    }
+    /* Autumn osmanthus: an inset rounded highlight. The first candidate's left
+       corners and the last one's right corners share the frame's radius where
+       they meet the frame's corners. */
+    :root { --cand-text: #f5f8fa; --cand-num: #e1e8ec; }
+    body { border-radius: 10px; }
     .container {
-      --wg-surface: #2d2f2e;
-      --wg-hilite: #65c98d;
-      --wg-radius: 9px;
-      background-color: var(--wg-surface);
-      background-repeat: no-repeat;
-      padding: 0;
+      --ao-surface: #7d929f;
+      --ao-hilite: #f97d0a;
+      --ao-radius: 10px;
+      --ao-item-radius: 6px;
+      background: var(--ao-surface);
+      padding: 5px;
       border: none;
-      border-radius: var(--wg-radius);
-      box-shadow: none;
-      isolation: isolate;
-      clip-path: inset(0 round var(--wg-radius));
+      border-radius: var(--ao-radius);
+      box-shadow: 8px 10px 24px rgba(0, 0, 0, .34), 2px 3px 8px rgba(0, 0, 0, .22);
       letter-spacing: -0.31em;
-    }
-    .container.preedit-hidden:has(> .pinyin + .row-wrapper > .first) {
-      background-image: linear-gradient(to right, var(--wg-hilite), var(--wg-hilite));
-      background-position: left;
-      background-size: var(--wg-radius) 100%;
-    }
-    .container:has(> .row-wrapper:is(:last-child, .last-visible) > .first) {
-      background-image: linear-gradient(to left, var(--wg-hilite), var(--wg-hilite));
-      background-position: right;
-      background-size: var(--wg-radius) 100%;
-    }
-    .container.preedit-hidden:has(> .pinyin + .row-wrapper > .first):has(> .row-wrapper:is(:last-child, .last-visible) > .first) {
-      background-color: var(--wg-hilite);
-      background-image: none;
     }
     .row.pinyin {
       letter-spacing: normal;
       margin-top: 0;
-      margin-bottom: 0;
-      padding: 6px 10px 3px 8px;
+      margin-bottom: 2px;
+      padding: 1px 10px 1px 6px;
     }
     .row.cand {
       margin-top: 0;
       margin-bottom: 0;
-      padding: 6px 8px;
-      border-radius: 0;
+      padding: 4px 6px;
+      border-radius: var(--ao-item-radius);
     }
     .row-wrapper {
       display: inline-block;
       letter-spacing: normal;
-      margin: 0;
+      margin: 0 2px 0 0;
       vertical-align: top;
     }
     .first-row-wrapper { margin-left: 0; }
-    .cand { border-radius: 0; }
-    .cursor { background: var(--wg-hilite); }
-    .hover-active .cand:not(.first):hover { background-color: rgba(101, 201, 141, .22); }
-    .hover-active .cand.first:hover { background-color: var(--wg-hilite); }
-    .first {
-      background-color: var(--wg-hilite);
-      border-radius: 0;
+    /* last-visible: ApplyCandidateFrame hides unused candidates instead of removing them. */
+    .container > .row-wrapper:is(:last-child, .last-visible) { margin-right: 0; }
+    .container > .pinyin + .row-wrapper > .cand { border-bottom-left-radius: var(--ao-radius); }
+    .container.preedit-hidden > .pinyin + .row-wrapper > .cand { border-top-left-radius: var(--ao-radius); }
+    .container > .row-wrapper:is(:last-child, .last-visible) > .cand { border-bottom-right-radius: var(--ao-radius); }
+    .container.preedit-hidden > .row-wrapper:is(:last-child, .last-visible) > .cand {
+      border-top-right-radius: var(--ao-radius);
     }
+    .cursor { background: var(--ao-hilite); }
+    .hover-active .cand:not(.first):hover { background-color: rgba(249, 125, 10, .30); }
+    .hover-active .cand.first:hover { background-color: var(--ao-hilite); }
+    .first { background-color: var(--ao-hilite); }
     .first::before { display: none; }
     .first .text,
     .first .num { color: #ffffff; }
     .context-menu,
-    .context-submenu { background: #343635; border-color: #454845; color: #e0e2df; }
-    .context-menu-item:hover { background: #414441; }
+    .context-submenu { background: #6f8491; border-color: #8ca0ac; color: #f5f8fa; }
+    .context-menu-item:hover { background: #637885; }

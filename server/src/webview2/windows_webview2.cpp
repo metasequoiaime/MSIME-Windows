@@ -1914,9 +1914,15 @@ window.ApplyCandidateFrame = function (payload) {
     }
     const items = Array.isArray(payload.items) ? payload.items : [];
     const wrappers = container.querySelectorAll('.row-wrapper');
+    let lastVisible = -1;
+    wrappers.forEach(function (wrapper, index) {
+      if (index < items.length && String(items[index] || '')) lastVisible = index;
+    });
     wrappers.forEach(function (wrapper, index) {
       const html = index < items.length ? String(items[index] || '') : '';
       wrapper.style.display = html ? '' : 'none';
+      // Unused rows stay in the DOM, so :last-child cannot find the last shown row.
+      wrapper.classList.toggle('last-visible', index === lastVisible);
       const cand = wrapper.querySelector('.cand');
       if (!cand) return;
       let slot = cand.querySelector('.cand-content');
@@ -2363,6 +2369,11 @@ int PrepareHtmlForWnds()
     else if (baseCandidateSkin == "willow_green")
     {
         htmlFtbWnd = ftbLight ? L"/html/webview2/ftb/willow_green_light.html" : L"/html/webview2/ftb/willow_green.html";
+    }
+    else if (baseCandidateSkin == "autumn_osmanthus")
+    {
+        htmlFtbWnd =
+            ftbLight ? L"/html/webview2/ftb/autumn_osmanthus_light.html" : L"/html/webview2/ftb/autumn_osmanthus.html";
     }
     else
     {

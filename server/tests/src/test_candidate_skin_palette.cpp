@@ -27,6 +27,19 @@ TEST_CASE(candidate_skin_palette_matches_willow_green_light_and_dark_preview)
     REQUIRE_EQ(FlattenCandidateColor(light.text, light.surface), RGB(52, 57, 54));
 }
 
+TEST_CASE(candidate_skin_palette_matches_autumn_osmanthus_light_and_dark_preview)
+{
+    const CandidateSkinPalette dark = ResolveCandidateSkinPalette("autumn_osmanthus", false, "auto");
+    REQUIRE_EQ(FlattenCandidateColor(dark.surface, dark.surface), RGB(125, 146, 159));
+    REQUIRE_EQ(dark.border.a, 0.0f);
+    REQUIRE_EQ(FlattenCandidateColor(dark.text, dark.surface), RGB(245, 248, 250));
+
+    const CandidateSkinPalette light = ResolveCandidateSkinPalette("autumn_osmanthus", true, "auto");
+    REQUIRE_EQ(FlattenCandidateColor(light.surface, light.surface), RGB(214, 236, 240));
+    REQUIRE_EQ(light.border.a, 0.0f);
+    REQUIRE_EQ(FlattenCandidateColor(light.text, light.surface), RGB(31, 49, 56));
+}
+
 TEST_CASE(candidate_skin_palette_custom_missing_colors_inherit_package_base)
 {
     CandidateSkinCatalog::CandidateColors colors;

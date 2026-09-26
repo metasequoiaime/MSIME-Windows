@@ -194,12 +194,12 @@
       background-position: left;
       background-size: var(--wg-radius) 100%;
     }
-    .container:has(> .row-wrapper:last-child > .first) {
+    .container:has(> .row-wrapper:is(:last-child, .last-visible) > .first) {
       background-image: linear-gradient(to left, var(--wg-hilite), var(--wg-hilite));
       background-position: right;
       background-size: var(--wg-radius) 100%;
     }
-    .container.preedit-hidden:has(> .pinyin + .row-wrapper > .first):has(> .row-wrapper:last-child > .first) {
+    .container.preedit-hidden:has(> .pinyin + .row-wrapper > .first):has(> .row-wrapper:is(:last-child, .last-visible) > .first) {
       background-color: var(--wg-hilite);
       background-image: none;
     }

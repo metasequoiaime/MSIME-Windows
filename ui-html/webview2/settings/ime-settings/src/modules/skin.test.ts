@@ -45,6 +45,10 @@ it('applies built-in and custom candidate skins to the caret preview consumer', 
   applyCandidateSkin('wechat');
   expect(preview.classList.toggle).toHaveBeenCalledWith('skin-wechat', true);
 
+  applyCandidateSkin('autumn_osmanthus');
+  expect(preview.classList.toggle).toHaveBeenCalledWith('skin-autumn-osmanthus', true);
+  expect(preview.classList.toggle).toHaveBeenCalledWith('skin-wechat', false);
+
   applyCandidateSkinCatalog([
     {
       id: 'custom-blue', name: 'Custom Blue', version: '1', base: 'graphite', layouts: ['horizontal'],

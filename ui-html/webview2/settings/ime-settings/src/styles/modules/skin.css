@@ -182,7 +182,7 @@
 .candidate.skin-willow-green.wnd-v .container.preedit-hidden > .pinyin + .row-wrapper > .cand {
   padding-top: 7px;
 }
-.candidate.skin-willow-green.wnd-v .container:has(> .row-wrapper:last-child > .first) {
+.candidate.skin-willow-green.wnd-v .container:has(> .row-wrapper:is(:last-child, .last-visible) > .first) {
   background-image: linear-gradient(var(--wg-hilite), var(--wg-hilite));
   background-position: bottom;
   background-size: 100% var(--wg-radius);
@@ -192,12 +192,12 @@
   background-position: left;
   background-size: var(--wg-radius) 100%;
 }
-.candidate.skin-willow-green.wnd-h .container:has(> .row-wrapper:last-child > .first) {
+.candidate.skin-willow-green.wnd-h .container:has(> .row-wrapper:is(:last-child, .last-visible) > .first) {
   background-image: linear-gradient(to left, var(--wg-hilite), var(--wg-hilite));
   background-position: right;
   background-size: var(--wg-radius) 100%;
 }
-.candidate.skin-willow-green .container.preedit-hidden:has(> .pinyin + .row-wrapper > .first):has(> .row-wrapper:last-child > .first) {
+.candidate.skin-willow-green .container.preedit-hidden:has(> .pinyin + .row-wrapper > .first):has(> .row-wrapper:is(:last-child, .last-visible) > .first) {
   background-color: var(--wg-hilite);
   background-image: none;
 }
@@ -263,6 +263,116 @@
 }
 .ftb-preview-host.skin-willow-green.theme-dark .drag-handle { background: #65c98d; }
 .ftb-preview-host.skin-willow-green.theme-light .drag-handle { background: #58b980; }
+
+/* Preview equivalents of the Autumn osmanthus skin CSS in candwnd/skins/autumn_osmanthus/. */
+.candidate.skin-autumn-osmanthus.theme-dark {
+  --accent-strong: #f97d0a;
+  --cand-bg: #7d929f;
+  --cand-border: transparent;
+  --cand-shadow: 8px 10px 24px rgba(0, 0, 0, .34), 2px 3px 8px rgba(0, 0, 0, .22);
+  --cand-text: #f5f8fa;
+  --cand-num: #e1e8ec;
+  --cand-hover: rgba(249, 125, 10, .30);
+  --cand-selected: #f97d0a;
+  --ao-selected-text: #ffffff;
+}
+.candidate.skin-autumn-osmanthus.theme-light {
+  --accent-strong: #e6a817;
+  --cand-bg: #d6ecf0;
+  --cand-border: transparent;
+  --cand-shadow: 8px 10px 24px rgba(0, 0, 0, .18), 2px 3px 8px rgba(0, 0, 0, .10);
+  --cand-text: #1f3138;
+  --cand-num: #5b727b;
+  --cand-hover: rgba(255, 227, 153, .55);
+  --cand-selected: #ffe399;
+  --ao-selected-text: #1a1a1a;
+}
+.candidate.skin-autumn-osmanthus .container {
+  --ao-radius: 10px;
+  --ao-item-radius: 6px;
+  padding: 5px;
+  border: none;
+  border-radius: var(--ao-radius);
+}
+.candidate.skin-autumn-osmanthus .cand,
+.candidate.skin-autumn-osmanthus .first { border-radius: var(--ao-item-radius); }
+.candidate.skin-autumn-osmanthus .first::before { display: none; }
+.candidate.skin-autumn-osmanthus .cand.first:hover { background-color: var(--cand-selected); }
+.candidate.skin-autumn-osmanthus .first .text,
+.candidate.skin-autumn-osmanthus .first .num,
+.candidate.skin-autumn-osmanthus .first .cand-no { color: var(--ao-selected-text); }
+.candidate.skin-autumn-osmanthus.wnd-v .row.pinyin {
+  margin-top: 0;
+  padding: 1px 12px 3px 6px;
+}
+.candidate.skin-autumn-osmanthus.wnd-v .row.cand {
+  margin-top: 2px;
+  padding: 3px 14px 3px 4px;
+}
+.candidate.skin-autumn-osmanthus.wnd-v .container.preedit-hidden > .pinyin + .row-wrapper > .cand {
+  margin-top: 0;
+  border-top-left-radius: var(--ao-radius);
+  border-top-right-radius: var(--ao-radius);
+}
+.candidate.skin-autumn-osmanthus.wnd-v .container > .row-wrapper:is(:last-child, .last-visible) > .cand {
+  border-bottom-left-radius: var(--ao-radius);
+  border-bottom-right-radius: var(--ao-radius);
+}
+.candidate.skin-autumn-osmanthus.wnd-h {
+  width: fit-content;
+  max-width: 100%;
+}
+.candidate.skin-autumn-osmanthus.wnd-h .container {
+  width: max-content;
+  max-width: 100%;
+  letter-spacing: -0.31em;
+}
+.candidate.skin-autumn-osmanthus.wnd-h .row.pinyin {
+  letter-spacing: normal;
+  margin-top: 0;
+  margin-bottom: 2px;
+  padding: 1px 10px 1px 6px;
+}
+.candidate.skin-autumn-osmanthus.wnd-h .row.cand {
+  margin-top: 0;
+  margin-bottom: 0;
+  padding: 4px 6px;
+}
+.candidate.skin-autumn-osmanthus.wnd-h .row-wrapper {
+  display: inline-block;
+  letter-spacing: normal;
+  margin: 0 2px 0 0;
+  vertical-align: top;
+}
+.candidate.skin-autumn-osmanthus.wnd-h .first-row-wrapper { margin-left: 0; }
+.candidate.skin-autumn-osmanthus.wnd-h .container > .row-wrapper:is(:last-child, .last-visible) { margin-right: 0; }
+.candidate.skin-autumn-osmanthus.wnd-h .container > .pinyin + .row-wrapper > .cand {
+  border-bottom-left-radius: var(--ao-radius);
+}
+.candidate.skin-autumn-osmanthus.wnd-h .container.preedit-hidden > .pinyin + .row-wrapper > .cand {
+  border-top-left-radius: var(--ao-radius);
+}
+.candidate.skin-autumn-osmanthus.wnd-h .container > .row-wrapper:is(:last-child, .last-visible) > .cand {
+  border-bottom-right-radius: var(--ao-radius);
+}
+.candidate.skin-autumn-osmanthus.wnd-h .container.preedit-hidden > .row-wrapper:is(:last-child, .last-visible) > .cand {
+  border-top-right-radius: var(--ao-radius);
+}
+
+.ftb-preview-host.skin-autumn-osmanthus.theme-dark .status-bar {
+  background-color: #7d929f;
+  border-color: #8fa3af;
+  border-radius: calc(10px * var(--ftb-scale));
+  box-shadow: 0 7px 18px rgba(0, 0, 0, .34);
+}
+.ftb-preview-host.skin-autumn-osmanthus.theme-light .status-bar {
+  background-color: #d6ecf0;
+  border-color: #bcd8de;
+  border-radius: calc(10px * var(--ftb-scale));
+  box-shadow: 0 7px 18px rgba(31, 49, 56, .16);
+}
+.ftb-preview-host.skin-autumn-osmanthus.theme-dark .drag-handle { background: #f97d0a; }
+.ftb-preview-host.skin-autumn-osmanthus.theme-light .drag-handle { background: #e6a817; }
 
 .external-skin-heading {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 18px;

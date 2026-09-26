@@ -2,8 +2,8 @@
       --cand-font-family: 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
       --cand-font-size: 16px;
       --preedit-font-size: var(--cand-font-size);
-      --cand-text: #b7b7b7;
-      --cand-num: #858585;
+      --cand-text: #333333;
+      --cand-num: #757575;
       /* Fallback before C++ injects host-width DIP. Wrap limit = 宿主宽度. */
       --msime-max-width-dip: 100%;
       --msime-max-height-dip: 100%;
@@ -27,11 +27,11 @@
     .container {
       margin-top: 0px;
       margin-left: 0px;
-      background: #202020;
+      background: #ffffff;
       /* background: url("https://appassets/background.jpg"); */
       padding: 2px;
       border-radius: 6px;
-      box-shadow: 8px 10px 24px rgba(0, 0, 0, 0.34), 2px 3px 8px rgba(0, 0, 0, 0.22);
+      box-shadow: 8px 10px 24px rgba(0, 0, 0, 0.18), 2px 3px 8px rgba(0, 0, 0, 0.10);
       min-width: 7em;
       /* Wrap only when content reaches the host (injected) max width. */
       width: min(max-content, var(--msime-max-width-dip));
@@ -47,7 +47,7 @@
       word-break: break-word;
       white-space: normal;
       user-select: none;
-      border: 1.5px solid #9b9b9b2e;
+      border: 1.5px solid rgba(0, 0, 0, 0.12);
     }
 
     .cursor {
@@ -73,7 +73,7 @@
     }
 
     .hover-active .cand:hover {
-      background-color: #414141;
+      background-color: #ececec;
     }
 
     .row-wrapper {
@@ -93,7 +93,7 @@
     }
 
     .first {
-      background-color: #3e3e3eb9;
+      background-color: #e8e8e8;
       border-radius: 4px;
     }
 
@@ -158,82 +158,67 @@
       box-shadow: none;
       min-width: 0;
     }
-    .context-menu { display:none; position:fixed; z-index:1000; background:#2d2d2d; color:#e9e8e8;
-      border:1px solid #9b9b9b2e; border-radius:6px; padding:1px 0; min-width:86px; font-size:14px; line-height:20px; }
+    .context-menu { display:none; position:fixed; z-index:1000; background:#fff; color:#1a1a1a;
+      border:1px solid #00000020; border-radius:6px; padding:1px 0; min-width:86px; font-size:14px; line-height:20px; }
     .context-menu-item { position:relative; padding:1px 20px 1px 4px; margin:2px; border-radius:4px; cursor:default; white-space:nowrap; }
-    .context-menu-item:hover { background:#414141; }
+    .context-menu-item:hover { background:#ececec; }
     .context-menu-parent::after { content:"›"; position:absolute; right:6px; }
     .context-submenu { display:none; position:absolute; left:100%; top:-2px; min-width:0;
-      background:#2d2d2d; border:1px solid #9b9b9b2e; border-radius:6px; padding:1px 0; }
+      background:#fff; border:1px solid #00000020; border-radius:6px; padding:1px 0; }
     .context-submenu .context-menu-item { padding-right: 8px; }
     .context-menu-parent:hover>.context-submenu { display:block; }
-    .context-menu-separator { height:1px; margin:3px 5px; background:#ffffff20; }
-
-    /* Willow green: full-bleed column highlight, like weasel 杨柳青. */
-    :root { --cand-text: #d8dbd8; --cand-num: #a6aba7; }
-    body { border-radius: 9px; }
-    .containerParent {
-      border-radius: 9px;
-      box-shadow: 8px 10px 24px rgba(0, 0, 0, .34), 2px 3px 8px rgba(0, 0, 0, .22);
-    }
+    .context-menu-separator { height:1px; margin:3px 5px; background:#00000020; }
+    /* Autumn osmanthus light: an inset rounded highlight. The first candidate's
+       left corners and the last one's right corners share the frame's radius
+       where they meet the frame's corners. */
+    :root { --cand-text: #1f3138; --cand-num: #5b727b; }
+    body { border-radius: 10px; }
     .container {
-      --wg-surface: #2d2f2e;
-      --wg-hilite: #65c98d;
-      --wg-radius: 9px;
-      background-color: var(--wg-surface);
-      background-repeat: no-repeat;
-      padding: 0;
+      --ao-surface: #d6ecf0;
+      --ao-hilite: #ffe399;
+      --ao-radius: 10px;
+      --ao-item-radius: 6px;
+      background: var(--ao-surface);
+      padding: 5px;
       border: none;
-      border-radius: var(--wg-radius);
-      box-shadow: none;
-      isolation: isolate;
-      clip-path: inset(0 round var(--wg-radius));
+      border-radius: var(--ao-radius);
+      box-shadow: 8px 10px 24px rgba(0, 0, 0, .18), 2px 3px 8px rgba(0, 0, 0, .10);
       letter-spacing: -0.31em;
-    }
-    .container.preedit-hidden:has(> .pinyin + .row-wrapper > .first) {
-      background-image: linear-gradient(to right, var(--wg-hilite), var(--wg-hilite));
-      background-position: left;
-      background-size: var(--wg-radius) 100%;
-    }
-    .container:has(> .row-wrapper:is(:last-child, .last-visible) > .first) {
-      background-image: linear-gradient(to left, var(--wg-hilite), var(--wg-hilite));
-      background-position: right;
-      background-size: var(--wg-radius) 100%;
-    }
-    .container.preedit-hidden:has(> .pinyin + .row-wrapper > .first):has(> .row-wrapper:is(:last-child, .last-visible) > .first) {
-      background-color: var(--wg-hilite);
-      background-image: none;
     }
     .row.pinyin {
       letter-spacing: normal;
       margin-top: 0;
-      margin-bottom: 0;
-      padding: 6px 10px 3px 8px;
+      margin-bottom: 2px;
+      padding: 1px 10px 1px 6px;
     }
     .row.cand {
       margin-top: 0;
       margin-bottom: 0;
-      padding: 6px 8px;
-      border-radius: 0;
+      padding: 4px 6px;
+      border-radius: var(--ao-item-radius);
     }
     .row-wrapper {
       display: inline-block;
       letter-spacing: normal;
-      margin: 0;
+      margin: 0 2px 0 0;
       vertical-align: top;
     }
     .first-row-wrapper { margin-left: 0; }
-    .cand { border-radius: 0; }
-    .cursor { background: var(--wg-hilite); }
-    .hover-active .cand:not(.first):hover { background-color: rgba(101, 201, 141, .22); }
-    .hover-active .cand.first:hover { background-color: var(--wg-hilite); }
-    .first {
-      background-color: var(--wg-hilite);
-      border-radius: 0;
+    /* last-visible: ApplyCandidateFrame hides unused candidates instead of removing them. */
+    .container > .row-wrapper:is(:last-child, .last-visible) { margin-right: 0; }
+    .container > .pinyin + .row-wrapper > .cand { border-bottom-left-radius: var(--ao-radius); }
+    .container.preedit-hidden > .pinyin + .row-wrapper > .cand { border-top-left-radius: var(--ao-radius); }
+    .container > .row-wrapper:is(:last-child, .last-visible) > .cand { border-bottom-right-radius: var(--ao-radius); }
+    .container.preedit-hidden > .row-wrapper:is(:last-child, .last-visible) > .cand {
+      border-top-right-radius: var(--ao-radius);
     }
+    .cursor { background: #e6a817; }
+    .hover-active .cand:not(.first):hover { background-color: rgba(255, 227, 153, .55); }
+    .hover-active .cand.first:hover { background-color: var(--ao-hilite); }
+    .first { background-color: var(--ao-hilite); }
     .first::before { display: none; }
     .first .text,
-    .first .num { color: #ffffff; }
+    .first .num { color: #1a1a1a; }
     .context-menu,
-    .context-submenu { background: #343635; border-color: #454845; color: #e0e2df; }
-    .context-menu-item:hover { background: #414441; }
+    .context-submenu { background: #e8f5f7; border-color: #bcd8de; color: #1f3138; }
+    .context-menu-item:hover { background: #d2e8ec; }

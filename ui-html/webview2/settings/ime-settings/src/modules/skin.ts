@@ -21,11 +21,12 @@ type ExternalSkin = {
 };
 type SkinScanIssue = { folder: string; reason: string };
 
-const BUILTIN_SKINS = ['fluent', 'wechat', 'graphite', 'willow_green'] as const;
+const BUILTIN_SKINS = ['fluent', 'wechat', 'graphite', 'willow_green', 'autumn_osmanthus'] as const;
 type BuiltinSkin = typeof BUILTIN_SKINS[number];
 const previewOverrides: Record<string, SkinPreviewTheme | null> = {
-  fluent: null, wechat: null, graphite: null, willow_green: null
+  fluent: null, wechat: null, graphite: null, willow_green: null, autumn_osmanthus: null
 };
+const BUILTIN_PREVIEW_CLASSES = ['skin-wechat', 'skin-graphite', 'skin-willow-green', 'skin-autumn-osmanthus'];
 const loadedExternalStyleIds = new Set<string>();
 let activeTheme: SkinPreviewTheme = 'dark';
 let activeSkin: CandidateSkin = 'fluent';
@@ -54,13 +55,18 @@ function builtinPreviewClass(skinId: string): string {
   if (skinId === 'wechat') return 'skin-wechat';
   if (skinId === 'graphite') return 'skin-graphite';
   if (skinId === 'willow_green') return 'skin-willow-green';
+  if (skinId === 'autumn_osmanthus') return 'skin-autumn-osmanthus';
   const external = findExternalSkin(skinId);
   return external ? builtinPreviewClass(external.base) : '';
 }
 
 function limitCandidatePreview(host: HTMLElement): void {
-  host.querySelectorAll<HTMLElement>('.row-wrapper').forEach((wrapper, index) => {
+  const wrappers = host.querySelectorAll<HTMLElement>('.row-wrapper');
+  const lastVisible = Math.min(wrappers.length, SKIN_PREVIEW_PAGE_SIZE) - 1;
+  wrappers.forEach((wrapper, index) => {
     wrapper.style.display = index < SKIN_PREVIEW_PAGE_SIZE ? '' : 'none';
+    // Mirrors the candidate window's ApplyCandidateFrame: hidden rows keep :last-child.
+    wrapper.classList.toggle('last-visible', index === lastVisible);
   });
 }
 
@@ -258,7 +264,8 @@ function applyBuiltinCardTheme(skin: BuiltinSkin, theme: SkinPreviewTheme): void
   const title = card.querySelector<HTMLElement>('.section-title');
   if (title) {
     const name = skin === 'wechat' ? '微信绿主题' : skin === 'graphite' ? '石墨 Graphite'
-      : skin === 'willow_green' ? '杨柳青 Willow green' : 'Fluent 主题';
+      : skin === 'willow_green' ? '杨柳青 Willow green'
+      : skin === 'autumn_osmanthus' ? '秋桂 Autumn osmanthus' : 'Fluent 主题';
     title.textContent = `${name}(${theme === 'light' ? 'Light' : 'Dark'})`;
   }
   card.querySelectorAll<HTMLButtonElement>('[data-skin-preview-switch]').forEach((button) => {
@@ -303,9 +310,7 @@ export function syncAppearancePreviews(): void {
   const external = findExternalSkin(activeSkin);
   document.querySelectorAll<HTMLElement>('.cand-preview .candidate').forEach((element) => {
     const caretPreview = element.classList.contains('caret-state-preview-host');
-    element.classList.toggle('skin-wechat', previewClass === 'skin-wechat');
-    element.classList.toggle('skin-graphite', previewClass === 'skin-graphite');
-    element.classList.toggle('skin-willow-green', previewClass === 'skin-willow-green');
+    BUILTIN_PREVIEW_CLASSES.forEach((name) => element.classList.toggle(name, previewClass === name));
     if (!caretPreview) ensureContainerParent(element);
     if (external) {
       if (caretPreview) {
@@ -324,9 +329,7 @@ export function syncAppearancePreviews(): void {
     }
   });
   document.querySelectorAll<HTMLElement>('.ftb-preview-host:not([data-skin-toolbar])').forEach((element) => {
-    element.classList.toggle('skin-wechat', previewClass === 'skin-wechat');
-    element.classList.toggle('skin-graphite', previewClass === 'skin-graphite');
-    element.classList.toggle('skin-willow-green', previewClass === 'skin-willow-green');
+    BUILTIN_PREVIEW_CLASSES.forEach((name) => element.classList.toggle(name, previewClass === name));
     if (external) {
       element.dataset.externalSkinPreview = external.id;
     } else {
