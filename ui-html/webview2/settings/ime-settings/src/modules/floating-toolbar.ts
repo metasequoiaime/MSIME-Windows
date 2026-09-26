@@ -2,6 +2,7 @@ import { applyDropdownValue, setupDropdownMenu, setupToggleButton } from './shar
 import { syncCaretStateIndicatorPreview } from './appearance';
 import { updateConfig } from './config-sync';
 import { syncAppearancePreviews } from './skin';
+import { applyToolbarIconGlyphFallbacks } from './toolbar-icon-glyphs';
 import ftbHTML from '../../../../ftb/default.html?raw';
 
 type FloatingToolbarItem = 'fullwidth' | 'punctuation' | 'character_set' | 'emoji' | 'screen_keyboard' | 'settings';
@@ -139,6 +140,7 @@ function mountFloatingToolbarPreview(): void {
 
   statusBar.querySelectorAll('#en, #fullwidth, #puncEn').forEach((element) => element.remove());
   statusBar.querySelectorAll<HTMLElement>('[id]').forEach((element) => element.removeAttribute('id'));
+  applyToolbarIconGlyphFallbacks(statusBar);
   host.replaceChildren(statusBar);
   updatePreviewItems();
   applyPreviewAppearance();

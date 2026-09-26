@@ -1648,6 +1648,12 @@ void AppendExternalCandidateColorCss(std::wstring &css, const CandidateSkinCatal
     add(colors.border, L".container", L"border-color");
     add(colors.text, L".container", L"color");
     add(colors.number, L".num, .cand-no", L"color");
+    // 翻译默认继承 .text 的颜色再叠 opacity .62；单独配色时取原值，不再叠透明度。
+    add(colors.translation, L".cand-translation", L"color");
+    if (!colors.translation.empty())
+    {
+        css.append(L".cand-translation { opacity: 1; }\n");
+    }
     if (colors.showSelectedBar.has_value() && !*colors.showSelectedBar)
     {
         css.append(L".first::before { display: none; }\n");

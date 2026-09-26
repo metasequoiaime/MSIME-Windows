@@ -4,6 +4,7 @@ let styleGeneration = 0;
 const styleLoads = new Map<string, Promise<void>>();
 import { serializeHostMessage } from '../../../../shared/messages';
 import { loadHTML } from '../utils/common-utils';
+import { applyToolbarIconGlyphFallbacks } from './toolbar-icon-glyphs';
 import ftbHTML from '../../../../ftb/default.html?raw';
 
 export type SkinPreviewTheme = 'dark' | 'light';
@@ -11,7 +12,7 @@ export type CandidateSkin = string;
 
 type CandidateColors = {
   accent?: string; selected?: string; hover?: string; surface?: string;
-  border?: string; text?: string; number?: string; showSelectedBar?: boolean;
+  border?: string; text?: string; number?: string; translation?: string; showSelectedBar?: boolean;
 };
 type ExternalSkin = {
   id: string; name: string; version: string; author?: string; description?: string;
@@ -88,6 +89,7 @@ function fillToolbar(host: HTMLElement): void {
   if (!statusBar) return;
   statusBar.querySelectorAll('#en, #fullwidth, #puncEn').forEach((element) => element.remove());
   statusBar.querySelectorAll<HTMLElement>('[id]').forEach((element) => element.removeAttribute('id'));
+  applyToolbarIconGlyphFallbacks(statusBar);
   host.replaceChildren(statusBar);
 }
 
@@ -137,6 +139,8 @@ function candidatePreviewCss(skin: ExternalSkin): string {
     const surface = skinColor(colors.surface);
     const border = skinColor(colors.border);
     const text = skinColor(colors.text);
+    const number = skinColor(colors.number);
+    const translation = skinColor(colors.translation);
     let css = '';
     const variables = [surface && `--cand-bg: ${surface}`, border && `--cand-border: ${border}`,
       text && `--cand-text: ${text}`].filter(Boolean).join('; ');
@@ -151,6 +155,9 @@ function candidatePreviewCss(skin: ExternalSkin): string {
     if (surface) css += `${prefix}.container { background: ${surface}; }\n`;
     if (border) css += `${prefix}.container { border-color: ${border}; }\n`;
     if (text) css += `${prefix}.container { color: ${text}; }\n`;
+    if (number) css += `${prefix}.num, ${prefix}.cand-no { color: ${number}; }\n`;
+    // Mirrors the candidate window: an explicit translation colour is used as-is instead of the inherited text colour at opacity .62.
+    if (translation) css += `${prefix}.cand-translation { color: ${translation}; opacity: 1; }\n`;
     if (colors.showSelectedBar === false) css += `${prefix}.first::before { display: none; }\n`;
     return css;
   };

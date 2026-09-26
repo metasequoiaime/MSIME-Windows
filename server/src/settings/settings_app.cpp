@@ -141,6 +141,8 @@ nlohmann::json CandidateColorsToJson(const CandidateSkinCatalog::CandidateColors
         json["text"] = colors.text;
     if (!colors.number.empty())
         json["number"] = colors.number;
+    if (!colors.translation.empty())
+        json["translation"] = colors.translation;
     if (colors.showSelectedBar.has_value())
         json["showSelectedBar"] = *colors.showSelectedBar;
     return json;

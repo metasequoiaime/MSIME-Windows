@@ -136,6 +136,8 @@
 .ftb-preview-host.skin-graphite.theme-dark .drag-handle { background: #8993a0; }
 .ftb-preview-host.skin-graphite.theme-light .drag-handle { background: #5f6b7a; }
 .ftb-preview-host.skin-graphite .icon { border-radius: calc(3px * var(--ftb-scale)); }
+.ftb-preview-host.skin-graphite.theme-dark .icon { color: #d7dce2; }
+.ftb-preview-host.skin-graphite.theme-light .icon { color: #374151; }
 
 /* Preview equivalents of the standalone Willow green skin HTML files. */
 .candidate.skin-willow-green.theme-dark {

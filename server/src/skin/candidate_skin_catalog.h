@@ -16,6 +16,8 @@ struct CandidateColors
     std::string border;
     std::string text;
     std::string number;
+    // 候选后的翻译文本。留空时沿用候选文字色并降到 62% 不透明度；设置后按原值绘制，选中行也不改。
+    std::string translation;
     std::optional<bool> showSelectedBar;
 };
 
