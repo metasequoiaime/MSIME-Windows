@@ -7,8 +7,11 @@
 #include "ipc/ipc.h"
 #include "log/ftb_diag_log.h"
 #include "settings/settings_launcher.h"
+#include "skin/candidate_skin_catalog.h"
+#include "utils/common_utils.h"
 #include "utils/window_utils.h"
 #include "webview2/windows_webview2.h"
+#include "window/floating_toolbar_skin.h"
 
 #include "msimeui/Controls.h"
 #include "msimeui/DeviceResources.h"
@@ -21,6 +24,7 @@
 #include <cmath>
 #include <d2d1.h>
 #include <dwrite.h>
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <windowsx.h>
@@ -92,10 +96,11 @@ class ToolbarIconButton : public msimeui::Visual
         onClick_ = std::move(handler);
     }
 
-    void SetColors(const D2D1_COLOR_F &glyph, const D2D1_COLOR_F &hover)
+    void SetColors(const D2D1_COLOR_F &glyph, const D2D1_COLOR_F &hover, float hoverRadius)
     {
         glyphColor_ = glyph;
         hoverFill_ = hover;
+        hoverRadius_ = hoverRadius;
         InvalidateVisual();
     }
 
@@ -127,7 +132,7 @@ class ToolbarIconButton : public msimeui::Visual
         {
             if (ID2D1SolidColorBrush *hover = deviceResources.GetSolidColorBrush(hoverFill_))
             {
-                const float radius = std::max(2.0f, size_ * 0.25f);
+                const float radius = std::min(hoverRadius_, size_ * 0.5f);
                 const auto rounded = D2D1::RoundedRect(
                     D2D1::RectF(bounds_.x, bounds_.y, bounds_.x + bounds_.width, bounds_.y + bounds_.height), radius,
                     radius);
@@ -231,6 +236,7 @@ class ToolbarIconButton : public msimeui::Visual
     bool pressed_ = false;
     D2D1_COLOR_F glyphColor_ = D2D1::ColorF(0xFFFFFF);
     D2D1_COLOR_F hoverFill_ = D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.10f);
+    float hoverRadius_ = 6.0f;
     ClickHandler onClick_;
 };
 
@@ -346,6 +352,9 @@ struct FloatingToolbarPresenter::Impl
     D2D1_COLOR_F glyph = ColorFromRgb(0xFFFFFF);
     D2D1_COLOR_F hover = D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.10f);
     D2D1_COLOR_F divider = D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
+    D2D1_COLOR_F handle = ColorFromRgb(0x8E8CD8);
+    float radius = 8.0f;
+    float iconRadius = 6.0f;
     int cnEn = 1;
     int doubleSingleByte = 0;
     int punctuation = 1;
@@ -400,15 +409,16 @@ void FloatingToolbarPresenter::RebuildScene()
     const float gap = 5.0f * s;
     const float padLeft = 8.0f * s;
     const float padRight = 4.0f * s;
-    const float radius = 8.0f * s;
+    const float radius = impl_->radius * s;
+    const float iconRadius = impl_->iconRadius * s;
 
     auto row = std::make_shared<msimeui::HorizontalStackPanel>(gap);
     row->SetVerticalContentAlignment(msimeui::VerticalAlignment::Center);
     row->SetPadding({0.0f, 0.0f, padRight, 0.0f});
     row->SetHeight(barHeight);
 
-    auto handle = std::make_shared<ToolbarDragHandle>(padLeft + 10.0f * s, barHeight, 2.5f * s, 14.0f * s,
-                                                      ColorFromRgb(0x8E8CD8));
+    auto handle =
+        std::make_shared<ToolbarDragHandle>(padLeft + 10.0f * s, barHeight, 2.5f * s, 14.0f * s, impl_->handle);
     auto divider = std::make_shared<ToolbarDivider>(1.2f * s, barHeight, impl_->divider);
     auto leading = std::make_shared<msimeui::HorizontalStackPanel>(2.0f * s);
     leading->SetVerticalContentAlignment(msimeui::VerticalAlignment::Center);
@@ -421,7 +431,7 @@ void FloatingToolbarPresenter::RebuildScene()
     auto addText = [&](std::wstring text, bool underline, ToolbarIconButton::ClickHandler click) {
         auto button = std::make_shared<ToolbarIconButton>(0, L"", std::move(text), iconSize);
         button->SetUnderline(underline);
-        button->SetColors(impl_->glyph, impl_->hover);
+        button->SetColors(impl_->glyph, impl_->hover, iconRadius);
         button->SetOnClick(std::move(click));
         icons->AddChild(button);
         return button;
@@ -433,7 +443,7 @@ void FloatingToolbarPresenter::RebuildScene()
             return addText(icon.fallbackText, false, std::move(click));
         }
         auto button = std::make_shared<ToolbarIconButton>(resolved.codepoint, resolved.family, L"", iconSize);
-        button->SetColors(impl_->glyph, impl_->hover);
+        button->SetColors(impl_->glyph, impl_->hover, iconRadius);
         button->SetOnClick(std::move(click));
         icons->AddChild(button);
         return button;
@@ -551,22 +561,23 @@ void FloatingToolbarPresenter::ApplyTheme()
         return;
     }
     const bool light = ResolveConfiguredTheme(GetConfiguredThemeFtb()) == "light";
-    if (light)
+    // 与 WebView2 端选工具栏页面的规则一致：跟随候选窗皮肤，外部皮肤用其 base。
+    std::string skinId = GetConfiguredCandidateSkin();
+    if (!CandidateSkinCatalog::IsBuiltIn(skinId))
     {
-        impl_->fill = ColorFromRgb(0xFFFFFF);
-        impl_->border = D2D1::ColorF(0, 0.12f);
-        impl_->glyph = ColorFromRgb(0x1A1A1A);
-        impl_->hover = D2D1::ColorF(0, 0.08f);
-        impl_->divider = D2D1::ColorF(0, 0.12f);
+        const auto package =
+            CandidateSkinCatalog::Load(std::filesystem::path(CommonUtils::get_ime_data_path_w()) / L"skins", skinId);
+        skinId = package ? package->base : "fluent";
     }
-    else
-    {
-        impl_->fill = ColorFromRgb(0x1A1A1A);
-        impl_->border = D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
-        impl_->glyph = ColorFromRgb(0xFFFFFF);
-        impl_->hover = D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.10f);
-        impl_->divider = D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.15f);
-    }
+    const FloatingToolbarSkin skin = ResolveFloatingToolbarSkin(skinId, light);
+    impl_->fill = skin.fill;
+    impl_->border = skin.border;
+    impl_->glyph = skin.glyph;
+    impl_->hover = skin.hover;
+    impl_->divider = skin.divider;
+    impl_->handle = skin.handle;
+    impl_->radius = skin.radius;
+    impl_->iconRadius = skin.iconRadius;
     ApplyAppearance();
 }
 

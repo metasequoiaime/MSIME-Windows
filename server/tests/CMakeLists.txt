@@ -66,6 +66,8 @@ set(TEST_SOURCE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_non_ascii_path_contract.cpp"
     "${CMAKE_SOURCE_DIR}/src/skin/candidate_skin_catalog.cpp"
     "${CMAKE_SOURCE_DIR}/src/window/candidate_skin_palette.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_floating_toolbar_skin.cpp"
+    "${CMAKE_SOURCE_DIR}/src/window/floating_toolbar_skin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_system_font_family.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_dictionary_validation.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/test_skin_css_policy.cpp"

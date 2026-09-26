@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://msime-contracts; style-src 'unsafe-inline'; img-src data: https://appassets https://candidate-skins; font-src data: https://appassets https://candidate-skins">
+  <meta charset="UTF-8">
+  <title>IME(Autumn osmanthus FTB)</title>
+  <style>
+    :root {
+      --ftb-scale: 1;
+      --ftb-bar-height: 35px;
+      --ftb-icon-size: 24px;
+      --ftb-gap: 6px;
+      --ftb-pad-left: 8px;
+      --ftb-pad-right: 4px;
+      --ftb-radius: 8px;
+      --ftb-handle-width: 2.5px;
+      --ftb-handle-height: 14px;
+      /* Filled by C++ from half-monitor DIPs (DPI-aware). */
+      --msime-max-width-dip: 50vw;
+      --msime-max-height-dip: 50vh;
+    }
+
+    html,
+    body {
+      background-color: transparent;
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    body {
+      -webkit-app-region: drag;
+    }
+
+    /* 状态栏整体样式 */
+    .status-bar {
+      position: absolute;
+      box-sizing: border-box;
+      height: auto;
+      min-height: calc(var(--ftb-bar-height) * var(--ftb-scale));
+      max-width: min(100%, var(--msime-max-width-dip));
+      max-height: min(100%, var(--msime-max-height-dip));
+      top: 0px;
+      left: 0px;
+      display: flex;
+      /* FTB is a single-row control. Wrapping the three top-level sections
+         puts the drag handle on a separate row when the host is 1-2px narrow. */
+      flex-wrap: nowrap;
+      align-items: center;
+      /* The native host remeasures overflow via scrollWidth/scrollHeight.
+         Never expose Chromium scrollbars for sub-pixel DPI rounding. */
+      overflow: hidden;
+      background-color: #1a1a1a;
+      border-radius: calc(var(--ftb-radius) * var(--ftb-scale));
+      padding: 0px calc(var(--ftb-pad-right) * var(--ftb-scale)) 0px calc(var(--ftb-pad-left) * var(--ftb-scale));
+      gap: calc(var(--ftb-gap) * var(--ftb-scale));
+
+      border: 1.4px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 4px 4px 4px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(8px);
+    }
+
+    /* 拖动条 */
+    .drag-handle {
+      width: calc(var(--ftb-handle-width) * var(--ftb-scale));
+      height: calc(var(--ftb-handle-height) * var(--ftb-scale));
+      border-radius: calc(2px * var(--ftb-scale));
+      background: #8E8CD8;
+      margin-right: 0px;
+      position: relative;
+    }
+
+    /* 分隔线 */
+    .divider {
+      width: calc(1.2px * var(--ftb-scale));
+      align-self: stretch;
+      background-color: rgba(255, 255, 255, 0.15);
+      margin-left: calc(4px * var(--ftb-scale));
+      margin-right: 0px;
+    }
+
+    .icon {
+      color: #fff;
+      font-size: calc(var(--ftb-icon-size) * 0.833 * var(--ftb-scale));
+      font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: calc(var(--ftb-icon-size) * var(--ftb-scale));
+      height: calc(var(--ftb-icon-size) * var(--ftb-scale));
+      border-radius: calc(6px * var(--ftb-scale));
+      transition: background-color 0.15s ease;
+      cursor: default;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .lang-label {
+      font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      font-size: calc(var(--ftb-icon-size) * 0.8 * var(--ftb-scale));
+      line-height: 1;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .lang-label::selection,
+    .english-candidate-label::selection {
+      background: transparent;
+      color: inherit;
+    }
+
+    .icon svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .icon:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .english-candidate-label {
+      position: relative;
+      font-family: "Segoe UI", sans-serif;
+      font-size: calc(var(--ftb-icon-size) * 0.62 * var(--ftb-scale));
+      font-weight: 600;
+      line-height: 1;
+    }
+
+    .english-candidate-label::after {
+      content: "";
+      position: absolute;
+      left: 8%;
+      right: 8%;
+      bottom: calc(-3px * var(--ftb-scale));
+      height: calc(1.5px * var(--ftb-scale));
+      border-radius: 1px;
+      background: currentColor;
+    }
+
+    .left-section {
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: calc(4px * var(--ftb-scale));
+    }
+
+    .right-section {
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: calc(var(--ftb-gap) * var(--ftb-scale));
+    }
+    /* Standalone Autumn osmanthus toolbar skin. */
+    .status-bar {
+      background-color: #7d929f;
+      border-color: #8fa3af;
+      border-radius: calc(10px * var(--ftb-scale));
+      box-shadow: 0 7px 18px rgba(0, 0, 0, .34);
+    }
+    .drag-handle { background: #f97d0a; }
+    .icon:hover { background-color: rgba(249, 125, 10, .28); }
+  </style>
+</head>
+
+<body>
+
+  <div class="status-bar">
+    <div class="left-section">
+      <div class="drag-handle"></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="right-section">
+      <!-- 1. 输入法状态 -->
+      <!-- 中文状态 -->
+      <div id="cn-en" data-toolbar-item="language">
+        <div class="icon" id="cn" title="中文">
+          <span class="lang-label">中</span>
+        </div>
+        <!-- 日文状态 -->
+        <div class="icon" id="ja" style="display: none" title="日文">
+          <span class="lang-label">日</span>
+        </div>
+        <!-- 大写锁定 -->
+        <div class="icon" id="cap" style="display: none" title="大写锁定">
+          <span class="lang-label">A</span>
+        </div>
+        <!-- 英文状态 -->
+        <div class="icon" id="en" title="英文">
+          <span class="lang-label">英</span>
+        </div>
+        <!-- 英文候选输入状态 -->
+        <div class="icon" id="en-candidate" style="display: none" title="英文候选输入">
+          <span class="english-candidate-label">En</span>
+        </div>
+      </div>
+
+      <div id="char-width-mode" data-toolbar-item="fullwidth">
+      <!-- 2. 字符状态 -->
+      <!-- 半角 -->
+      <div class="icon" id="halfwidth">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path fill-rule="evenodd" clip-rule="evenodd"
+            d="M21 14.2894C17.8146 15.1746 14.3993 14.2763 12.0615 11.9385C9.72366 9.60074 8.82541 6.18545 9.71056 3C5.44557 4.18647 2.63796 8.25133 3.03782 12.6602C3.43767 17.069 6.93101 20.5623 11.3399 20.9622C15.7487 21.362 19.8136 18.5544 21 14.2894Z"
+            stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+      <!-- 全角 -->
+      <div class="icon" id="fullwidth">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="9.25" stroke="white" stroke-width="1.5" />
+        </svg>
+      </div>
+      </div>
+
+      <div id="punctuation-mode" data-toolbar-item="punctuation">
+      <!-- 中文标点 -->
+      <div class="icon" id="puncCn">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="7.5" cy="7.5" r="2.5" stroke="white" />
+          <circle cx="17" cy="15" r="2" fill="white" stroke="white" />
+          <path d="M19 15C19 17 17.7059 18.6765 16 20.5" stroke="white" />
+        </svg>
+      </div>
+      <!-- 英文标点 -->
+      <div class="icon" id="puncEn">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="7.5" cy="7.5" r="1.5" fill="white" stroke="white" />
+          <path d="M18 16L15.5 21H14L16 16H18Z" fill="white" />
+        </svg>
+      </div>
+      </div>
+
+      <div class="icon" id="character-set" data-toolbar-item="character_set">
+        <svg id="character-set-simplified" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path
+            d="M5.78 4.96H11.86V6.22H5.78V4.96ZM13.34 4.98H20.6V6.24H13.34V4.98ZM6.14 3.14L7.56 3.5C7.30667 4.20667 7.00667 4.88667 6.66 5.54C6.31333 6.19333 5.92667 6.80667 5.5 7.38C5.08667 7.94 4.66 8.44 4.22 8.88C4.12667 8.78667 4 8.69333 3.84 8.6C3.69333 8.49333 3.54 8.39333 3.38 8.3C3.23333 8.19333 3.1 8.10667 2.98 8.04C3.64667 7.45333 4.25333 6.72667 4.8 5.86C5.36 4.99333 5.80667 4.08667 6.14 3.14ZM13.92 3.18L15.36 3.5C15.0667 4.47333 14.6733 5.4 14.18 6.28C13.6867 7.14667 13.16 7.88 12.6 8.48C12.52 8.4 12.4067 8.30667 12.26 8.2C12.1133 8.09333 11.96 7.98667 11.8 7.88C11.64 7.77333 11.4933 7.69333 11.36 7.64C11.9333 7.09333 12.44 6.43333 12.88 5.66C13.3333 4.87333 13.68 4.04667 13.92 3.18ZM7.28 5.9L8.52 5.44C8.8 5.85333 9.07333 6.32 9.34 6.84C9.62 7.34667 9.82 7.78 9.94 8.14L8.6 8.68C8.49333 8.30667 8.31333 7.86 8.06 7.34C7.80667 6.80667 7.54667 6.32667 7.28 5.9ZM15.48 5.88L16.72 5.36C17.0533 5.8 17.3867 6.28667 17.72 6.82C18.0533 7.35333 18.3 7.81333 18.46 8.2L17.16 8.78C17.0267 8.39333 16.7933 7.92667 16.46 7.38C16.14 6.82 15.8133 6.32 15.48 5.88ZM9.02 15.1H15.08V16.22H9.02V15.1ZM4.14 10.92H5.6V21.56H4.14V10.92ZM9 9.24H19.2V10.6H9V9.24ZM5.04 9.22L6.14 8.46C6.56667 8.82 7 9.23333 7.44 9.7C7.88 10.1533 8.21333 10.56 8.44 10.92L7.28 11.74C7.06667 11.3933 6.74 10.98 6.3 10.5C5.87333 10.02 5.45333 9.59333 5.04 9.22ZM18.4 9.24H19.88V19.8C19.88 20.2133 19.8267 20.5267 19.72 20.74C19.6133 20.9667 19.4067 21.14 19.1 21.26C18.7933 21.3667 18.3867 21.4267 17.88 21.44C17.3733 21.4667 16.7467 21.48 16 21.48C15.9733 21.28 15.9133 21.0533 15.82 20.8C15.7267 20.56 15.6267 20.3467 15.52 20.16C15.8933 20.16 16.2467 20.1667 16.58 20.18C16.9267 20.1933 17.2267 20.1933 17.48 20.18C17.7333 20.18 17.9067 20.18 18 20.18C18.16 20.1667 18.2667 20.1333 18.32 20.08C18.3733 20.0267 18.4 19.9267 18.4 19.78V9.24ZM9.7 13.42V18.02H14.4V13.42H9.7ZM8.4 12.26H15.76V19.18H8.4V12.26Z"
+            fill="white" />
+        </svg>
+        <span id="character-set-traditional" style="display: none">繁</span>
+      </div>
+      <div class="icon" id="emoji-panel" data-toolbar-item="emoji">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path fill-rule="evenodd" clip-rule="evenodd"
+            d="M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z"
+            stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          <path
+            d="M15.6364 13.625C14.9091 14.8371 13.4546 15.625 12 15.625C10.5455 15.625 9.09092 14.8371 8.36365 13.625"
+            stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M9.01 10H9" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M15.01 10H15" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+      <div class="icon" id="screen-keyboard" data-toolbar-item="screen_keyboard" style="display: none">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="3.25" y="4.25" width="17.5" height="12.5" rx="1.75" stroke="white" stroke-width="1.5"/>
+          <path d="M8 20H16M12 17V20" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M6.5 8H7.5M10 8H11M13.5 8H14.5M17 8H18M6.5 11H7.5M10 11H11M13.5 11H14.5M17 11H18M8 14H16"
+            stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="icon" id="settings" data-toolbar-item="settings">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path fill-rule="evenodd" clip-rule="evenodd"
+            d="M5.07699 14.3816L3.59497 13.9054C3.24043 13.7915 3 13.4617 3 13.0894V10.9106C3 10.5383 3.24043 10.2085 3.59497 10.0946L5.07699 9.61845C5.52769 9.47366 5.77568 8.99091 5.63089 8.54021C5.60187 8.44991 5.55808 8.36505 5.50127 8.28908L4.86839 7.44272C4.61323 7.10148 4.64746 6.62461 4.94875 6.32332L6.32332 4.94875C6.62461 4.64746 7.10148 4.61323 7.44272 4.86839L8.28908 5.50127C8.6682 5.78476 9.20535 5.70724 9.48884 5.32812C9.54564 5.25216 9.58944 5.1673 9.61845 5.07699L10.0946 3.59497C10.2085 3.24043 10.5383 3 10.9106 3H13.0894C13.4617 3 13.7915 3.24043 13.9054 3.59497L14.3816 5.07699C14.5263 5.52769 15.0091 5.77568 15.4598 5.63089C15.5501 5.60187 15.635 5.55808 15.7109 5.50127L16.5573 4.86839C16.8985 4.61323 17.3754 4.64746 17.6767 4.94875L19.0512 6.32332C19.3525 6.62461 19.3868 7.10148 19.1316 7.44272L18.4987 8.28908C18.2152 8.6682 18.2928 9.20535 18.6719 9.48884C18.7478 9.54564 18.8327 9.58944 18.923 9.61845L20.405 10.0946C20.7596 10.2085 21 10.5383 21 10.9106V13.0894C21 13.4617 20.7596 13.7915 20.405 13.9054L18.923 14.3816C18.4723 14.5263 18.2243 15.0091 18.3691 15.4598C18.3981 15.5501 18.4419 15.635 18.4987 15.7109L19.1316 16.5573C19.3868 16.8985 19.3525 17.3754 19.0512 17.6767L17.6767 19.0512C17.3754 19.3525 16.8985 19.3868 16.5573 19.1316L15.7109 18.4987C15.3318 18.2152 14.7947 18.2928 14.5112 18.6719C14.4544 18.7478 14.4106 18.8327 14.3816 18.923L13.9054 20.405C13.7915 20.7596 13.4617 21 13.0894 21H10.9106C10.5383 21 10.2085 20.7596 10.0946 20.405L9.61845 18.923C9.47366 18.4723 8.99091 18.2243 8.54021 18.3691C8.44991 18.3981 8.36505 18.4419 8.28908 18.4987L7.44272 19.1316C7.10148 19.3868 6.62461 19.3525 6.32332 19.0512L4.94875 17.6767C4.64746 17.3754 4.61323 16.8985 4.86839 16.5573L5.50127 15.7109C5.78476 15.3318 5.70724 14.7947 5.32812 14.5112C5.25216 14.4544 5.1673 14.4106 5.07699 14.3816Z"
+            stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          <path fill-rule="evenodd" clip-rule="evenodd"
+            d="M14.1213 9.87868C12.9497 8.70711 11.0503 8.70711 9.87868 9.87868C8.70711 11.0503 8.70711 12.9497 9.87868 14.1213C11.0503 15.2929 12.9497 15.2929 14.1213 14.1213C15.2929 12.9497 15.2929 11.0503 14.1213 9.87868Z"
+            stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+    </div>
+  </div>
+</body>
+<script src="https://msime-contracts/schema.js"></script>
+<script src="https://msime-contracts/runtime.js"></script>
+<script>const serializeHostMessage = message => MsimeProtocol.serializeClientMessage(message, "toolbar");</script>
+<script>
+  // 
+  // 左侧拖拽区域
+  //
+  let dividerX = 0;
+
+  // 初始化时或窗口尺寸变化时更新一次
+  function updateDividerX() {
+    const divider = document.querySelector('.divider');
+    if (divider) {
+      dividerX = divider.getBoundingClientRect().left;
+    }
+  }
+
+  let isDragging = false, startX, startY;
+
+  window.addEventListener('mousedown', e => {
+    if (e.clientX < dividerX) { // 左部区域
+      isDragging = true;
+      window.chrome.webview.postMessage(serializeHostMessage({ type: 'dragStart' }));
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    isDragging = false;
+  });
+
+  window.addEventListener('resize', updateDividerX);
+  // load handler is registered below together with the ready signal.
+
+  //
+  // 中英切换
+  //
+  // Default status is CN
+  document.getElementById('en').style.display = 'none';
+  document.getElementById('en-candidate').style.display = 'none';
+  const jaIcon = document.getElementById('ja');
+  if (jaIcon) jaIcon.style.display = 'none';
+  const capIcon = document.getElementById('cap');
+  if (capIcon) capIcon.style.display = 'none';
+  // document.getElementById('cn').style.display = 'none';
+  // 中英切换点击，向 Cpp 端发送消息
+  document.getElementById('cn').addEventListener('click', () => {
+    window.chrome.webview.postMessage(serializeHostMessage({ type: 'changeIMEMode', data: 'en' }));
+  });
+  const jaButton = document.getElementById('ja');
+  if (jaButton) {
+    jaButton.addEventListener('click', () => {
+      window.chrome.webview.postMessage(serializeHostMessage({ type: 'changeIMEMode', data: 'en' }));
+    });
+  }
+  document.getElementById('en').addEventListener('click', () => {
+    window.chrome.webview.postMessage(serializeHostMessage({ type: 'changeIMEMode', data: 'cn' }));
+  });
+  document.getElementById('en-candidate').addEventListener('click', () => {
+    window.chrome.webview.postMessage(serializeHostMessage({ type: 'exitEnglishInputMode' }));
+  });
+  const capButton = document.getElementById('cap');
+  if (capButton) {
+    capButton.addEventListener('click', () => {
+      const lang = (document.getElementById('cn-en').dataset.lang || 'cn');
+      if (lang === 'en') {
+        window.chrome.webview.postMessage(serializeHostMessage({ type: 'changeIMEMode', data: 'cn' }));
+      } else if (lang === 'en-candidate') {
+        window.chrome.webview.postMessage(serializeHostMessage({ type: 'exitEnglishInputMode' }));
+      } else {
+        window.chrome.webview.postMessage(serializeHostMessage({ type: 'changeIMEMode', data: 'en' }));
+      }
+    });
+  }
+
+  //
+  // 半角全角切换
+  //
+  // Default status is Halfwidth
+  document.getElementById('fullwidth').style.display = 'none';
+  // document.getElementById('halfwidth').style.display = 'none';
+  document.getElementById('halfwidth').addEventListener('click', () => {
+    window.chrome.webview.postMessage(serializeHostMessage({ type: 'changeCharMode', data: 'fullwidth' }));
+  });
+  document.getElementById('fullwidth').addEventListener('click', () => {
+    window.chrome.webview.postMessage(serializeHostMessage({ type: 'changeCharMode', data: 'halfwidth' }));
+  });
+
+  //
+  // 中英文标点切换
+  //
+  // Default status is CN Punc
+  document.getElementById('puncEn').style.display = 'none';
+  // document.getElementById('puncCn').style.display = 'none';
+  document.getElementById('puncCn').addEventListener('click', () => {
+    window.chrome.webview.postMessage(serializeHostMessage({ type: 'changePuncMode', data: 'puncEn' }));
+  });
+  document.getElementById('puncEn').addEventListener('click', () => {
+    window.chrome.webview.postMessage(serializeHostMessage({ type: 'changePuncMode', data: 'puncCn' }));
+  });
+
+  //
+  // 简繁输入切换
+  //
+  document.getElementById('character-set').addEventListener('click', () => {
+    window.chrome.webview.postMessage(serializeHostMessage({ type: 'changeCharacterSet' }));
+  });
+
+  document.getElementById('emoji-panel').addEventListener('click', () => {
+    window.chrome.webview.postMessage(serializeHostMessage({ type: 'openEmojiPanel' }));
+  });
+
+  document.getElementById('screen-keyboard').addEventListener('click', () => {
+    window.chrome.webview.postMessage(serializeHostMessage({ type: 'openKeyboardPanel' }));
+  });
+
+  //
+  // 设置按钮
+  //
+  document.getElementById('settings').addEventListener('click', () => {
+    window.chrome.webview.postMessage(serializeHostMessage({ type: 'openSettings' }));
+  });
+
+  // Tell the host the first frame is ready so it can stop the paint-grace show
+  // and apply the real visibility decision (IME active / configured / etc.).
+  function notifyToolbarReady() {
+    if (!window.chrome || !window.chrome.webview) return;
+    window.chrome.webview.postMessage(serializeHostMessage({ type: 'ready' }));
+  }
+  window.addEventListener('load', () => {
+    updateDividerX();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(notifyToolbarReady);
+    });
+  });
+
+</script>
+<script>
+(function () {
+  var SURFACE = 'ftb';
+  var SELECTOR = '.status-bar';
+  var COOLDOWN_MS = 450;
+  var lastSent = 0;
+  var pending = false;
+  function el() { return document.querySelector(SELECTOR); }
+  function truncated(node) {
+    if (!node) return false;
+    var vw = document.documentElement.clientWidth;
+    var vh = document.documentElement.clientHeight;
+    var r = node.getBoundingClientRect();
+    var pad = 1.5;
+    return node.scrollWidth > vw + pad || node.scrollHeight > vh + pad ||
+      r.width > vw + pad || r.height > vh + pad ||
+      r.right > vw + pad || r.bottom > vh + pad;
+  }
+  function report() {
+    var node = el();
+    if (!node || !truncated(node)) return;
+    if (!window.chrome || !window.chrome.webview) return;
+    var now = Date.now();
+    if (now - lastSent < COOLDOWN_MS) return;
+    lastSent = now;
+    var r = node.getBoundingClientRect();
+    window.chrome.webview.postMessage(serializeHostMessage({
+      type: 'contentTruncated',
+      data: {
+        surface: SURFACE,
+        width: Math.ceil(Math.max(r.width, node.scrollWidth || 0)),
+        height: Math.ceil(Math.max(r.height, node.scrollHeight || 0)),
+        viewportWidth: document.documentElement.clientWidth,
+        viewportHeight: document.documentElement.clientHeight
+      }
+    }));
+  }
+  function schedule() {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        pending = false;
+        report();
+      });
+    });
+  }
+  window.CheckContentTruncation = schedule;
+  window.addEventListener('resize', schedule);
+  window.addEventListener('load', schedule);
+  if (typeof ResizeObserver !== 'undefined') {
+    var ro = new ResizeObserver(schedule);
+    ro.observe(document.documentElement);
+    var node = el();
+    if (node) ro.observe(node);
+  }
+})();
+</script>
+
+</html>

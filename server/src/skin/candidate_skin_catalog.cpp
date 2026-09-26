@@ -158,7 +158,7 @@ bool ReadColors(const toml::table *table, CandidateColors &out)
 
 bool IsBuiltIn(const std::string &id)
 {
-    return id == "fluent" || id == "wechat" || id == "graphite" || id == "willow_green";
+    return id == "fluent" || id == "wechat" || id == "graphite" || id == "willow_green" || id == "autumn_osmanthus";
 }
 
 bool IsSafeId(const std::string &id)

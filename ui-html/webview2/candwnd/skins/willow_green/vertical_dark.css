@@ -204,12 +204,12 @@
       background-position: top;
       background-size: 100% var(--wg-radius);
     }
-    .container:has(> .row-wrapper:last-child > .first) {
+    .container:has(> .row-wrapper:is(:last-child, .last-visible) > .first) {
       background-image: linear-gradient(var(--wg-hilite), var(--wg-hilite));
       background-position: bottom;
       background-size: 100% var(--wg-radius);
     }
-    .container.preedit-hidden:has(> .pinyin + .row-wrapper > .first):has(> .row-wrapper:last-child > .first) {
+    .container.preedit-hidden:has(> .pinyin + .row-wrapper > .first):has(> .row-wrapper:is(:last-child, .last-visible) > .first) {
       background-color: var(--wg-hilite);
       background-image: none;
     }
@@ -236,7 +236,7 @@
     .container.preedit-hidden > .pinyin + .row-wrapper > .cand {
       padding-top: 7px;
     }
-    .container > .row-wrapper:last-child > .cand {
+    .container > .row-wrapper:is(:last-child, .last-visible) > .cand {
       padding-bottom: 7px;
     }
     .context-menu,

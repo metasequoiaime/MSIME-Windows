@@ -176,68 +176,49 @@
       background: #fff; border: 1px solid rgba(0,0,0,.12); border-radius: 6px; padding: 1px 0; }
     .context-menu-parent:hover > .context-submenu { display: block; }
     .context-menu-separator { height: 1px; margin: 3px 5px; background: #00000020; }
-    /* Willow green light: full-bleed row highlight, like weasel 杨柳青. */
-    :root { --cand-text: #343936; --cand-num: #686f6a; }
-    body { border-radius: 9px; }
-    .containerParent {
-      border-radius: 9px;
-      box-shadow: 8px 10px 24px rgba(42, 55, 47, .18), 2px 3px 8px rgba(42, 55, 47, .10);
-    }
+    /* Autumn osmanthus light: an inset rounded highlight. The first row's top
+       corners and the last row's bottom corners share the frame's radius. */
+    :root { --cand-text: #1f3138; --cand-num: #5b727b; }
+    body { border-radius: 10px; }
     .container {
-      --wg-surface: #f4f5f3;
-      --wg-hilite: #58b980;
-      --wg-radius: 9px;
-      background-color: var(--wg-surface);
-      background-repeat: no-repeat;
-      padding: 0;
+      --ao-surface: #d6ecf0;
+      --ao-hilite: #ffe399;
+      --ao-radius: 10px;
+      --ao-item-radius: 6px;
+      background: var(--ao-surface);
+      padding: 5px;
       border: none;
-      border-radius: var(--wg-radius);
-      box-shadow: none;
-      isolation: isolate;
-      clip-path: inset(0 round var(--wg-radius));
-    }
-    .container.preedit-hidden:has(> .pinyin + .row-wrapper > .first) {
-      background-image: linear-gradient(var(--wg-hilite), var(--wg-hilite));
-      background-position: top;
-      background-size: 100% var(--wg-radius);
-    }
-    .container:has(> .row-wrapper:is(:last-child, .last-visible) > .first) {
-      background-image: linear-gradient(var(--wg-hilite), var(--wg-hilite));
-      background-position: bottom;
-      background-size: 100% var(--wg-radius);
-    }
-    .container.preedit-hidden:has(> .pinyin + .row-wrapper > .first):has(> .row-wrapper:is(:last-child, .last-visible) > .first) {
-      background-color: var(--wg-hilite);
-      background-image: none;
+      border-radius: var(--ao-radius);
+      box-shadow: 8px 10px 24px rgba(0, 0, 0, .18), 2px 3px 8px rgba(0, 0, 0, .10);
     }
     .row.pinyin {
       margin-top: 0;
-      padding: 6px 12px 4px 8px;
+      padding: 1px 12px 3px 6px;
     }
     .row.cand {
+      margin-top: 2px;
+      padding: 3px 14px 3px 4px;
+      border-radius: var(--ao-item-radius);
+    }
+    .container.preedit-hidden > .pinyin + .row-wrapper > .cand {
       margin-top: 0;
-      padding: 4px 14px 4px 8px;
-      border-radius: 0;
+      border-top-left-radius: var(--ao-radius);
+      border-top-right-radius: var(--ao-radius);
     }
-    .cand { border-radius: 0; }
-    .cursor { background: var(--wg-hilite); }
-    .hover-active .cand:not(.first):hover { background-color: rgba(88, 185, 128, .16); }
-    .hover-active .cand.first:hover { background-color: var(--wg-hilite); }
-    .first {
-      background-color: var(--wg-hilite);
-      border-radius: 0;
+    /* last-visible: ApplyCandidateFrame hides unused rows instead of removing them. */
+    .container > .row-wrapper:is(:last-child, .last-visible) > .cand {
+      border-bottom-left-radius: var(--ao-radius);
+      border-bottom-right-radius: var(--ao-radius);
     }
+    .cursor { background: #e6a817; }
+    .hover-active .cand:not(.first):hover { background-color: rgba(255, 227, 153, .55); }
+    .hover-active .cand.first:hover { background-color: var(--ao-hilite); }
+    .first { background-color: var(--ao-hilite); }
     .first::before { display: none; }
     .first .text,
-    .first .cand-no { color: #ffffff; }
-    .container.preedit-hidden > .pinyin + .row-wrapper > .cand {
-      padding-top: 7px;
-    }
-    .container > .row-wrapper:is(:last-child, .last-visible) > .cand {
-      padding-bottom: 7px;
-    }
+    .first .cand-no { color: #1a1a1a; }
     .context-menu,
-    .context-submenu { background: #fbfcfa; border-color: #d8ded9; }
-    .context-menu-item { color: #343936; }
-    .context-menu-item:hover { background: #e9eeea; }
+    .context-submenu { background: #e8f5f7; border-color: #bcd8de; }
+    .context-menu-item { color: #1f3138; }
+    .context-menu-item:hover { background: #d2e8ec; }
     .cand-translation { margin-left: 0.65em; font-size: 0.78em; opacity: 0.62; }

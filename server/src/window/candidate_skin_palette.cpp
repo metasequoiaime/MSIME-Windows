@@ -112,6 +112,12 @@ CandidateSkinPalette ResolveCandidateSkinPalette(const std::string &skinId, bool
         palette.border = D2D1::ColorF(0, 0.0f);
         palette.text = CandidateColorFromRgb(light ? 0x343936 : 0xD8DBD8);
     }
+    else if (paletteSkinId == "autumn_osmanthus")
+    {
+        palette.surface = CandidateColorFromRgb(light ? 0xD6ECF0 : 0x7D929F);
+        palette.border = D2D1::ColorF(0, 0.0f);
+        palette.text = CandidateColorFromRgb(light ? 0x1F3138 : 0xF5F8FA);
+    }
     else if (paletteSkinId == "graphite")
     {
         palette = light ? CandidateSkinPalette{CandidateColorFromRgb(0xFBFBFC), CandidateColorFromRgb(0xE2E5E9),

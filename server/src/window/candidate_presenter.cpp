@@ -97,6 +97,15 @@ struct CandSkinTokens
     // override. rowTextSelected/rowLabelSelected alpha 0 keeps the normal
     // colors (bar-style selection, like the fluent CSS).
     float itemRadius = 4.0f;
+    // > 0: rows touching the card's corners take this radius there instead.
+    float outerItemRadius = 0.0f;
+    // Row box geometry. Defaults suit the inset-highlight skins; full-bleed
+    // skins (willow green) pad the rows themselves because the card does not.
+    float itemGap = 2.0f;
+    float itemExtraHeight = 2.0f;
+    float itemPadLeft = 0.0f;
+    float itemPadRight = 0.0f;
+    msimeui::Thickness preeditMargin{};
     D2D1_COLOR_F rowTextSelected = D2D1::ColorF(0, 0.0f);
     D2D1_COLOR_F rowLabelSelected = D2D1::ColorF(0, 0.0f);
     D2D1_COLOR_F menuFill = D2D1::ColorF(0x2D2D2D);
@@ -257,7 +266,7 @@ void CandidatePresenter::ApplySkin()
     fingerprint << skinId << '|' << GetConfiguredThemeCand() << '|' << (candLight ? 'L' : 'D') << '|'
                 << GetConfiguredCandidateFont() << '|' << GetConfiguredCandidateFontSize() << '|'
                 << GetConfiguredCandidateWindowPreeditFontSize() << '|' << GetConfiguredCandidateWindowLayout() << '|'
-                << GetConfiguredCandidateTextColor();
+                << GetConfiguredCandidateTextColor() << '|' << GetConfiguredCandidateWindowPreeditStyle();
     fingerprint << '|' << GetConfiguredCandidateEnglishFont();
     for (const auto &font : GetConfiguredCandidateFallbackFonts())
         fingerprint << '|' << font.size() << ':' << font;
@@ -314,10 +323,27 @@ void CandidatePresenter::ApplySkin()
         tokens.borderWidth = 0.0f;
         tokens.radius = 9.0f;
         tokens.containerPad = 0.0f;
-        // CSS 把行圆角设为 0、靠容器 clip-path 裁出窗口圆角，但 D2D 端 Card
-        // 不裁剪子控件，行圆角 0 会让绿色选中块盖掉窗口圆角。有意偏离 CSS：
-        // 沿用对齐前的 4px 行圆角（视觉上等效圆角窗口，用户拍板的选择）。
-        tokens.itemRadius = 4.0f;
+        // 高亮整行（竖排）/整列（横排）铺满、左右贴着卡片边，行本身是直角；CSS 靠
+        // 容器 clip-path 裁出窗口圆角。D2D 的 Card 不裁剪子控件，所以改由列表把
+        // 落在卡片四角上的那几个角画成卡片的 9px，其余角保持直角。
+        tokens.itemRadius = 0.0f;
+        tokens.outerItemRadius = 9.0f;
+        tokens.itemGap = 0.0f;
+        // 行内边距对齐 CSS 的 .row.cand padding（加上 .text 的左内边距），预编辑行对齐 .row.pinyin。
+        if (GetConfiguredCandidateWindowLayout() == "horizontal")
+        {
+            tokens.itemExtraHeight = 10.0f;
+            tokens.itemPadLeft = 6.0f;
+            tokens.itemPadRight = 10.0f;
+            tokens.preeditMargin = {3.0f, 6.0f, 5.0f, 1.0f};
+        }
+        else
+        {
+            tokens.itemExtraHeight = 8.0f;
+            tokens.itemPadLeft = 9.0f;
+            tokens.itemPadRight = 14.0f;
+            tokens.preeditMargin = {3.0f, 6.0f, 7.0f, 2.0f};
+        }
         tokens.showSelectedBar = false;
         tokens.rowTextSelected = ColorFromRgb(0xFFFFFF);
         tokens.rowLabelSelected = ColorFromRgb(0xFFFFFF);
@@ -375,6 +401,43 @@ void CandidatePresenter::ApplySkin()
             tokens.menuBorder = ColorFromRgb(0x3A4047);
             tokens.menuText = ColorFromRgb(0xC7CDD5);
             tokens.menuHover = ColorFromRgb(0x30353B);
+        }
+    }
+    else if (skinId == "autumn_osmanthus")
+    {
+        tokens.borderWidth = 0.0f;
+        tokens.radius = 10.0f;
+        tokens.containerPad = 5.0f;
+        // 高亮块内缩在卡片里：普通角 6px，贴着卡片四角的那几个角与卡片同为 10px
+        // （首项顶部两角、尾项底部两角），对应 CSS 的 --ao-radius / --ao-item-radius。
+        tokens.itemRadius = 6.0f;
+        tokens.outerItemRadius = 10.0f;
+        tokens.showSelectedBar = false;
+        if (candLight)
+        {
+            tokens.accent = ColorFromRgb(0xE6A817);
+            tokens.selected = ColorFromRgb(0xFFE399);
+            tokens.hover = D2D1::ColorF(255.0f / 255.0f, 227.0f / 255.0f, 153.0f / 255.0f, 0.55f);
+            tokens.number = ColorFromRgb(0x5B727B);
+            tokens.rowTextSelected = ColorFromRgb(0x1A1A1A);
+            tokens.rowLabelSelected = ColorFromRgb(0x1A1A1A);
+            tokens.menuFill = ColorFromRgb(0xE8F5F7);
+            tokens.menuBorder = ColorFromRgb(0xBCD8DE);
+            tokens.menuText = ColorFromRgb(0x1F3138);
+            tokens.menuHover = ColorFromRgb(0xD2E8EC);
+        }
+        else
+        {
+            tokens.accent = ColorFromRgb(0xF97D0A);
+            tokens.selected = ColorFromRgb(0xF97D0A);
+            tokens.hover = D2D1::ColorF(249.0f / 255.0f, 125.0f / 255.0f, 10.0f / 255.0f, 0.30f);
+            tokens.number = ColorFromRgb(0xE1E8EC);
+            tokens.rowTextSelected = ColorFromRgb(0xFFFFFF);
+            tokens.rowLabelSelected = ColorFromRgb(0xFFFFFF);
+            tokens.menuFill = ColorFromRgb(0x6F8491);
+            tokens.menuBorder = ColorFromRgb(0x8CA0AC);
+            tokens.menuText = ColorFromRgb(0xF5F8FA);
+            tokens.menuHover = ColorFromRgb(0x637885);
         }
     }
 
@@ -438,13 +501,13 @@ void CandidatePresenter::ApplySkin()
     appearance.fontFamily = string_to_wstring(ResolveSystemFontFamilyForCss(GetConfiguredCandidateEnglishFont()));
     for (const auto &font : GetConfiguredCandidateFallbackFontFamilies())
         appearance.fallbackFontFamilies.push_back(string_to_wstring(font));
-    appearance.itemHeight = fontSize * 1.35f + 2.0f;
-    appearance.itemGap = 2.0f;
+    appearance.itemHeight = fontSize * 1.35f + tokens.itemExtraHeight;
+    appearance.itemGap = tokens.itemGap;
     appearance.fontSize = fontSize;
     appearance.labelFontSize = fontSize * 0.8f;
     appearance.annotationFontSize = fontSize;
-    appearance.contentPadLeft = 0.0f;
-    appearance.contentPadRight = 0.0f;
+    appearance.contentPadLeft = tokens.itemPadLeft;
+    appearance.contentPadRight = tokens.itemPadRight;
     appearance.textPadLeft = 5.0f;
     appearance.labelGap = 1.5f;
     appearance.selectedBarWidth = 3.0f;
@@ -452,6 +515,16 @@ void CandidatePresenter::ApplySkin()
     appearance.showSelectedBar = tokens.showSelectedBar;
     appearance.selectedBarColor = tokens.accent;
     appearance.cornerRadius = tokens.itemRadius;
+    // 预编辑行隐藏时列表顶边才贴着卡片顶边，与 CSS 的 .preedit-hidden 同一判据。
+    const bool preeditHidden = GetConfiguredCandidateWindowPreeditStyle() == "empty";
+    appearance.outerCornerRadius = tokens.outerItemRadius;
+    appearance.outerTopCornersEnabled = preeditHidden;
+    // 隐藏的预编辑行高度为 0，但 body 仍在它和列表之间留 2px 行距；贴角皮肤把它抵掉，
+    // 让首项贴着卡片的内容顶边（秋桂四边内边距一致，杨柳青高亮直抵卡片顶边）。
+    if (preeditHidden)
+        impl_->preedit->SetMargin({0.0f, 0.0f, 0.0f, tokens.outerItemRadius > 0.0f ? -2.0f : 0.0f});
+    else
+        impl_->preedit->SetMargin(tokens.preeditMargin);
     appearance.textColor = theme.textPrimary;
     appearance.labelColor = tokens.number;
     appearance.annotationColor = theme.textPrimary;

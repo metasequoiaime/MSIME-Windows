@@ -2,8 +2,8 @@
       --cand-font-family: 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
       --cand-font-size: 16px;
       --preedit-font-size: var(--cand-font-size);
-      --cand-text: #333333;
-      --cand-num: #757575;
+      --cand-text: #b7b7b7;
+      --cand-num: #858585;
       /* Fallback before C++ injects host-width DIP. Wrap limit = 宿主宽度. */
       --msime-max-width-dip: 100%;
       --msime-max-height-dip: 100%;
@@ -27,11 +27,11 @@
     .container {
       margin-top: 0px;
       margin-left: 0px;
-      background: #ffffff;
+      background: #202020;
       /* background: url("https://appassets/background.jpg"); */
       padding: 2px;
       border-radius: 6px;
-      box-shadow: 8px 10px 24px rgba(0, 0, 0, 0.18), 2px 3px 8px rgba(0, 0, 0, 0.10);
+      box-shadow: 8px 10px 24px rgba(0, 0, 0, 0.34), 2px 3px 8px rgba(0, 0, 0, 0.22);
       min-width: 7em;
       width: min(fit-content, var(--msime-max-width-dip));
       max-width: var(--msime-max-width-dip);
@@ -46,7 +46,7 @@
       word-break: break-word;
       white-space: normal;
       user-select: none;
-      border: 1.5px solid rgba(0, 0, 0, 0.12);
+      border: 1.5px solid #9b9b9b2e;
     }
 
     .cursor {
@@ -71,7 +71,7 @@
     }
 
     .hover-active .cand:hover {
-      background-color: #ececec;
+      background-color: #414141;
     }
 
     .row-wrapper {
@@ -79,7 +79,7 @@
     }
 
     .first {
-      background-color: #e8e8e8;
+      background-color: #3e3e3eb9;
       border-radius: 4px;
     }
 
@@ -145,10 +145,10 @@
     .context-menu {
       display: none;
       position: fixed;
-      background: #ffffff;
-      border: 1px solid rgba(0, 0, 0, 0.12);
+      background: #2d2d2d;
+      border: 1px solid #9b9b9b2e;
       border-radius: 6px;
-      box-shadow: 8px 10px 24px rgba(0, 0, 0, 0.18), 2px 3px 8px rgba(0, 0, 0, 0.10);
+      box-shadow: 8px 10px 24px rgba(0, 0, 0, 0.34), 2px 3px 8px rgba(0, 0, 0, 0.22);
       padding: 1px 0;
       /* min-width: 80px; */
       z-index: 1000;
@@ -159,7 +159,7 @@
     .context-menu-item {
       padding: 1px 4px;
       margin: 2px 2px;
-      color: #1a1a1a;
+      color: #e9e8e8;
       cursor: default;
       font-size: 14px;
       line-height: 20px;
@@ -168,76 +168,58 @@
     }
 
     .context-menu-item:hover {
-      background-color: #ececec;
+      background-color: #414141;
     }
     .context-menu-parent { position: relative; padding-right: 20px; }
     .context-menu-parent::after { content: "›"; position: absolute; right: 6px; }
     .context-submenu { display: none; position: absolute; left: 100%; top: -2px; min-width: 0;
-      background: #fff; border: 1px solid rgba(0,0,0,.12); border-radius: 6px; padding: 1px 0; }
+      background: #2d2d2d; border: 1px solid #9b9b9b2e; border-radius: 6px; padding: 1px 0; }
     .context-menu-parent:hover > .context-submenu { display: block; }
-    .context-menu-separator { height: 1px; margin: 3px 5px; background: #00000020; }
-    /* Willow green light: full-bleed row highlight, like weasel 杨柳青. */
-    :root { --cand-text: #343936; --cand-num: #686f6a; }
-    body { border-radius: 9px; }
-    .containerParent {
-      border-radius: 9px;
-      box-shadow: 8px 10px 24px rgba(42, 55, 47, .18), 2px 3px 8px rgba(42, 55, 47, .10);
-    }
+    .context-menu-separator { height: 1px; margin: 3px 5px; background: #ffffff20; }
+
+    /* Autumn osmanthus: an inset rounded highlight. The first row's top corners
+       and the last row's bottom corners share the frame's radius. */
+    :root { --cand-text: #f5f8fa; --cand-num: #e1e8ec; }
+    body { border-radius: 10px; }
     .container {
-      --wg-surface: #f4f5f3;
-      --wg-hilite: #58b980;
-      --wg-radius: 9px;
-      background-color: var(--wg-surface);
-      background-repeat: no-repeat;
-      padding: 0;
+      --ao-surface: #7d929f;
+      --ao-hilite: #f97d0a;
+      --ao-radius: 10px;
+      --ao-item-radius: 6px;
+      background: var(--ao-surface);
+      padding: 5px;
       border: none;
-      border-radius: var(--wg-radius);
-      box-shadow: none;
-      isolation: isolate;
-      clip-path: inset(0 round var(--wg-radius));
-    }
-    .container.preedit-hidden:has(> .pinyin + .row-wrapper > .first) {
-      background-image: linear-gradient(var(--wg-hilite), var(--wg-hilite));
-      background-position: top;
-      background-size: 100% var(--wg-radius);
-    }
-    .container:has(> .row-wrapper:is(:last-child, .last-visible) > .first) {
-      background-image: linear-gradient(var(--wg-hilite), var(--wg-hilite));
-      background-position: bottom;
-      background-size: 100% var(--wg-radius);
-    }
-    .container.preedit-hidden:has(> .pinyin + .row-wrapper > .first):has(> .row-wrapper:is(:last-child, .last-visible) > .first) {
-      background-color: var(--wg-hilite);
-      background-image: none;
+      border-radius: var(--ao-radius);
+      box-shadow: 8px 10px 24px rgba(0, 0, 0, .34), 2px 3px 8px rgba(0, 0, 0, .22);
     }
     .row.pinyin {
       margin-top: 0;
-      padding: 6px 12px 4px 8px;
+      padding: 1px 12px 3px 6px;
     }
     .row.cand {
+      margin-top: 2px;
+      padding: 3px 14px 3px 4px;
+      border-radius: var(--ao-item-radius);
+    }
+    .container.preedit-hidden > .pinyin + .row-wrapper > .cand {
       margin-top: 0;
-      padding: 4px 14px 4px 8px;
-      border-radius: 0;
+      border-top-left-radius: var(--ao-radius);
+      border-top-right-radius: var(--ao-radius);
     }
-    .cand { border-radius: 0; }
-    .cursor { background: var(--wg-hilite); }
-    .hover-active .cand:not(.first):hover { background-color: rgba(88, 185, 128, .16); }
-    .hover-active .cand.first:hover { background-color: var(--wg-hilite); }
-    .first {
-      background-color: var(--wg-hilite);
-      border-radius: 0;
+    /* last-visible: ApplyCandidateFrame hides unused rows instead of removing them. */
+    .container > .row-wrapper:is(:last-child, .last-visible) > .cand {
+      border-bottom-left-radius: var(--ao-radius);
+      border-bottom-right-radius: var(--ao-radius);
     }
+    .cursor { background: var(--ao-hilite); }
+    .hover-active .cand:not(.first):hover { background-color: rgba(249, 125, 10, .30); }
+    .hover-active .cand.first:hover { background-color: var(--ao-hilite); }
+    .first { background-color: var(--ao-hilite); }
     .first::before { display: none; }
     .first .text,
     .first .cand-no { color: #ffffff; }
-    .container.preedit-hidden > .pinyin + .row-wrapper > .cand {
-      padding-top: 7px;
-    }
-    .container > .row-wrapper:is(:last-child, .last-visible) > .cand {
-      padding-bottom: 7px;
-    }
     .context-menu,
-    .context-submenu { background: #fbfcfa; border-color: #d8ded9; }
-    .context-menu-item { color: #343936; }
-    .context-menu-item:hover { background: #e9eeea; }
+    .context-submenu { background: #6f8491; border-color: #8ca0ac; }
+    .context-menu-item { color: #f5f8fa; }
+    .context-menu-item:hover { background: #637885; }
     .cand-translation { margin-left: 0.65em; font-size: 0.78em; opacity: 0.62; }
