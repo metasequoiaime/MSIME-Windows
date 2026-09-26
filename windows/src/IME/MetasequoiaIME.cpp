@@ -2834,12 +2834,18 @@ LRESULT CALLBACK CMetasequoiaIME_WindowProc(HWND hWnd, UINT message, WPARAM wPar
         }
         const UINT code = request.code;
         const WCHAR wch = request.wch;
-        FanyImeNamedpipeDataToTsf *receivedData = TryReadDataFromServerPipeWithTimeout(request.requestId);
+        // This key may commit the highlighted candidate, so it gets the commit
+        // reply budget and is never replayed once delivered.
+        FanyImeNamedpipeDataToTsf *receivedData = TryReadCommitReplyFromServerPipe(request.requestId);
         if (receivedData->msg_type == Global::DataFromServerMsgType::TransportUnavailable)
         {
             // Keep the existing composition intact. A transport failure is
             // not text and must never be committed to the application.
-            if (request.deferredReplayToken != 0)
+            if (request.deferredReplayToken != 0 && IsDeliveredServerRequestId(request.requestId))
+            {
+                pIME->_DropAmbiguousDeferredKey(request.deferredReplayToken);
+            }
+            else if (request.deferredReplayToken != 0)
             {
                 pIME->_RetryDeferredKeyReplay(request.deferredReplayToken);
             }

@@ -2405,7 +2405,7 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
             // The frame already on screen is identical to the page just loaded, so the render echo is
             // honest even though nothing was repainted. Without it a digit/space selection would wait
             // out the full timeout on content that is already visible.
-            Global::rendered_candidate_page_generation.store(candidatePage->generation, std::memory_order_release);
+            Global::PublishRenderedCandidatePageGeneration(candidatePage->generation);
             CAND_DIAG_LOGF(L"candidate-frame path=dedup content_gen={} generation_restored={} page_gen={}",
                            contentGeneration, generationRestored, candidatePage->generation);
             return 0;
@@ -2426,7 +2426,7 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
         // WebView2 controller is still being created. That is what makes
         // CreateCoreWebView2Controller fail for this HWND while menu/FTB succeed.
         ::is_global_wnd_cand_shown = true;
-        Global::candidate_window_rendered_visible.store(true, std::memory_order_relaxed);
+        Global::SetCandidateWindowRenderedVisible(true);
         if (!IsCandidateWebviewReady())
         {
             DeferCandidateShowUntilWebviewReady();
@@ -2470,7 +2470,7 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
                 }
                 // The DOM holds this page now; echo the captured generation (not a live read: the
                 // page may already have been superseded) so selections can settle against it.
-                Global::rendered_candidate_page_generation.store(pageGeneration, std::memory_order_release);
+                Global::PublishRenderedCandidatePageGeneration(pageGeneration);
                 RefreshCandidateClipAfterPaint(hwnd, contentGeneration, updateStartedTick);
             });
             if (!sameCaret)
@@ -2531,7 +2531,7 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
         g_candidate_hide_pending = false;
         CAND_DIAG_LOGF(L"hide message begin {}", DescribeCandidateHostState());
         ::is_global_wnd_cand_shown = false;
-        Global::candidate_window_rendered_visible.store(false, std::memory_order_relaxed);
+        Global::SetCandidateWindowRenderedVisible(false);
         g_last_rendered_candidate_signature.clear();
         KillTimer(hwnd, TIMER_ID_CANDIDATE_MOVE_SETTLE);
         g_candidate_session_anchor_valid = false;
@@ -4403,7 +4403,7 @@ int FineTuneWindow(HWND hwnd)
                 // The DOM update for this page has completed; echo the captured generation so a
                 // selection that arrives while the layout pass is still running settles against the
                 // page that is about to become visible.
-                Global::rendered_candidate_page_generation.store(pageGeneration, std::memory_order_release);
+                Global::PublishRenderedCandidatePageGeneration(pageGeneration);
 
                 // Stay cloaked through pass 1. First-pass size is routinely taller
                 // than the painted card (log: 289dip then 201dip). Uncloaking with

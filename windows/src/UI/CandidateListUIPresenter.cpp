@@ -71,17 +71,21 @@ HRESULT CMetasequoiaIME::_HandleCandidateFinalize(TfEditCookie ec, _In_ ITfConte
         const bool hasPrefetchedServerCandidate = _TakePendingServerCandidate(&serverMsgType, &serverCandidateString);
         if (!hasPrefetchedServerCandidate)
         {
-            struct FanyImeNamedpipeDataToTsf *receivedData = TryReadDataFromServerPipeWithTimeout(requestId);
+            struct FanyImeNamedpipeDataToTsf *receivedData = TryReadCommitReplyFromServerPipe(requestId);
             serverMsgType = receivedData->msg_type;
             serverCandidateString = receivedData->candidate_string;
         }
 
         if (serverMsgType == Global::DataFromServerMsgType::TransportUnavailable)
         {
-            // Transport state is never candidate text.  Propagate failure so
-            // the exact deferred key remains owned and is replayed only after
-            // the replacement focus/session fence is ready.
-            return HRESULT_FROM_WIN32(ERROR_BROKEN_PIPE);
+            // Transport state is never candidate text. A request that never
+            // left TSF is replayed after the replacement focus/session fence
+            // is ready. One that was delivered may already have committed on
+            // the Server, and replaying it would pick by index from a rebuilt
+            // page that ranking may have reordered: rebuild the composition
+            // but let the user choose again.
+            return IsDeliveredServerRequestId(requestId) ? FANY_E_COMMIT_REPLY_AMBIGUOUS
+                                                         : HRESULT_FROM_WIN32(ERROR_BROKEN_PIPE);
         }
         if (serverMsgType == Global::DataFromServerMsgType::OutofRange) // Candidate index out of range
         {

@@ -105,6 +105,25 @@ struct FanyImeNamedpipeDataToTsf *TryReadDataFromServerPipeWithTimeout(uint64_t 
 // returns a non-TransportUnavailable empty frame for the caller to fall back.
 struct FanyImeNamedpipeDataToTsf *TryReadDataFromServerPipeWithTimeout(uint64_t expectedRequestId,
                                                                        bool abortTransportOnTimeout);
+// Replies that commit text (candidate selection, candidate + punctuation) get
+// a longer budget than ordinary keys. The request has already been written, so
+// a miss is DeliveryAmbiguous: the Server may have committed the selection.
+// Waiting for the same request_id is the only way to learn which candidate it
+// chose; a slow machine (battery, throttled disk) routinely needs more than
+// the ordinary 50ms, and tearing the pipe down then replaying the key would
+// re-run the selection against a rebuilt, possibly reordered page.
+constexpr DWORD FANY_IME_COMMIT_REPLY_TIMEOUT_MS = 300;
+struct FanyImeNamedpipeDataToTsf *TryReadCommitReplyFromServerPipe(uint64_t expectedRequestId);
+// True when requestId names a request that was actually written to the Server,
+// i.e. a lost reply is DeliveryAmbiguous rather than DefinitelyNotSent.
+inline bool IsDeliveredServerRequestId(uint64_t requestId)
+{
+    return requestId != FANY_IME_NO_REQUEST_ID && requestId != FANY_IME_UNSOLICITED_REQUEST_ID;
+}
+// Edit-session result for a commit whose reply never arrived although the
+// request was delivered. The deferred queue rebuilds the composition from the
+// applied prefix but must not replay the committing key itself.
+constexpr HRESULT FANY_E_COMMIT_REPLY_AMBIGUOUS = __HRESULT_FROM_WIN32(ERROR_TIMEOUT);
 struct FanyImeNamedpipeDataToTsf *ReadDataFromServerViaNamedPipe(uint64_t expectedRequestId);
 
 //

@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -244,6 +245,30 @@ inline std::atomic<std::uint64_t> rendered_candidate_page_generation{0};
 // Mirrors ::is_global_wnd_cand_shown so the worker thread can cheaply tell whether an on-screen
 // candidate list exists. Kept in lockstep at every write site of the plain flag.
 inline std::atomic<bool> candidate_window_rendered_visible{false};
+// Wakes a selection waiting for the render echo the moment it lands. Polling with sleep_for(1ms)
+// sleeps a whole timer tick (~15.6ms by default, worse on battery), which turned a short paint lag
+// into a 30-47ms stall inside the TSF reply budget. The mutex only orders the store against the
+// waiter's predicate check so a notification cannot slip in between.
+inline std::mutex candidate_render_mutex;
+inline std::condition_variable candidate_render_cv;
+
+inline void PublishRenderedCandidatePageGeneration(std::uint64_t generation)
+{
+    {
+        std::lock_guard lock(candidate_render_mutex);
+        rendered_candidate_page_generation.store(generation, std::memory_order_release);
+    }
+    candidate_render_cv.notify_all();
+}
+
+inline void SetCandidateWindowRenderedVisible(bool visible)
+{
+    {
+        std::lock_guard lock(candidate_render_mutex);
+        candidate_window_rendered_visible.store(visible, std::memory_order_relaxed);
+    }
+    candidate_render_cv.notify_all();
+}
 
 using CandidateWordItem = WordItem;
 
