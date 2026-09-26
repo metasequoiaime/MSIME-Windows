@@ -25,7 +25,8 @@ TEST_CASE(candidate_render_sync_waits_only_when_a_painted_page_lags_the_publishe
 TEST_CASE(candidate_render_sync_wait_is_bounded_to_a_visible_stall)
 {
     // The bound is a UX contract and a transport constraint: a wedged UI thread may delay a
-    // committed keystroke by at most this, and the wait must stay inside the TSF reply timeout
-    // (50ms, windows/src/IPC/Ipc.cpp) or TSF tears the pipe down and replays the key.
-    REQUIRE_EQ(FanyImeIpc::kCandidateSelectionRenderWaitMaxMs, 30);
+    // committed keystroke by at most this, and the wait must stay well inside the TSF commit reply
+    // timeout (300ms, windows/src/IPC/Ipc.h FANY_IME_COMMIT_REPLY_TIMEOUT_MS) or TSF tears the pipe
+    // down and the user has to choose again.
+    REQUIRE_EQ(FanyImeIpc::kCandidateSelectionRenderWaitMaxMs, 80);
 }

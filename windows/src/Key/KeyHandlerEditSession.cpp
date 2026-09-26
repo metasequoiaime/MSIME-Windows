@@ -29,6 +29,7 @@ STDAPI CKeyHandlerEditSession::DoEditSession(TfEditCookie ec)
         CMetasequoiaIME *textService;
         uint64_t token;
         bool applied = false;
+        bool deliveryAmbiguous = false;
         ~DeferredReplayCompletion()
         {
             if (textService && token != 0)
@@ -36,6 +37,10 @@ STDAPI CKeyHandlerEditSession::DoEditSession(TfEditCookie ec)
                 if (applied)
                 {
                     textService->_CompleteDeferredKeyReplay(token);
+                }
+                else if (deliveryAmbiguous)
+                {
+                    textService->_DropAmbiguousDeferredKey(token);
                 }
                 else
                 {
@@ -95,6 +100,7 @@ STDAPI CKeyHandlerEditSession::DoEditSession(TfEditCookie ec)
                                                          _prefetchedText);
         hResult = pKeyStateCategory->KeyStateHandler(_KeyState.Function, keyHandlerEditSessioDTO);
         deferredReplayCompletion.applied = hResult == S_OK;
+        deferredReplayCompletion.deliveryAmbiguous = hResult == FANY_E_COMMIT_REPLY_AMBIGUOUS;
 
         pKeyStateCategory->Release();
     }

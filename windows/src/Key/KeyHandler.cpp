@@ -1424,11 +1424,14 @@ HRESULT CMetasequoiaIME::_HandleCompositionPunctuation(TfEditCookie ec, _In_ ITf
         //
         if (Global::CommitWithHighlightedCandPunc.count(wch) > 0)
         {
-            struct FanyImeNamedpipeDataToTsf *receivedData = TryReadDataFromServerPipeWithTimeout(requestId);
+            struct FanyImeNamedpipeDataToTsf *receivedData = TryReadCommitReplyFromServerPipe(requestId);
 
             if (receivedData->msg_type == Global::DataFromServerMsgType::TransportUnavailable)
             {
-                return HRESULT_FROM_WIN32(ERROR_BROKEN_PIPE);
+                // Same rule as _HandleCandidateFinalize: a delivered commit
+                // must not be replayed against a rebuilt candidate page.
+                return IsDeliveredServerRequestId(requestId) ? FANY_E_COMMIT_REPLY_AMBIGUOUS
+                                                             : HRESULT_FROM_WIN32(ERROR_BROKEN_PIPE);
             }
 
             // The Server is authoritative for configurable candidate-navigation

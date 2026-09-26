@@ -2191,6 +2191,46 @@ void CMetasequoiaIME::_RetryDeferredKeyReplay(uint64_t replayToken)
     }
 }
 
+void CMetasequoiaIME::_DropAmbiguousDeferredKey(uint64_t replayToken)
+{
+    if (replayToken == 0 || !_hasDeferredKeyInFlight || _deferredKeyReplayToken != replayToken)
+    {
+        return;
+    }
+    if (_deferredKeyInFlight.focusGeneration != _deferredKeyFocusGeneration)
+    {
+        _RetryDeferredKeyReplay(replayToken);
+        return;
+    }
+
+    DebugTsfIssue47(L"deferred-replay-ambiguous-dropped", FANY_IME_NO_REQUEST_ID,
+                    static_cast<UINT>(_deferredKeyInFlight.wParam), _deferredKeyInFlight.translatedWch,
+                    _deferredKeyInFlight.keyState.Category, _deferredKeyInFlight.keyState.Function, 1, _IsComposing(),
+                    _pCompositionProcessorEngine ? _pCompositionProcessorEngine->GetVirtualKeyLength() : 0,
+                    FANY_E_COMMIT_REPLY_AMBIGUOUS, replayToken);
+    // The Server received this commit and may have executed it, but its
+    // reply is lost, so the chosen text is unknown. Replaying the key would
+    // run the selection a second time against a page rebuilt from the prefix,
+    // whose order the first run may already have changed -- committing a
+    // candidate the user never saw. Rebuild only the composition the user
+    // typed and let them choose again. Keys queued after this one stay queued.
+    ITfContext *context = _deferredKeyInFlight.context;
+    while (!_deferredAppliedPrefix.empty())
+    {
+        _deferredKeyDowns.push_front(_deferredAppliedPrefix.back());
+        _deferredAppliedPrefix.pop_back();
+    }
+    _deferredKeyInFlight = {};
+    _hasDeferredKeyInFlight = false;
+    _deferredKeyReplayToken = 0;
+    if (context)
+    {
+        context->Release();
+    }
+    MarkNamedpipeSessionDirtyForOwner(this);
+    _ScheduleDeferredKeyDownDrain();
+}
+
 void CMetasequoiaIME::_ScheduleDeferredKeyDownDrain()
 {
     if (!_deferredKeyDowns.empty() && !_hasDeferredKeyInFlight && !_deferredKeyDrainPosted && _msgWndHandle &&

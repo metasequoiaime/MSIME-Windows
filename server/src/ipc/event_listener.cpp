@@ -16,6 +16,7 @@
 #include "Ipc.h"
 #include "ipc/candidate_render_sync.h"
 #include "ipc/candidate_selection_policy.h"
+#include "ipc/selection_replay_guard.h"
 #include "ipc/async_request_origin.h"
 #include "ipc/candidate_ui_owner.h"
 #include "ipc/candidate_text_policy.h"
@@ -211,7 +212,7 @@ void ApplyUiLessFromPacket(const FanyImeNamedpipeData &pipe_data)
         // A prior non-UILess session may have left the WebView2 candidate HWND
         // visible; hide it immediately when the host takes over drawing.
         ::is_global_wnd_cand_shown = false;
-        Global::candidate_window_rendered_visible.store(false, std::memory_order_relaxed);
+        Global::SetCandidateWindowRenderedVisible(false);
         if (::global_hwnd && IsWindow(::global_hwnd))
         {
             PostMessage(::global_hwnd, WM_HIDE_MAIN_WINDOW, 0, 0);
@@ -266,7 +267,7 @@ void HideCandidateWindowAndDropItems()
     // Clear the shown flag first so async callbacks refuse to resurrect the
     // window, then post the actual hide message.
     ::is_global_wnd_cand_shown = false;
-    Global::candidate_window_rendered_visible.store(false, std::memory_order_relaxed);
+    Global::SetCandidateWindowRenderedVisible(false);
     if (::global_hwnd && IsWindow(::global_hwnd))
     {
         PostMessage(::global_hwnd, WM_HIDE_MAIN_WINDOW, 0, 0);
@@ -1646,6 +1647,7 @@ enum class TaskType
     ApplyEmojiCandidates,
     ApplyKaomojiCandidates,
     StoreUserPhrase,
+    AdjustCandidateRanking,
     LearnEnteredEnglishWord,
     PinCandidate,
     ClientActivated,
@@ -1699,6 +1701,14 @@ struct Task
     std::string session_pinyin;
     std::string session_word;
     bool session_pinyin_is_canonical = false;
+    // AdjustCandidateRanking: session_pinyin is the entry key, session_word the picked word.
+    std::string ranking_context_key;
+    std::vector<WordItem> ranking_candidates;
+    bool ranking_english = false;
+    bool ranking_wubi = false;
+    std::string ranking_mode;
+    int ranking_linear_step = 0;
+    int ranking_trigger_count = 0;
     int candidate_one_based_index = 0;
     int fixed_position = 0;
     int page_steps = 0;
@@ -2142,6 +2152,31 @@ void WorkerThread()
                 session->store_user_phrase(task.session_pinyin, task.session_word);
             }
             session->reset_cache();
+            break;
+        }
+
+        case TaskType::AdjustCandidateRanking: {
+            if (task.ranking_english)
+            {
+                (void)user_dictionary::adjust_english_candidate_ranking(
+                    CommonUtils::get_ime_data_path() + "\\english.db", user_dictionary::default_user_db_path(),
+                    task.ranking_context_key, task.ranking_candidates, task.session_pinyin, task.session_word,
+                    task.ranking_mode, task.ranking_linear_step, task.ranking_trigger_count, false);
+                break;
+            }
+            bool ranking_changed = false;
+            (void)user_dictionary::adjust_candidate_ranking(
+                CommonUtils::get_ime_data_path() + "\\msime.db", user_dictionary::default_user_db_path(),
+                task.ranking_context_key, task.ranking_candidates, task.session_pinyin, task.session_word,
+                task.ranking_mode, task.ranking_linear_step, task.ranking_trigger_count, false, &ranking_changed,
+                task.ranking_wubi ? user_dictionary::DictionaryKind::Wubi : user_dictionary::DictionaryKind::Pinyin);
+            if (ranking_changed)
+            {
+                if (const auto session = PersistentInputSession())
+                {
+                    session->reset_cache();
+                }
+            }
             break;
         }
 
@@ -2685,6 +2720,41 @@ void EnqueueStoreUserPhraseTask(const std::string &pinyin, const std::string &wo
         task.session_pinyin = pinyin;
         task.session_word = word;
         task.session_pinyin_is_canonical = pinyin_is_canonical;
+        taskQueue.push(std::move(task));
+    }
+    pipe_queueCv.notify_one();
+}
+
+// A pick's frequency write is SQLite work; done inline it sat between the selection and its reply,
+// and on a slow machine it pushed the reply past the TSF deadline. The candidates are copied
+// because the page moves on before the task runs. Called from the worker thread only, which is
+// also what serializes the replay guard.
+void EnqueueAdjustCandidateRankingTask(bool english, const std::string &context_key, const std::string &entry_key,
+                                       const std::string &word, uint64_t client_id, uint64_t activation_epoch)
+{
+    static FanyImeIpc::SelectionRankingReplayGuard replay_guard;
+    const bool wubi = !english && IsWubiRankingScheme();
+    const std::string replay_key =
+        std::string(english ? "e" : (wubi ? "w" : "p")) + '\x1f' + context_key + '\x1f' + entry_key + '\x1f' + word;
+    if (!replay_guard.should_apply(replay_key, client_id, activation_epoch, GetTickCount64()))
+    {
+        CAND_DIAG_LOGF(L"candidate-ranking-replay-skipped client={} epoch={}", client_id, activation_epoch);
+        return;
+    }
+    const auto &frequency = GetConfiguredFrequencyAdjustment();
+    {
+        std::lock_guard lock(queueMutex);
+        Task task;
+        task.type = TaskType::AdjustCandidateRanking;
+        task.ranking_english = english;
+        task.ranking_wubi = wubi;
+        task.ranking_context_key = context_key;
+        task.ranking_candidates = Global::candidate_ui.items;
+        task.session_pinyin = entry_key;
+        task.session_word = word;
+        task.ranking_mode = frequency.mode;
+        task.ranking_linear_step = frequency.linear_step;
+        task.ranking_trigger_count = frequency.trigger_count;
         taskQueue.push(std::move(task));
     }
     pipe_queueCv.notify_one();
@@ -5182,15 +5252,17 @@ bool ResolveCandidateItem(int one_based_index, WordItem &item)
 // A digit/space selection settles against the live page_words, while the user is looking at the
 // asynchronously painted snapshot. Pin-frequency reorders the page after every commit, so a
 // keystroke that lands between publish and paint would commit a candidate the user never saw.
-// Poll (no lock, no event) until the UI echoes back the generation it painted, with a hard bound so
-// a wedged UI thread cannot hang input: on timeout the selection continues with the current page and
-// the miss is recorded in the diagnostic log. Runs on the IPC worker thread only.
+// Block until the UI echoes back the generation it painted (Global::PublishRenderedCandidatePageGeneration
+// wakes us immediately), with a hard bound so a wedged UI thread cannot hang input: on timeout the
+// selection continues with the current page and the miss is recorded in the diagnostic log. Runs on
+// the IPC worker thread only.
 void WaitForCandidateRenderSync(UINT keycode)
 {
-    const auto renderLagsPublished = []() {
+    const bool uiless = IsUiLessMode();
+    const auto renderLagsPublished = [uiless]() {
         return FanyImeIpc::ShouldWaitForCandidateRender(
             Global::rendered_candidate_page_generation.load(std::memory_order_acquire),
-            Global::candidate_page_generation.load(std::memory_order_acquire), IsUiLessMode(),
+            Global::candidate_page_generation.load(std::memory_order_acquire), uiless,
             Global::candidate_window_rendered_visible.load(std::memory_order_acquire));
     };
     if (!renderLagsPublished())
@@ -5198,20 +5270,24 @@ void WaitForCandidateRenderSync(UINT keycode)
         return;
     }
 
-    const ULONGLONG startedTick = GetTickCount64();
-    while (renderLagsPublished())
+    const auto started = std::chrono::steady_clock::now();
+    bool synced = false;
     {
-        const ULONGLONG waitedMs = GetTickCount64() - startedTick;
-        if (waitedMs >= static_cast<ULONGLONG>(FanyImeIpc::kCandidateSelectionRenderWaitMaxMs))
-        {
-            CAND_DIAG_LOGF(L"candidate-select-render-timeout keycode={} current={} rendered={}", keycode,
-                           Global::candidate_page_generation.load(std::memory_order_acquire),
-                           Global::rendered_candidate_page_generation.load(std::memory_order_acquire));
-            return;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::unique_lock lock(Global::candidate_render_mutex);
+        synced = Global::candidate_render_cv.wait_for(
+            lock, std::chrono::milliseconds(FanyImeIpc::kCandidateSelectionRenderWaitMaxMs),
+            [&renderLagsPublished]() { return !renderLagsPublished(); });
     }
-    CAND_DIAG_LOGF(L"candidate-select-render-synced keycode={} waited_ms={}", keycode, GetTickCount64() - startedTick);
+    const auto waitedMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+    if (!synced)
+    {
+        CAND_DIAG_LOGF(L"candidate-select-render-timeout keycode={} waited_ms={} current={} rendered={}", keycode,
+                       waitedMs, Global::candidate_page_generation.load(std::memory_order_acquire),
+                       Global::rendered_candidate_page_generation.load(std::memory_order_acquire));
+        return;
+    }
+    CAND_DIAG_LOGF(L"candidate-select-render-synced keycode={} waited_ms={}", keycode, waitedMs);
 }
 
 void ProcessSelectionKey(UINT keycode, uint64_t client_id, uint64_t activation_epoch, int forced_index_in_page)
@@ -5319,11 +5395,8 @@ void ProcessSelectionKey(UINT keycode, uint64_t client_id, uint64_t activation_e
             AppendAiContext(curWord);
             if (curWordItem.source == CandidateSource::EnglishDictionary && isNeedUpdateWeight)
             {
-                const auto &frequency = GetConfiguredFrequencyAdjustment();
-                (void)user_dictionary::adjust_english_candidate_ranking(
-                    CommonUtils::get_ime_data_path() + "\\english.db", user_dictionary::default_user_db_path(),
-                    EnglishRankingContextKey(), Global::candidate_ui.items, curWordItem.pinyin, curWordItem.word,
-                    frequency.mode, frequency.linear_step, frequency.trigger_count, false);
+                EnqueueAdjustCandidateRankingTask(/*english=*/true, EnglishRankingContextKey(), curWordItem.pinyin,
+                                                  curWordItem.word, client_id, activation_epoch);
             }
             UpdateCloudInput("");
             UpdateEnglishInput("");
@@ -5537,18 +5610,10 @@ void ProcessSelectionKey(UINT keycode, uint64_t client_id, uint64_t activation_e
 
         if (isNeedUpdateWeight)
         {
-            const auto &frequency = GetConfiguredFrequencyAdjustment();
-            bool ranking_changed = false;
-            (void)user_dictionary::adjust_candidate_ranking(
-                CommonUtils::get_ime_data_path() + "\\msime.db", user_dictionary::default_user_db_path(),
-                ranking_context_key, Global::candidate_ui.items, ranking_entry_key, curWord, frequency.mode,
-                frequency.linear_step, frequency.trigger_count, false, &ranking_changed,
-                IsWubiRankingScheme() ? user_dictionary::DictionaryKind::Wubi
-                                      : user_dictionary::DictionaryKind::Pinyin);
-            if (ranking_changed)
-            {
-                g_inputSession->reset_cache();
-            }
+            // Runs after this reply, before the next key (the queue is FIFO), so the next lookup
+            // already sees the new order.
+            EnqueueAdjustCandidateRankingTask(/*english=*/false, ranking_context_key, ranking_entry_key, curWord,
+                                              client_id, activation_epoch);
         }
     }
     else

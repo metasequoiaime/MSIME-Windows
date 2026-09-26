@@ -1014,7 +1014,7 @@ void CandidatePresenter::ShowFromGlobalState(POINT caret)
         CloseContextMenu(false);
         SetCandidateHostCloaked(true);
         ::is_global_wnd_cand_shown = true;
-        Global::candidate_window_rendered_visible.store(true, std::memory_order_relaxed);
+        Global::SetCandidateWindowRenderedVisible(true);
         CAND_DIAG_LOGF(L"candidate-d2d show deferred: no usable caret anchor ({},{})", caret.x, caret.y);
         return;
     }
@@ -1077,11 +1077,11 @@ void CandidatePresenter::ShowFromGlobalState(POINT caret)
     }
     PlaceAndShow(caret, widthDip, heightDip, cardLeftDip, cardTopDip, scale);
     ::is_global_wnd_cand_shown = true;
-    Global::candidate_window_rendered_visible.store(true, std::memory_order_relaxed);
+    Global::SetCandidateWindowRenderedVisible(true);
     // PlaceAndShow paints synchronously, so the page is on screen now. Echo the generation of the
     // snapshot that was actually rendered (not the latest published one) so a pending digit/space
     // selection can settle against the same page the user is looking at.
-    Global::rendered_candidate_page_generation.store(renderedGeneration, std::memory_order_release);
+    Global::PublishRenderedCandidatePageGeneration(renderedGeneration);
 }
 
 void CandidatePresenter::Hide()
@@ -1092,7 +1092,7 @@ void CandidatePresenter::Hide()
     }
     CloseContextMenu(false);
     ::is_global_wnd_cand_shown = false;
-    Global::candidate_window_rendered_visible.store(false, std::memory_order_relaxed);
+    Global::SetCandidateWindowRenderedVisible(false);
     hoverArmed_ = false;
     wheelDeltaAccumulator_ = 0;
     if (impl_ && impl_->list)

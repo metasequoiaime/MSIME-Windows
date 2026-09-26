@@ -415,6 +415,9 @@ class CMetasequoiaIME : public ITfTextInputProcessorEx,
                                      _In_opt_ ITfContext *expectedContext) const;
     void _CompleteDeferredKeyReplay(uint64_t replayToken);
     void _RetryDeferredKeyReplay(uint64_t replayToken);
+    // A committing key whose reply was lost after delivery: rebuild the
+    // composition from the applied prefix, but never replay the key itself.
+    void _DropAmbiguousDeferredKey(uint64_t replayToken);
 
     // comless helpers
     static HRESULT CMetasequoiaIME::CreateInstance(REFCLSID rclsid, REFIID riid, _Outptr_result_maybenull_ LPVOID *ppv,

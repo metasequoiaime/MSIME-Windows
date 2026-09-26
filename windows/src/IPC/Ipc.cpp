@@ -1278,10 +1278,25 @@ struct FanyImeNamedpipeDataToTsf *TryReadDataFromServerPipeWithTimeout(uint64_t 
     return TryReadDataFromServerPipeWithTimeout(expectedRequestId, true);
 }
 
+static struct FanyImeNamedpipeDataToTsf *TryReadDataFromServerPipeWithDeadline(uint64_t expectedRequestId,
+                                                                               bool abortTransportOnTimeout,
+                                                                               DWORD timeoutMs);
+
 struct FanyImeNamedpipeDataToTsf *TryReadDataFromServerPipeWithTimeout(uint64_t expectedRequestId,
                                                                        bool abortTransportOnTimeout)
 {
-    constexpr int timeoutMs = 50;
+    return TryReadDataFromServerPipeWithDeadline(expectedRequestId, abortTransportOnTimeout, 50);
+}
+
+struct FanyImeNamedpipeDataToTsf *TryReadCommitReplyFromServerPipe(uint64_t expectedRequestId)
+{
+    return TryReadDataFromServerPipeWithDeadline(expectedRequestId, true, FANY_IME_COMMIT_REPLY_TIMEOUT_MS);
+}
+
+static struct FanyImeNamedpipeDataToTsf *TryReadDataFromServerPipeWithDeadline(uint64_t expectedRequestId,
+                                                                               bool abortTransportOnTimeout,
+                                                                               DWORD timeoutMs)
+{
     PerfTimer replyWaitTimer;
 
     auto transportUnavailable = []() {
