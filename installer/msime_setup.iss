@@ -77,6 +77,8 @@ Name: "{commonpf64}\metasequoiaime\server"
 ; 用户数据（词库、配置、皮肤、前端资源）。默认在 LocalAppData，安装时可以改到别的盘，
 ; 选择写进 HKLM 的 DataDir，Server / TSF DLL / 引擎三方都从那里读。
 Name: "{code:GetDataDir}"; Permissions: users-modify
+; 用户自己的辅助码方案放这里，Server 扫描后列进设置页，升级时保留。
+Name: "{code:GetDataDir}\helpcodes\custom"
 ; WebView2 子进程是中完整性，写不进内置 Administrator 的高完整性 LocalAppData。
 Name: "{commonappdata}\metasequoiaime"
 Name: "{commonappdata}\metasequoiaime\webview2"; Permissions: users-modify
@@ -899,6 +901,35 @@ begin
   DelTree(Path, True, True, True);
 end;
 
+{ helpcodes 里的内置表由本次安装重写，custom 子目录是用户自己放的辅助码，升级不得清掉。}
+procedure CleanHelpcodesExceptCustom(const HelpcodesPath: String);
+var
+  FindRec: TFindRec;
+  ItemPath: String;
+begin
+  if FindFirst(AddBackslash(HelpcodesPath) + '*', FindRec) then
+  begin
+    try
+      repeat
+        if
+          (FindRec.Name <> '.') and
+          (FindRec.Name <> '..') and
+          (CompareText(FindRec.Name, 'custom') <> 0)
+        then
+        begin
+          ItemPath := AddBackslash(HelpcodesPath) + FindRec.Name;
+          if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
+            TryDeleteTree(ItemPath)
+          else
+            DeleteFile(ItemPath);
+        end;
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+end;
+
 procedure CleanAppDataExceptUserFiles;
 var
   AppDataPath: String;
@@ -924,10 +955,12 @@ begin
         then
         begin
           ItemPath := AddBackslash(AppDataPath) + FindRec.Name;
-          if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
-            TryDeleteTree(ItemPath)
+          if (FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0 then
+            DeleteFile(ItemPath)
+          else if CompareText(FindRec.Name, 'helpcodes') = 0 then
+            CleanHelpcodesExceptCustom(ItemPath)
           else
-            DeleteFile(ItemPath);
+            TryDeleteTree(ItemPath);
         end;
       until not FindNext(FindRec);
     finally
@@ -1084,6 +1117,19 @@ begin
       Exec(
         ExpandConstant('{sys}\robocopy.exe'),
         '"' + AddBackslash(OldDir) + 'skins" "' + AddBackslash(NewDir) + 'skins" ' +
+        '/E /MOVE /R:2 /W:1 /NJH /NJS /NP /NFL /NDL',
+        '',
+        SW_HIDE,
+        ewWaitUntilTerminated,
+        ResultCode
+      ) and (ResultCode < 8) and Moved;
+
+  { 自定义辅助码也是用户自己放进来的。}
+  if DirExists(AddBackslash(OldDir) + 'helpcodes\custom') then
+    Moved :=
+      Exec(
+        ExpandConstant('{sys}\robocopy.exe'),
+        '"' + AddBackslash(OldDir) + 'helpcodes\custom" "' + AddBackslash(NewDir) + 'helpcodes\custom" ' +
         '/E /MOVE /R:2 /W:1 /NJH /NJS /NP /NFL /NDL',
         '',
         SW_HIDE,
