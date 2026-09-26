@@ -5,6 +5,7 @@ export type ClientMessage =
   | { "type": "configRequest"; "protocolVersion"?: 1 }
   | { "type": "skinCatalogRequest"; "protocolVersion"?: 1 }
   | { "type": "openSkinDirectory"; "protocolVersion"?: 1 }
+  | { "type": "openHelpcodeDirectory"; "protocolVersion"?: 1 }
   | { "type": "openHandwritingPanel"; "protocolVersion"?: 1 }
   | { "type": "restartServer"; "protocolVersion"?: 1 }
   | { "type": "copyText"; "protocolVersion"?: 1; "data": string }
@@ -59,6 +60,7 @@ export type SettingsMessage =
   | { "type": "configRequest"; "protocolVersion"?: 1 }
   | { "type": "skinCatalogRequest"; "protocolVersion"?: 1 }
   | { "type": "openSkinDirectory"; "protocolVersion"?: 1 }
+  | { "type": "openHelpcodeDirectory"; "protocolVersion"?: 1 }
   | { "type": "openHandwritingPanel"; "protocolVersion"?: 1 }
   | { "type": "restartServer"; "protocolVersion"?: 1 }
   | { "type": "copyText"; "protocolVersion"?: 1; "data": string }

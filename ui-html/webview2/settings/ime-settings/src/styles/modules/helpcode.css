@@ -25,3 +25,67 @@
 .dropdown-menu-quanpin-helpcode-scheme {
   min-width: 110px;
 }
+
+/* 自定义方案追加在内置方案之后，方案多了就滚动 */
+.dropdown-menu-shuangpin-helpcode-scheme,
+.dropdown-menu-quanpin-helpcode-scheme {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.dropdown-item:not([data-custom]) + .dropdown-item[data-custom] {
+  margin-top: 6px;
+  position: relative;
+}
+
+.dropdown-item:not([data-custom]) + .dropdown-item[data-custom]::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: -4px;
+  border-top: 1px solid var(--dropdown-menu-border);
+}
+
+/* 辅助码 -> 自定义辅助码 */
+.helpcode-description {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.helpcode-custom-directory {
+  user-select: text;
+  word-break: break-all;
+}
+
+.section-header:has(> .helpcode-custom-actions) {
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.helpcode-custom-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.helpcode-custom-button {
+  height: 30px;
+  margin-top: 2px;
+  padding: 0 10px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.helpcode-custom-button:hover {
+  color: var(--text-color);
+  background: var(--button-secondary-bg);
+}

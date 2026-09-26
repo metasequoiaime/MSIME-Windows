@@ -251,13 +251,15 @@ fuzzy_uan_uang = false
 [helpcode]
 # 双拼辅助码
 shuangpin_helpcode = true
-# 双拼辅助码方案，可选："lantian", "ziranma", "shouyou2_0", "shouyouplus", "xiaohe", "jiajia"
+# 双拼辅助码方案，可选："lantian", "ziranma", "shouyou2_0", "shouyouplus", "xiaohe", "jiajia"，
+# 或 "custom/<文件名>"（数据目录 helpcodes\custom\<文件名>.txt 中的自定义方案）
 shuangpin_helpcode_schema = "lantian"
 # 是否在候选窗口中显示双拼辅助码
 show_sp_helpcode_in_candidate_window = true
 # 全拼辅助码
 quanpin_helpcode = true
-# 全拼辅助码方案，可选："lantian", "ziranma", "shouyou2_0", "shouyouplus", "xiaohe", "jiajia"
+# 全拼辅助码方案，可选："lantian", "ziranma", "shouyou2_0", "shouyouplus", "xiaohe", "jiajia"，
+# 或 "custom/<文件名>"（数据目录 helpcodes\custom\<文件名>.txt 中的自定义方案）
 quanpin_helpcode_schema = "ziranma"
 # 是否在候选窗口中显示全拼辅助码
 show_qp_helpcode_in_candidate_window = false

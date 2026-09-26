@@ -16,6 +16,11 @@
         "settings"
       ]
     },
+    "openHelpcodeDirectory": {
+      "surfaces": [
+        "settings"
+      ]
+    },
     "openHandwritingPanel": {
       "surfaces": [
         "settings"

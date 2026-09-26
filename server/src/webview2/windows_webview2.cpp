@@ -4,6 +4,7 @@
 #include "webview2/candidate_window_template.h"
 #include "webview2/skin_css_policy.h"
 #include "config/ime_config.h"
+#include "engine/core/data_path.h"
 #include "defines/globals.h"
 #include "utils/common_utils.h"
 #include "utils/ime_utils.h"
@@ -3760,6 +3761,15 @@ HRESULT OnControllerCreatedSettingsWnd(            //
                     {
                         PostSettingsConfig();
                     }
+                    else if (type == "openHelpcodeDirectory")
+                    {
+                        const std::filesystem::path directory =
+                            metasequoia::path_from_utf8(GetCustomHelpcodeDirectory().c_str());
+                        std::error_code ec;
+                        std::filesystem::create_directories(directory, ec);
+                        if (!ec)
+                            ShellExecuteW(hwnd, L"open", directory.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+                    }
                     else if (type == "configUpdate")
                     {
                         try
@@ -4664,6 +4674,14 @@ void PostSettingsWindowState(HWND hwnd)
     ::webviewSettingsWnd->PostWebMessageAsJson(message.c_str());
 }
 
+static nlohmann::json CustomHelpcodeSchemasJson()
+{
+    nlohmann::json schemas = nlohmann::json::array();
+    for (const auto &schema : GetCustomHelpcodeSchemas())
+        schemas.push_back({{"id", schema.schema}, {"name", schema.name}, {"name_en", schema.name_en}});
+    return schemas;
+}
+
 void PostSettingsConfig()
 {
     if (!::webviewSettingsWnd)
@@ -4793,6 +4811,8 @@ void PostSettingsConfig()
             {"show_qp_helpcode_in_candidate_window", GetConfiguredShowQuanpinHelpcodeInCandidateWindow()}}},
           {"statistics",
            {{"enabled", GetConfiguredStatisticsEnabled()}, {"retention", GetConfiguredStatisticsRetention()}}}}}};
+    payload["data"]["helpcode"]["custom_schemas"] = CustomHelpcodeSchemasJson();
+    payload["data"]["helpcode"]["custom_directory"] = GetCustomHelpcodeDirectory();
     const std::wstring message = string_to_wstring(payload.dump());
     ::webviewSettingsWnd->PostWebMessageAsJson(message.c_str());
 }

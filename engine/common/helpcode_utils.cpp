@@ -30,21 +30,144 @@ bool is_han_code_point(std::uint32_t code_point)
            (code_point >= 0x20000 && code_point <= 0x2FA1F) || (code_point >= 0x30000 && code_point <= 0x323AF);
 }
 
+constexpr char kUtf8Bom[] = "\xEF\xBB\xBF";
+
+void strip_line(std::string &line, bool first_line)
+{
+    if (first_line && line.rfind(kUtf8Bom, 0) == 0)
+        line.erase(0, 3);
+    if (!line.empty() && line.back() == '\r')
+        line.pop_back();
+}
+
+std::string trim(const std::string &text)
+{
+    const auto begin = text.find_first_not_of(" \t");
+    if (begin == std::string::npos)
+        return {};
+    const auto end = text.find_last_not_of(" \t");
+    return text.substr(begin, end - begin + 1);
+}
+
+// Empty when the schema is not a well-formed custom schema. The stem must stay a single file name
+// inside the custom directory.
+std::string custom_schema_stem(const std::string &schema)
+{
+    const std::string prefix = HelpcodeUtils::kCustomHelpcodeSchemaPrefix;
+    if (schema.size() <= prefix.size() || schema.compare(0, prefix.size(), prefix) != 0)
+        return {};
+    std::string stem = schema.substr(prefix.size());
+    if (stem.front() == '.' || stem.find_first_of("/\\:*?\"<>|") != std::string::npos)
+        return {};
+    return stem;
+}
+
+std::filesystem::path custom_schema_file(const std::filesystem::path &resources, const std::string &stem)
+{
+    return HelpcodeUtils::custom_helpcode_directory(resources) / metasequoia::path_from_utf8((stem + ".txt").c_str());
+}
+
+bool is_builtin_schema(const std::string &schema)
+{
+    return std::any_of(metasequoia::assets::helpcodes.begin(), metasequoia::assets::helpcodes.end(),
+                       [&](const auto &entry) { return entry.schema == schema; });
+}
+
+// Reads the leading comment block: "# name: 中文名" and "# name_en: English name".
+void read_custom_header(const std::filesystem::path &file, HelpcodeUtils::CustomHelpcodeSchema &schema)
+{
+    std::ifstream input(file);
+    std::string line;
+    bool first_line = true;
+    while (std::getline(input, line))
+    {
+        strip_line(line, first_line);
+        first_line = false;
+        line = trim(line);
+        if (line.empty())
+            continue;
+        if (line.front() != '#')
+            break;
+        const std::string body = trim(line.substr(1));
+        auto separator = body.find(':');
+        auto separator_size = 1;
+        if (const auto full_width = body.find("\xEF\xBC\x9A"); full_width < separator) // U+FF1A '：'
+        {
+            separator = full_width;
+            separator_size = 3;
+        }
+        if (separator == std::string::npos)
+            continue;
+        const std::string key = boost::algorithm::to_lower_copy(trim(body.substr(0, separator)));
+        const std::string value = trim(body.substr(separator + separator_size));
+        if (key == "name")
+            schema.name = value;
+        else if (key == "name_en")
+            schema.name_en = value;
+    }
+}
+
 } // namespace
 
 namespace HelpcodeUtils
 {
+std::filesystem::path custom_helpcode_directory(const std::filesystem::path &resources)
+{
+    return resources / "helpcodes" / "custom";
+}
+
+std::vector<CustomHelpcodeSchema> list_custom_helpcode_schemas(const std::filesystem::path &resources)
+{
+    std::vector<CustomHelpcodeSchema> result;
+    std::error_code error;
+    for (std::filesystem::directory_iterator it(custom_helpcode_directory(resources), error), end; !error && it != end;
+         it.increment(error))
+    {
+        if (!it->is_regular_file(error) ||
+            boost::algorithm::to_lower_copy(metasequoia::path_to_utf8(it->path().extension())) != ".txt")
+            continue;
+        CustomHelpcodeSchema schema;
+        schema.file_stem = metasequoia::path_to_utf8(it->path().stem());
+        schema.schema = kCustomHelpcodeSchemaPrefix + schema.file_stem;
+        if (custom_schema_stem(schema.schema).empty())
+            continue;
+        read_custom_header(it->path(), schema);
+        result.push_back(std::move(schema));
+    }
+    std::sort(result.begin(), result.end(), [](const auto &a, const auto &b) { return a.file_stem < b.file_stem; });
+    return result;
+}
+
+bool is_helpcode_schema_available(const std::filesystem::path &resources, const std::string &schema)
+{
+    if (is_builtin_schema(schema))
+        return true;
+    const std::string stem = custom_schema_stem(schema);
+    std::error_code error;
+    return !stem.empty() && std::filesystem::is_regular_file(custom_schema_file(resources, stem), error);
+}
+
 SharedKeymap load_helpcode_keymap(const std::filesystem::path &resources, const std::string &schema)
 {
+    std::filesystem::path file;
     const auto found = std::find_if(metasequoia::assets::helpcodes.begin(), metasequoia::assets::helpcodes.end(),
                                     [&](const auto &entry) { return entry.schema == schema; });
-    if (found == metasequoia::assets::helpcodes.end())
+    if (found != metasequoia::assets::helpcodes.end())
+        file = resources / found->path;
+    else if (const std::string stem = custom_schema_stem(schema); !stem.empty())
+        file = custom_schema_file(resources, stem);
+    else
         throw std::invalid_argument("Unknown helpcode schema");
     auto result = std::make_shared<Keymap>();
-    std::ifstream input(resources / found->path);
+    std::ifstream input(file);
     std::string line;
+    bool first_line = true;
     while (std::getline(input, line))
     {
+        strip_line(line, first_line);
+        first_line = false;
+        if (!line.empty() && line.front() == '#')
+            continue;
         const auto pos = line.find('=');
         if (pos == std::string::npos || pos == 0)
             continue;
@@ -296,8 +419,8 @@ bool matches_double_helpcodes(const std::string &word, const std::string &help_c
 
 bool is_supported_helpcode_schema(const std::string &schema)
 {
-    return std::any_of(metasequoia::assets::helpcodes.begin(), metasequoia::assets::helpcodes.end(),
-                       [&](const auto &entry) { return entry.schema == schema; });
+    // Syntax only: whether a custom file exists is is_helpcode_schema_available's question.
+    return is_builtin_schema(schema) || !custom_schema_stem(schema).empty();
 }
 
 bool select_helpcode_schema(const std::string &schema)

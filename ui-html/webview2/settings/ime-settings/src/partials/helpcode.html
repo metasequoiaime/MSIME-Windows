@@ -23,7 +23,7 @@
           <div class="dropdown-item" data-value="shouyou2_0">首右2.0</div>
           <div class="dropdown-item" data-value="shouyouplus">首右plus</div>
           <div class="dropdown-item" data-value="xiaohe">小鹤</div>
-          <div class="dropdown-item" data-value="jiajia">加加</div>
+          <div class="dropdown-item" data-value="jiajia">拼音加加</div>
         </div>
       </div>
     </div>
@@ -58,7 +58,7 @@
           <div class="dropdown-item" data-value="shouyou2_0">首右2.0</div>
           <div class="dropdown-item" data-value="shouyouplus">首右plus</div>
           <div class="dropdown-item" data-value="xiaohe">小鹤</div>
-          <div class="dropdown-item" data-value="jiajia">加加</div>
+          <div class="dropdown-item" data-value="jiajia">拼音加加</div>
         </div>
       </div>
     </div>
@@ -69,5 +69,29 @@
         <div class="ftb-toggle-knob"></div>
       </div>
     </div>
+  </div>
+  <!-- 自定义辅助码 -->
+  <div class="section">
+    <div class="section-header">
+      <div>
+        <div class="section-title">自定义辅助码</div>
+        <div class="helpcode-description">
+          把 UTF-8 编码的 <code>.txt</code> 辅助码文件放进下面的文件夹，点击“刷新方案”后即可在上方方案中选择。
+          每行写作 <code>字=辅助码</code>；设置中默认按文件名显示，可在文件开头用
+          <code># name: 中文名</code> 和 <code># name_en: English name</code> 注释指定方案名称。修改正在使用的方案文件后，需要切换一次方案或重启输入法才会生效。
+        </div>
+        <div class="helpcode-description helpcode-custom-directory" id="customHelpcodeDirectory"></div>
+      </div>
+      <div class="helpcode-custom-actions">
+        <button type="button" class="helpcode-custom-button" id="openCustomHelpcodeDirectory">打开目录</button>
+        <button type="button" class="helpcode-custom-button" id="refreshCustomHelpcodes">刷新方案</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="helpcodeToast" class="dict-toast" role="status" aria-live="polite">
+    <div id="helpcodeToastIcon" class="dict-toast-icon" aria-hidden="true"></div>
+    <div id="helpcodeToastMessage" class="dict-toast-message"></div>
+    <button id="helpcodeToastClose" class="dict-toast-close" type="button" aria-label="关闭通知">×</button>
   </div>
 </div>

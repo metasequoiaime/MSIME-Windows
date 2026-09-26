@@ -28,6 +28,7 @@
 #include "defines/defines.h"
 #include "ipc/ipc.h"
 #include "engine/common/helpcode_utils.h"
+#include "engine/core/data_path.h"
 #include "statistics/stats_store.h"
 #include "voice-input/voice_providers.h"
 
@@ -45,6 +46,12 @@ constexpr int kFloatingToolbarFontSizeDefault = 24;
 constexpr int kEnglishMixedInputMinCharsMin = 1;
 constexpr int kEnglishMixedInputMinCharsMax = 8;
 constexpr int kEnglishMixedInputMinCharsDefault = 2;
+
+// A custom schema whose file was removed falls back to the default instead of loading an empty table.
+bool IsHelpcodeSchemaAvailable(const std::string &schema)
+{
+    return HelpcodeUtils::is_helpcode_schema_available(metasequoia::data_directory(), schema);
+}
 
 std::string g_session_backend = "legacy";
 SchemeType g_input_scheme = SchemeType::Shuangpin;
@@ -1012,13 +1019,12 @@ bool LoadImeConfig()
         g_quanpin_helpcode_enabled = tbl["helpcode"]["quanpin_helpcode"].value_or(true);
         const std::string shuangpin_helpcode_schema =
             tbl["helpcode"]["shuangpin_helpcode_schema"].value_or(std::string("lantian"));
-        g_shuangpin_helpcode_schema = HelpcodeUtils::is_supported_helpcode_schema(shuangpin_helpcode_schema)
-                                          ? shuangpin_helpcode_schema
-                                          : "lantian";
+        g_shuangpin_helpcode_schema =
+            IsHelpcodeSchemaAvailable(shuangpin_helpcode_schema) ? shuangpin_helpcode_schema : "lantian";
         const std::string quanpin_helpcode_schema =
             tbl["helpcode"]["quanpin_helpcode_schema"].value_or(std::string("lantian"));
         g_quanpin_helpcode_schema =
-            HelpcodeUtils::is_supported_helpcode_schema(quanpin_helpcode_schema) ? quanpin_helpcode_schema : "lantian";
+            IsHelpcodeSchemaAvailable(quanpin_helpcode_schema) ? quanpin_helpcode_schema : "lantian";
         g_show_shuangpin_helpcode_in_candidate_window =
             tbl["helpcode"]["show_sp_helpcode_in_candidate_window"].value_or(true);
         g_show_quanpin_helpcode_in_candidate_window =
@@ -2335,7 +2341,7 @@ const std::string &GetConfiguredShuangpinHelpcodeSchema()
 
 bool SetConfiguredShuangpinHelpcodeSchema(const std::string &schema)
 {
-    if (!HelpcodeUtils::is_supported_helpcode_schema(schema))
+    if (!IsHelpcodeSchemaAvailable(schema))
         return false;
     if (!WriteConfiguredValue("helpcode", "shuangpin_helpcode_schema", EscapeTomlBasicString(schema)))
         return false;
@@ -2469,12 +2475,30 @@ const std::string &GetConfiguredQuanpinHelpcodeSchema()
 
 bool SetConfiguredQuanpinHelpcodeSchema(const std::string &schema)
 {
-    if (!HelpcodeUtils::is_supported_helpcode_schema(schema))
+    if (!IsHelpcodeSchemaAvailable(schema))
         return false;
     if (!WriteConfiguredValue("helpcode", "quanpin_helpcode_schema", EscapeTomlBasicString(schema)))
         return false;
     g_quanpin_helpcode_schema = schema;
     return true;
+}
+
+std::vector<CustomHelpcodeSchemaInfo> GetCustomHelpcodeSchemas()
+{
+    std::vector<CustomHelpcodeSchemaInfo> result;
+    for (const auto &schema : HelpcodeUtils::list_custom_helpcode_schemas(metasequoia::data_directory()))
+    {
+        const std::string &name = schema.name.empty() ? schema.name_en : schema.name;
+        const std::string &name_en = schema.name_en.empty() ? schema.name : schema.name_en;
+        result.push_back(
+            {schema.schema, name.empty() ? schema.file_stem : name, name_en.empty() ? schema.file_stem : name_en});
+    }
+    return result;
+}
+
+std::string GetCustomHelpcodeDirectory()
+{
+    return metasequoia::path_to_utf8(HelpcodeUtils::custom_helpcode_directory(metasequoia::data_directory()));
 }
 
 bool GetConfiguredShowShuangpinHelpcodeInCandidateWindow()
