@@ -242,6 +242,17 @@ metasequoia::FuzzyPinyinOptions GetConfiguredFuzzyPinyinRuleStates();
 bool SetConfiguredFuzzyPinyinRule(const std::string &key, bool enabled);
 const std::string &GetConfiguredQuanpinHelpcodeSchema();
 bool SetConfiguredQuanpinHelpcodeSchema(const std::string &schema);
+// User helpcode tables under <data>/helpcodes/custom, rescanned on every call so a file dropped
+// there shows up the next time the settings page asks. Names fall back to the file stem.
+struct CustomHelpcodeSchemaInfo
+{
+    std::string schema;
+    std::string name;
+    std::string name_en;
+};
+std::vector<CustomHelpcodeSchemaInfo> GetCustomHelpcodeSchemas();
+// UTF-8 path of the folder GetCustomHelpcodeSchemas scans.
+std::string GetCustomHelpcodeDirectory();
 bool GetConfiguredShowShuangpinHelpcodeInCandidateWindow();
 bool SetConfiguredShowShuangpinHelpcodeInCandidateWindow(bool enabled);
 bool GetConfiguredShowQuanpinHelpcodeInCandidateWindow();
