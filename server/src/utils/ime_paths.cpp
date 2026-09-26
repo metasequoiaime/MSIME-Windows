@@ -144,6 +144,82 @@ void ClearReadOnlyAttribute(const std::wstring &path)
     SetFileAttributesW(path.c_str(), attributes & ~FILE_ATTRIBUTE_READONLY);
 }
 
+bool GrantsFullAccess(ACCESS_MASK mask)
+{
+    return (mask & GENERIC_ALL) != 0 || (mask & FILE_ALL_ACCESS) == FILE_ALL_ACCESS;
+}
+
+// SetNamedSecurityInfoW 写入可继承 ACE 时会把它传播到整棵子树，WebView2 用户数据目录下有成百上千个
+// 文件，每次启动都重写一遍要花上百毫秒。已经授过权（安装器或上次启动）就不再写。
+bool HasUsersFullAccessAce(PACL dacl, PSID users_sid)
+{
+    ACL_SIZE_INFORMATION info{};
+    if (!dacl || !GetAclInformation(dacl, &info, sizeof(info), AclSizeInformation))
+    {
+        return false;
+    }
+    bool effective = false;
+    bool inheritable = false;
+    for (DWORD index = 0; index < info.AceCount; ++index)
+    {
+        void *raw = nullptr;
+        if (!GetAce(dacl, index, &raw))
+        {
+            continue;
+        }
+        const auto *header = static_cast<const ACE_HEADER *>(raw);
+        if (header->AceType != ACCESS_ALLOWED_ACE_TYPE)
+        {
+            continue;
+        }
+        const auto *ace = static_cast<const ACCESS_ALLOWED_ACE *>(raw);
+        if (!EqualSid(const_cast<DWORD *>(&ace->SidStart), users_sid) || !GrantsFullAccess(ace->Mask))
+        {
+            continue;
+        }
+        if ((header->AceFlags & INHERIT_ONLY_ACE) == 0)
+        {
+            effective = true;
+        }
+        if ((header->AceFlags & (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE)) ==
+            (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE))
+        {
+            inheritable = true;
+        }
+    }
+    return effective && inheritable;
+}
+
+bool HasMediumNoWriteUpLabel(const std::wstring &path, PSID medium_sid)
+{
+    PACL sacl = nullptr;
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    if (GetNamedSecurityInfoW(path.c_str(), SE_FILE_OBJECT, LABEL_SECURITY_INFORMATION, nullptr, nullptr, nullptr,
+                              &sacl, &descriptor) != ERROR_SUCCESS)
+    {
+        return false;
+    }
+    bool found = false;
+    ACL_SIZE_INFORMATION info{};
+    if (sacl && GetAclInformation(sacl, &info, sizeof(info), AclSizeInformation))
+    {
+        for (DWORD index = 0; index < info.AceCount && !found; ++index)
+        {
+            void *raw = nullptr;
+            if (!GetAce(sacl, index, &raw) ||
+                static_cast<const ACE_HEADER *>(raw)->AceType != SYSTEM_MANDATORY_LABEL_ACE_TYPE)
+            {
+                continue;
+            }
+            const auto *ace = static_cast<const SYSTEM_MANDATORY_LABEL_ACE *>(raw);
+            found = EqualSid(const_cast<DWORD *>(&ace->SidStart), medium_sid) &&
+                    (ace->Mask & SYSTEM_MANDATORY_LABEL_NO_WRITE_UP) != 0;
+        }
+    }
+    LocalFree(descriptor);
+    return found;
+}
+
 void ApplyUsersModifyAndMediumIntegrity(const std::wstring &path)
 {
     PSID users_sid = nullptr;
@@ -163,7 +239,8 @@ void ApplyUsersModifyAndMediumIntegrity(const std::wstring &path)
         if (GetNamedSecurityInfoW(path.c_str(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr, &old_dacl,
                                   nullptr, &descriptor) == ERROR_SUCCESS)
         {
-            if (SetEntriesInAclW(1, &access, old_dacl, &new_dacl) == ERROR_SUCCESS)
+            if (!HasUsersFullAccessAce(old_dacl, users_sid) &&
+                SetEntriesInAclW(1, &access, old_dacl, &new_dacl) == ERROR_SUCCESS)
             {
                 SetNamedSecurityInfoW(const_cast<wchar_t *>(path.c_str()), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
                                       nullptr, nullptr, new_dacl, nullptr);
@@ -177,6 +254,11 @@ void ApplyUsersModifyAndMediumIntegrity(const std::wstring &path)
     PSID medium_sid = nullptr;
     if (!ConvertStringSidToSidW(L"S-1-16-8192", &medium_sid))
     {
+        return;
+    }
+    if (HasMediumNoWriteUpLabel(path, medium_sid))
+    {
+        LocalFree(medium_sid);
         return;
     }
     const DWORD sacl_size = sizeof(ACL) + GetLengthSid(medium_sid) + sizeof(SYSTEM_MANDATORY_LABEL_ACE) + 32;

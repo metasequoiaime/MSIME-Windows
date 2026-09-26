@@ -58,6 +58,7 @@ function applyConfigData(data: Record<string, any>, target?: string): void {
           candidate_fixed_badge: data?.appearance?.candidate_fixed_badge,
           candidate_fixed_badge_style: data?.appearance?.candidate_fixed_badge_style,
           ui_backend: data?.appearance?.ui_backend,
+          settings_window_linger: data?.appearance?.settings_window_linger,
           system_fonts: data?.appearance?.system_fonts
         }
       );

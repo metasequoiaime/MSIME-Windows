@@ -36,6 +36,7 @@ export type CandidateAppearanceConfig = {
   candidate_fixed_badge?: boolean;
   candidate_fixed_badge_style?: string;
   ui_backend?: string;
+  settings_window_linger?: string;
   system_fonts?: string[];
 };
 
@@ -508,6 +509,7 @@ export function applyAppearanceConfig(
   }
   applyDropdownValue('candFixedBadgeStyleBtn', 'candFixedBadgeStyleMenu', candidateAppearance?.candidate_fixed_badge_style);
   applyDropdownValue('uiBackendBtn', 'uiBackendMenu', candidateAppearance?.ui_backend);
+  applyDropdownValue('settingsLingerBtn', 'settingsLingerMenu', candidateAppearance?.settings_window_linger);
   populateFontMenus(candidateAppearance?.system_fonts);
   renderFallbackFonts();
   syncColorControls(candidateAppearance?.cand_text_color);
@@ -576,6 +578,7 @@ export async function setupAppearance() {
 
   setupDropdownMenu('uiBackendBtn', 'uiBackendMenu', '', true, 'appearance.ui_backend');
   setupRestartServerButton();
+  setupDropdownMenu('settingsLingerBtn', 'settingsLingerMenu', '', true, 'appearance.settings_window_linger');
 
   // 候选项排列方式
   setupDropdownMenu('arrangeBtn', 'arrangeMenu', 'changeCandidateArrange');

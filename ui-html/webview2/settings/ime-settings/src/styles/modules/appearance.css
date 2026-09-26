@@ -118,6 +118,19 @@
 }
 
 /**/
+/* 设置窗口后台驻留：同上，按最长的“关闭后立即退出”定宽，菜单与按钮等宽 */
+/**/
+#settingsLingerBtn {
+  min-width: 150px;
+}
+
+#settingsLingerMenu {
+  left: 0;
+  right: 0;
+  min-width: 0;
+}
+
+/**/
 /* 重启输入法进程 */
 /**/
 .restart-server-button {

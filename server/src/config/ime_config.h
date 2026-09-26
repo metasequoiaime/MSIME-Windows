@@ -376,6 +376,10 @@ bool GetConfiguredCandidateFixedBadge();
 bool SetConfiguredCandidateFixedBadge(bool enabled);
 const std::string &GetConfiguredCandidateFixedBadgeStyle();
 bool SetConfiguredCandidateFixedBadgeStyle(const std::string &style);
+// 设置窗口关闭后隐藏驻留多久再退出进程：
+// "off" | "1m" | "5m" | "10m" | "30m" | "60m" | "forever"，默认 "10m"。
+const std::string &GetConfiguredSettingsWindowLinger();
+bool SetConfiguredSettingsWindowLinger(const std::string &linger);
 // "d2d" | "webview2" — candidate, floating toolbar, and tray menu renderer.
 // Changing this writes config immediately; the process snapshot does not switch
 // until the IME server is restarted.
