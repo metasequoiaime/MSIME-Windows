@@ -11,7 +11,7 @@ export type CandidateSkin = string;
 
 type CandidateColors = {
   accent?: string; selected?: string; hover?: string; surface?: string;
-  border?: string; text?: string; number?: string; showSelectedBar?: boolean;
+  border?: string; text?: string; number?: string; translation?: string; showSelectedBar?: boolean;
 };
 type ExternalSkin = {
   id: string; name: string; version: string; author?: string; description?: string;
@@ -139,6 +139,8 @@ function candidatePreviewCss(skin: ExternalSkin): string {
     const text = skinColor(colors.text);
     let css = '';
     const variables = [surface && `--cand-bg: ${surface}`, border && `--cand-border: ${border}`,
+    const number = skinColor(colors.number);
+    const translation = skinColor(colors.translation);
       text && `--cand-text: ${text}`].filter(Boolean).join('; ');
     if (variables) {
       const theme = scope ? 'light' : 'dark';
@@ -153,6 +155,9 @@ function candidatePreviewCss(skin: ExternalSkin): string {
     if (text) css += `${prefix}.container { color: ${text}; }\n`;
     if (colors.showSelectedBar === false) css += `${prefix}.first::before { display: none; }\n`;
     return css;
+    if (number) css += `${prefix}.num, ${prefix}.cand-no { color: ${number}; }\n`;
+    // Mirrors the candidate window: an explicit translation colour is used as-is instead of the inherited text colour at opacity .62.
+    if (translation) css += `${prefix}.cand-translation { color: ${translation}; opacity: 1; }\n`;
   };
   let css = '';
   if ((skin.decorationTopDip || 0) > 0) {

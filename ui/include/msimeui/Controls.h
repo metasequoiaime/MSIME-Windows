@@ -559,6 +559,10 @@ class CandidateList : public Visual
         D2D1_COLOR_F labelColor = D2D1::ColorF(0xE9E8E8, 0.616f);
         D2D1_COLOR_F textColor = D2D1::ColorF(0xE9E8E8);
         D2D1_COLOR_F annotationColor = D2D1::ColorF(0xE9E8E8);
+        // Alpha 0 derives the translation color from the annotation color
+        // (including the selected-row override) at 62% opacity, like the
+        // CSS default. Otherwise it is drawn as-is on every row.
+        D2D1_COLOR_F translationColor = D2D1::ColorF(0, 0.0f);
     };
 
     using SelectionChangedHandler = std::function<void(size_t selectedIndex)>;

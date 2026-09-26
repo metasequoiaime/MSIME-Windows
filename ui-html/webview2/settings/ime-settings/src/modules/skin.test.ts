@@ -69,3 +69,21 @@ it('applies built-in and custom candidate skins to the caret preview consumer', 
   expect(generatedCss).toContain(':scope.candidate.theme-light { --cand-bg: #f0f1f2; --cand-border: #d0d1d2; --cand-text: #202122; }');
   expect(generatedCss).toContain(':scope.caret-state-preview-host.theme-light { --cand-bg: #f0f1f2; --cand-border: #d0d1d2; --cand-text: #202122; }');
 });
+
+it('previews number and translation colours from the skin manifest', () => {
+  applyCandidateSkinCatalog([
+    {
+      id: 'custom-gloss', name: 'Custom Gloss', version: '1', base: 'fluent', layouts: ['horizontal'],
+      themes: ['dark', 'light'], compatible: true,
+      candidate: {
+        dark: { number: '#8899aa', translation: '#e6a817' },
+        light: { translation: 'red; } body { display: none' }
+      }
+    }
+  ], [], '', true, 1);
+  applyCandidateSkin('custom-gloss');
+
+  expect(generatedCss).toContain('.num, .cand-no { color: #8899aa; }');
+  expect(generatedCss).toContain('.cand-translation { color: #e6a817; opacity: 1; }');
+  expect(generatedCss).not.toContain('display: none');
+});

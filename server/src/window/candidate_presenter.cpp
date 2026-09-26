@@ -88,6 +88,8 @@ struct CandSkinTokens
     D2D1_COLOR_F selected = ParseCssColor("#3e3e3eb9", ColorFromRgb(0x3E3E3E, 0.725f));
     D2D1_COLOR_F hover = ColorFromRgb(0x414141);
     D2D1_COLOR_F accent = ColorFromRgb(0x6B69D6);
+    // Alpha 0: follow the candidate text at the CSS opacity .62 (see CandidateList::Appearance).
+    D2D1_COLOR_F translation = D2D1::ColorF(0, 0.0f);
     float radius = 6.0f;
     float borderWidth = 1.5f;
     float containerPad = 5.0f;
@@ -131,6 +133,10 @@ void ApplyPackageColors(const CandidateSkinCatalog::CandidateColors &colors, Can
     if (!colors.number.empty())
     {
         tokens.number = ParseCssColor(colors.number, tokens.number);
+    }
+    if (!colors.translation.empty())
+    {
+        tokens.translation = ParseCssColor(colors.translation, tokens.translation);
     }
     if (colors.showSelectedBar.has_value())
     {
@@ -528,6 +534,7 @@ void CandidatePresenter::ApplySkin()
     appearance.textColor = theme.textPrimary;
     appearance.labelColor = tokens.number;
     appearance.annotationColor = theme.textPrimary;
+    appearance.translationColor = tokens.translation;
     appearance.rowFillSelected = tokens.selected;
     appearance.rowFillHover = tokens.hover;
     appearance.rowFillPressed = tokens.selected;

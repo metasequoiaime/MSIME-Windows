@@ -139,7 +139,8 @@ bool ReadColors(const toml::table *table, CandidateColors &out)
         (table->contains("surface") && !ReadString(*table, "surface", out.surface, 80, false)) ||
         (table->contains("border") && !ReadString(*table, "border", out.border, 80, false)) ||
         (table->contains("text") && !ReadString(*table, "text", out.text, 80, false)) ||
-        (table->contains("number") && !ReadString(*table, "number", out.number, 80, false)))
+        (table->contains("number") && !ReadString(*table, "number", out.number, 80, false)) ||
+        (table->contains("translation") && !ReadString(*table, "translation", out.translation, 80, false)))
     {
         return false;
     }
