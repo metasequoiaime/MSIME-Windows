@@ -265,6 +265,28 @@ function applyConfigData(data: Record<string, any>, target?: string): void {
       data.helpcode.show_sp_helpcode_in_candidate_window
     );
   }
+  // 自定义辅助码由 Server 扫描 helpcodes/custom 得到，追加在内置方案之后；先建好菜单项再回填选中值。
+  if (Array.isArray(data?.helpcode?.custom_schemas)) {
+    for (const menuId of ['shuangpinHelpcodeSchemeMenu', 'quanpinHelpcodeSchemeMenu']) {
+      const menu = findElement(menuId);
+      if (!menu) continue;
+      menu.querySelectorAll('.dropdown-item[data-custom]').forEach((item) => item.remove());
+      for (const schema of data.helpcode.custom_schemas) {
+        if (typeof schema?.id !== 'string' || typeof schema?.name !== 'string') continue;
+        const item = document.createElement('div');
+        item.className = 'dropdown-item';
+        item.dataset.value = schema.id;
+        item.dataset.custom = 'true';
+        item.textContent = schema.name;
+        if (typeof schema.name_en === 'string' && schema.name_en !== schema.name) item.title = schema.name_en;
+        menu.appendChild(item);
+      }
+    }
+  }
+  if (typeof data?.helpcode?.custom_directory === 'string') {
+    const directory = findElement('customHelpcodeDirectory');
+    if (directory) directory.textContent = `文件夹：${data.helpcode.custom_directory}`;
+  }
   if (typeof data?.helpcode?.shuangpin_helpcode === 'boolean') {
     applyToggleState('shuangpinHelpcodeToggleBtn', data.helpcode.shuangpin_helpcode);
   }
