@@ -799,9 +799,9 @@ bool SharedMemoryAvailable()
 
 bool NegotiateMainPipeClient(const FanyImeNamedpipeData &hello, uint64_t registration_id)
 {
-    const auto protocol =
-        FanyImeProtocol::Negotiate(hello, FanyImeProtocol::Capabilities | FanyImeProtocol::CharacterSetShortcut |
-                                              FanyImeProtocol::CompositionRestore);
+    const auto protocol = FanyImeProtocol::Negotiate(
+        hello, FanyImeProtocol::Capabilities | FanyImeProtocol::CharacterSetShortcut |
+                   FanyImeProtocol::CompositionRestore | FanyImeProtocol::CaretStateIndicator);
     std::lock_guard lock(g_pipe_clients_mutex);
     auto it = g_pipe_clients.find(hello.client_id);
     if (it == g_pipe_clients.end() || registration_id == 0 || it->second.main_registration_id != registration_id)
@@ -832,6 +832,16 @@ bool ClientNegotiatedCompositionRestore(uint64_t client_id)
     const auto it = g_pipe_clients.find(client_id);
     return it != g_pipe_clients.end() && !it->second.protocol.legacy &&
            (it->second.protocol.capabilities & FanyImeProtocol::CompositionRestore) != 0;
+}
+
+bool ClientNegotiatedCaretStateIndicator(uint64_t client_id)
+{
+    // Legacy clients are excluded for the same reason as above: their key
+    // packets carry the struct-default point, not a resolved caret anchor.
+    std::lock_guard lock(g_pipe_clients_mutex);
+    const auto it = g_pipe_clients.find(client_id);
+    return it != g_pipe_clients.end() && !it->second.protocol.legacy &&
+           (it->second.protocol.capabilities & FanyImeProtocol::CaretStateIndicator) != 0;
 }
 
 uint64_t RegisterToTsfPipeClient(uint64_t client_id, HANDLE pipe)

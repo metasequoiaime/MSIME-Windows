@@ -26,8 +26,32 @@ int main()
     FanyImeNamedpipeData legacy{};
     std::memcpy(&legacy, bytes.data(), bytes.size());
     CHECK(legacy.client_id == 7);
+    CHECK(FanyImePipeEventType::HideCaretState == 16);
+    CHECK(FanyImePipeEventType::HideCaretState != FanyImePipeEventType::HideCandidateWnd);
+    CHECK(!FanyImePipeEventType::IsRouteDeactivation(FanyImePipeEventType::HideCaretState));
+    CHECK(FanyImeProtocol::CaretStateIndicator == (1u << 5));
+    CHECK((FanyImeProtocol::CaretStateIndicator & FanyImeProtocol::RequiredCapabilities) == 0);
     CHECK(FanyImeProtocol::Negotiate(legacy).legacy);
     CHECK(FanyImeProtocol::Negotiate(legacy).accepted);
+
+    const auto capsOffSnapshot = FanyImePipeFlags::EncodeImeSwitchCapsLockSnapshot(false);
+    const auto capsOnSnapshot = FanyImePipeFlags::EncodeImeSwitchCapsLockSnapshot(true);
+    CHECK((FanyImePipeFlags::ImeSwitchCapsSnapshotPresent & FanyImePipeFlags::UiLess) == 0);
+    CHECK((FanyImePipeFlags::ImeSwitchCapsSnapshotEnabled & FanyImePipeFlags::UiLess) == 0);
+    CHECK((FanyImePipeFlags::ImeSwitchCapsSnapshotPresent & 0xffu) == 0);
+    CHECK((FanyImePipeFlags::ImeSwitchCapsSnapshotEnabled & 0xffu) == 0);
+    CHECK(FanyImePipeFlags::HasImeSwitchCapsLockSnapshot(capsOffSnapshot));
+    CHECK(!FanyImePipeFlags::ImeSwitchCapsLockSnapshotEnabled(capsOffSnapshot));
+    CHECK(FanyImePipeFlags::HasImeSwitchCapsLockSnapshot(capsOnSnapshot));
+    CHECK(FanyImePipeFlags::ImeSwitchCapsLockSnapshotEnabled(capsOnSnapshot));
+    CHECK(!FanyImePipeFlags::HasImeSwitchCapsLockSnapshot(0)); // old DLL packet
+    CHECK(!FanyImePipeFlags::ImeSwitchCapsLockSnapshotEnabled(FanyImePipeFlags::ImeSwitchCapsSnapshotEnabled));
+    CHECK(FanyImePipeFlags::DecodeImeSwitchCapsLockSnapshot(capsOffSnapshot).has_value());
+    CHECK(!*FanyImePipeFlags::DecodeImeSwitchCapsLockSnapshot(capsOffSnapshot));
+    CHECK(*FanyImePipeFlags::DecodeImeSwitchCapsLockSnapshot(capsOnSnapshot));
+    CHECK(!FanyImePipeFlags::DecodeImeSwitchCapsLockSnapshot(0).has_value());
+    CHECK(
+        !FanyImePipeFlags::DecodeImeSwitchCapsLockSnapshot(FanyImePipeFlags::ImeSwitchCapsSnapshotEnabled).has_value());
 
     auto hello = FanyImeProtocol::Hello(7, 19);
     auto result = FanyImeProtocol::Negotiate(hello);

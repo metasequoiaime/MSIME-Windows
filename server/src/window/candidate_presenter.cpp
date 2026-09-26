@@ -10,6 +10,7 @@
 #include "utils/common_utils.h"
 #include "utils/ime_utils.h"
 #include "utils/window_utils.h"
+#include "window/candidate_skin_palette.h"
 #include "window/candidate_wheel_paging.h"
 #include "window/ime_windows.h"
 
@@ -43,20 +44,12 @@ namespace
 {
 D2D1_COLOR_F ColorFromRgb(UINT rgb, float alpha = 1.0f)
 {
-    return D2D1::ColorF(((rgb >> 16) & 0xFF) / 255.0f, ((rgb >> 8) & 0xFF) / 255.0f, (rgb & 0xFF) / 255.0f, alpha);
+    return CandidateColorFromRgb(rgb, alpha);
 }
 
-std::string TrimCopy(std::string text)
+D2D1_COLOR_F ParseCssColor(const std::string &text, D2D1_COLOR_F fallback)
 {
-    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))
-    {
-        text.erase(text.begin());
-    }
-    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())))
-    {
-        text.pop_back();
-    }
-    return text;
+    return ParseCandidateCssColor(text, fallback);
 }
 
 int AlignHostPixels(int value)
@@ -86,77 +79,11 @@ HalfScreenDipLimits ApplyScaleToHalfScreenLimits(POINT pt, FLOAT scale)
     return limits;
 }
 
-D2D1_COLOR_F ParseCssColor(const std::string &text, D2D1_COLOR_F fallback)
-{
-    std::string value = TrimCopy(text);
-    if (value.empty() || value == "auto" || value == "none" || value == "transparent")
-    {
-        return value == "transparent" ? D2D1::ColorF(0, 0.0f) : fallback;
-    }
-    if (value.rfind("rgba(", 0) == 0 || value.rfind("rgb(", 0) == 0)
-    {
-        const auto open = value.find('(');
-        const auto close = value.rfind(')');
-        if (open != std::string::npos && close != std::string::npos && close > open)
-        {
-            std::string inner = value.substr(open + 1, close - open - 1);
-            for (char &ch : inner)
-            {
-                if (ch == ',')
-                {
-                    ch = ' ';
-                }
-            }
-            std::istringstream stream(inner);
-            float r = 0;
-            float g = 0;
-            float b = 0;
-            float a = 1.0f;
-            if (stream >> r >> g >> b)
-            {
-                stream >> a;
-                return D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, a);
-            }
-        }
-        return fallback;
-    }
-    if (value[0] == '#')
-    {
-        value.erase(value.begin());
-    }
-    auto hexByte = [](const std::string &hex) { return static_cast<int>(std::stoul(hex, nullptr, 16)); };
-    try
-    {
-        if (value.size() == 3)
-        {
-            const int r = hexByte(std::string(2, value[0]));
-            const int g = hexByte(std::string(2, value[1]));
-            const int b = hexByte(std::string(2, value[2]));
-            return D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, 1.0f);
-        }
-        if (value.size() == 6)
-        {
-            return ColorFromRgb(static_cast<UINT>(std::stoul(value, nullptr, 16)));
-        }
-        if (value.size() == 8)
-        {
-            const unsigned long packed = std::stoul(value, nullptr, 16);
-            const UINT rgb = static_cast<UINT>((packed >> 8) & 0xFFFFFFu);
-            const float alpha = static_cast<float>(packed & 0xFFu) / 255.0f;
-            return ColorFromRgb(rgb, alpha);
-        }
-    }
-    catch (...)
-    {
-    }
-    return fallback;
-}
-
 struct CandSkinTokens
 {
-    D2D1_COLOR_F surface = ColorFromRgb(0x202020);
-    D2D1_COLOR_F border = ParseCssColor("#9b9b9b2e", ColorFromRgb(0x3A3A3A, 0.18f));
-    D2D1_COLOR_F text = ParseCssColor("#e9e8e8", ColorFromRgb(0xE9E8E8));
+    D2D1_COLOR_F surface{};
+    D2D1_COLOR_F border{};
+    D2D1_COLOR_F text{};
     D2D1_COLOR_F number = ParseCssColor("#e9e8e89d", ColorFromRgb(0xE9E8E8, 0.616f));
     D2D1_COLOR_F selected = ParseCssColor("#3e3e3eb9", ColorFromRgb(0x3E3E3E, 0.725f));
     D2D1_COLOR_F hover = ColorFromRgb(0x414141);
@@ -191,18 +118,6 @@ void ApplyPackageColors(const CandidateSkinCatalog::CandidateColors &colors, Can
     if (!colors.hover.empty())
     {
         tokens.hover = ParseCssColor(colors.hover, tokens.hover);
-    }
-    if (!colors.surface.empty())
-    {
-        tokens.surface = ParseCssColor(colors.surface, tokens.surface);
-    }
-    if (!colors.border.empty())
-    {
-        tokens.border = ParseCssColor(colors.border, tokens.border);
-    }
-    if (!colors.text.empty())
-    {
-        tokens.text = ParseCssColor(colors.text, tokens.text);
     }
     if (!colors.number.empty())
     {
@@ -355,9 +270,6 @@ void CandidatePresenter::ApplySkin()
     CandSkinTokens tokens;
     if (candLight)
     {
-        tokens.surface = ColorFromRgb(0xFFFFFF);
-        tokens.border = D2D1::ColorF(0, 0.12f);
-        tokens.text = ColorFromRgb(0x1A1A1A);
         tokens.number = D2D1::ColorF(26.0f / 255.0f, 26.0f / 255.0f, 26.0f / 255.0f, 0.55f);
         tokens.selected = ColorFromRgb(0xE8E8E8);
         tokens.hover = ColorFromRgb(0xECECEC);
@@ -380,10 +292,7 @@ void CandidatePresenter::ApplySkin()
         tokens.rowLabelSelected = ColorFromRgb(0xFFFFFF);
         if (candLight)
         {
-            tokens.surface = ColorFromRgb(0xF7F7F7);
-            tokens.border = ColorFromRgb(0xDEDEDE);
             tokens.hover = D2D1::ColorF(7.0f / 255.0f, 193.0f / 255.0f, 96.0f / 255.0f, 0.14f);
-            tokens.text = ColorFromRgb(0x333333);
             tokens.number = ColorFromRgb(0x757575);
             tokens.menuFill = ColorFromRgb(0xFFFFFF);
             tokens.menuBorder = ColorFromRgb(0xD9D9D9);
@@ -392,10 +301,7 @@ void CandidatePresenter::ApplySkin()
         }
         else
         {
-            tokens.surface = ColorFromRgb(0x151515);
-            tokens.border = ColorFromRgb(0x292929);
             tokens.hover = D2D1::ColorF(7.0f / 255.0f, 193.0f / 255.0f, 96.0f / 255.0f, 0.32f);
-            tokens.text = ColorFromRgb(0xB7B7B7);
             tokens.number = ColorFromRgb(0x858585);
             tokens.menuFill = ColorFromRgb(0x1F1F1F);
             tokens.menuBorder = ColorFromRgb(0x343434);
@@ -417,11 +323,9 @@ void CandidatePresenter::ApplySkin()
         tokens.rowLabelSelected = ColorFromRgb(0xFFFFFF);
         if (candLight)
         {
-            tokens.surface = ColorFromRgb(0xF4F5F3);
             tokens.accent = ColorFromRgb(0x58B980);
             tokens.selected = ColorFromRgb(0x58B980);
             tokens.hover = D2D1::ColorF(88.0f / 255.0f, 185.0f / 255.0f, 128.0f / 255.0f, 0.16f);
-            tokens.text = ColorFromRgb(0x343936);
             tokens.number = ColorFromRgb(0x686F6A);
             tokens.menuFill = ColorFromRgb(0xFBFCFA);
             tokens.menuBorder = ColorFromRgb(0xD8DED9);
@@ -430,11 +334,9 @@ void CandidatePresenter::ApplySkin()
         }
         else
         {
-            tokens.surface = ColorFromRgb(0x2D2F2E);
             tokens.accent = ColorFromRgb(0x65C98D);
             tokens.selected = ColorFromRgb(0x65C98D);
             tokens.hover = D2D1::ColorF(101.0f / 255.0f, 201.0f / 255.0f, 141.0f / 255.0f, 0.22f);
-            tokens.text = ColorFromRgb(0xD8DBD8);
             tokens.number = ColorFromRgb(0xA6ABA7);
             tokens.menuFill = ColorFromRgb(0x343635);
             tokens.menuBorder = ColorFromRgb(0x454845);
@@ -452,11 +354,8 @@ void CandidatePresenter::ApplySkin()
         tokens.showSelectedBar = false;
         if (candLight)
         {
-            tokens.surface = ColorFromRgb(0xFBFBFC);
-            tokens.border = ColorFromRgb(0xE2E5E9);
             tokens.accent = ColorFromRgb(0x5F6B7A);
             tokens.hover = D2D1::ColorF(31.0f / 255.0f, 41.0f / 255.0f, 55.0f / 255.0f, 0.055f);
-            tokens.text = ColorFromRgb(0x586476);
             tokens.number = ColorFromRgb(0x8993A1);
             tokens.rowTextSelected = ColorFromRgb(0x111827);
             tokens.rowLabelSelected = ColorFromRgb(0x111827);
@@ -467,11 +366,8 @@ void CandidatePresenter::ApplySkin()
         }
         else
         {
-            tokens.surface = ColorFromRgb(0x1C1F23);
-            tokens.border = ColorFromRgb(0x30353B);
             tokens.accent = ColorFromRgb(0x8993A0);
             tokens.hover = D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.055f);
-            tokens.text = ColorFromRgb(0xAEB6C2);
             tokens.number = ColorFromRgb(0x707987);
             tokens.rowTextSelected = ColorFromRgb(0xF1F3F5);
             tokens.rowLabelSelected = ColorFromRgb(0xF1F3F5);
@@ -492,6 +388,13 @@ void CandidatePresenter::ApplySkin()
             ApplyPackageColors(candLight ? package->light : package->dark, tokens);
         }
     }
+    const CandidateSkinCatalog::CandidateColors *packageColors =
+        package ? &(candLight ? package->light : package->dark) : nullptr;
+    const CandidateSkinPalette palette = ResolveCandidateSkinPalette(
+        skinId, candLight, GetConfiguredCandidateTextColor(), packageColors, package ? package->base : std::string{});
+    tokens.surface = palette.surface;
+    tokens.border = palette.border;
+    tokens.text = palette.text;
     // 阴影跟皮肤走，与 WebView2 端同一参照：四套内置皮肤与自定义包共用的皮肤 CSS
     // （ui-html/webview2/candwnd/skins/*/horizontal_*.css）带同一对 box-shadow——
     // light `8px 10px 24px rgba(0,0,0,.18), 2px 3px 8px rgba(0,0,0,.10)`，dark α .34/.22；
@@ -523,7 +426,7 @@ void CandidatePresenter::ApplySkin()
     theme.uiFontFamily = theme.textInputFontFamily;
     theme.surface = tokens.surface;
     theme.border = tokens.border;
-    theme.textPrimary = ParseCssColor(GetConfiguredCandidateTextColor(), tokens.text);
+    theme.textPrimary = palette.text;
     theme.textSecondary = tokens.number;
     theme.primary = tokens.accent;
     theme.windowBackground = D2D1::ColorF(0, 0.0f);

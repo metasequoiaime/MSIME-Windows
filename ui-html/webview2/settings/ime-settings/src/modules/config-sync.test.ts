@@ -15,6 +15,28 @@ vi.mock('./shared', () => ({
   setFuzzyRuleOptionsDisabled: vi.fn(),
   setSmartPunctuationOptionsDisabled: vi.fn()
 }));
+// The snapshot handler hands sections to these modules through fire-and-forget
+// dynamic imports. This test covers only the backfill guard, so keep their DOM
+// side effects out of it with no-op consumers.
+vi.mock('./appearance', () => ({ applyAppearanceConfig: vi.fn(), updateCandidatePreviewHelpcode: vi.fn() }));
+vi.mock('./skin', () => ({ applyCandidateSkin: vi.fn(), applyCandidateSkinCatalog: vi.fn() }));
+vi.mock('./input', () => ({
+  applyCustomTranslationConfig: vi.fn(),
+  applyFrequencyConfig: vi.fn(),
+  applyInputConfig: vi.fn(),
+  applyNiuTransConfig: vi.fn(),
+  applyTencentTmtConfig: vi.fn(),
+  applyZhEnMixedInputConfig: vi.fn()
+}));
+vi.mock('./voice', () => ({ applyVoiceConfig: vi.fn() }));
+vi.mock('./ai-settings', () => ({ applyAiConfig: vi.fn() }));
+vi.mock('./floating-toolbar', () => ({
+  applyCaretStateIndicatorPosition: vi.fn(),
+  applyFloatingToolbarAppearanceConfig: vi.fn(),
+  applyFloatingToolbarItemsConfig: vi.fn()
+}));
+vi.mock('./stats', () => ({ applyStatisticsEnabled: vi.fn(), applyStatisticsRetention: vi.fn() }));
+vi.mock('./shortcut', () => ({ applyShortcutConfig: vi.fn() }));
 
 import { applyToggleState } from './shared';
 import { setupConfigSync } from './config-sync';
@@ -32,7 +54,12 @@ beforeEach(() => {
   setupConfigSync();
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(async () => {
+  // Let the snapshot's lazy imports and their callbacks finish while the
+  // stubbed globals still exist; otherwise they can run after teardown.
+  await vi.dynamicImportSettled();
+  vi.unstubAllGlobals();
+});
 
 it('backfills the word-to-character switch only from a boolean', () => {
   const snapshot = handlers.get('configSnapshot')!;

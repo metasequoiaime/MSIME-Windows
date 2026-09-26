@@ -27,3 +27,13 @@ add_executable(test_statistics statistics.cpp ../src/Statistics/char_classify.cp
 target_include_directories(test_statistics PRIVATE ../src)
 target_compile_features(test_statistics PRIVATE cxx_std_17)
 add_test(NAME statistics COMMAND test_statistics)
+
+add_executable(test_key_focus_recovery key_focus_recovery.cpp)
+target_include_directories(test_key_focus_recovery PRIVATE ../src)
+target_compile_features(test_key_focus_recovery PRIVATE cxx_std_17)
+add_test(NAME key_focus_recovery COMMAND test_key_focus_recovery)
+
+add_executable(test_caret_anchor_policy caret_anchor_policy.cpp)
+target_include_directories(test_caret_anchor_policy PRIVATE ../src)
+target_compile_features(test_caret_anchor_policy PRIVATE cxx_std_17)
+add_test(NAME caret_anchor_policy COMMAND test_caret_anchor_policy)

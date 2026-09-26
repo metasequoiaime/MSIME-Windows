@@ -14,6 +14,7 @@ inline WCHAR lpWindowNameMenu[] = L"metaseuqoiaimemenuwnd";
 inline WCHAR lpWindowNameSettings[] = L"Settings";
 /* floating toolbar 窗口 */
 inline WCHAR lpWindowNameFtb[] = L"metaseuqoiaimeftbwnd";
+inline WCHAR lpWindowNameCaretState[] = L"metasequoiaimecaretstatewnd";
 
 LRESULT RegisterCandidateWindowMessage();
 LRESULT RegisterIMEWindowsClass(WNDCLASSEX &, HINSTANCE);
@@ -23,6 +24,7 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
 LRESULT CALLBACK WndProcMenuWindow(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 LRESULT CALLBACK WndProcSettingsWindow(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 LRESULT CALLBACK WndProcFtbWindow(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK WndProcCaretStateWindow(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 bool ActivateSettingsWindow(HWND hwnd);
 void RequestSettingsWindowActivation(HWND hwnd);
 void SetCandidateHostCloaked(bool cloaked);

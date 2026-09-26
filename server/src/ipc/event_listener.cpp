@@ -39,6 +39,8 @@
 #include "engine/quanpin/quanpin_query.h"
 #include "engine/user_dictionary/user_dictionary_journal.h"
 #include "ipc/event_listener.h"
+#include "window/caret_state_indicator.h"
+#include "window/caret_state_indicator_policy.h"
 #include "utils/ime_utils.h"
 #include "cloud/cloud_ime.h"
 #include "cloud/cloud_translation.h"
@@ -213,6 +215,11 @@ void ApplyUiLessFromPacket(const FanyImeNamedpipeData &pipe_data)
         if (::global_hwnd && IsWindow(::global_hwnd))
         {
             PostMessage(::global_hwnd, WM_HIDE_MAIN_WINDOW, 0, 0);
+        }
+        // Same for a caret badge shown just before the host went UILess.
+        if (const HWND caretState = ::global_hwnd_caret_state)
+        {
+            PostMessage(caretState, WM_HIDE_CARET_STATE, 0, 0);
         }
     }
 }
@@ -567,6 +574,35 @@ int EnsureAuthoritativeCnMode()
         g_authoritative_cn_mode = GetConfiguredDefaultImeMode() == "english" ? 0 : 1;
     }
     return g_authoritative_cn_mode;
+}
+
+// Caret-badge events are presentation only. They never touch the toolbar or
+// the status snapshot: StatusSnapshot remains the single source of mode state.
+void PostCaretStateBadge(FanyImeUi::CaretStateBadge badge, int x, int y)
+{
+    const HWND hwnd = ::global_hwnd_caret_state;
+    if (!hwnd || !FanyImeUi::IsUsableCaretAnchor(x, y))
+        return;
+    auto *request = new (std::nothrow) CaretStateIndicator::ShowRequest{std::move(badge), POINT{x, y}, IsUiLessMode()};
+    if (request && !PostMessage(hwnd, WM_SHOW_CARET_STATE, 0, reinterpret_cast<LPARAM>(request)))
+        delete request;
+}
+
+void PostCaretStatePosition(int x, int y)
+{
+    const HWND hwnd = ::global_hwnd_caret_state;
+    // Visibility is owned by the UI thread, which ignores moves while hidden.
+    if (!hwnd)
+        return;
+    auto *caret = new (std::nothrow) POINT{x, y};
+    if (caret && !PostMessage(hwnd, WM_MOVE_CARET_STATE, 0, reinterpret_cast<LPARAM>(caret)))
+        delete caret;
+}
+
+void PostHideCaretState()
+{
+    if (const HWND hwnd = ::global_hwnd_caret_state)
+        PostMessage(hwnd, WM_HIDE_CARET_STATE, 0, 0);
 }
 
 void UpdateCloudInput(const std::string &input, uint64_t client_id = 0, uint64_t activation_epoch = 0)
@@ -1458,6 +1494,7 @@ bool IsKnownMainPipeEvent(UINT event_type)
     case FanyImePipeEventType::StatusSnapshot:
     case FanyImePipeEventType::ClientSuspended:
     case FanyImePipeEventType::FocusRestored:
+    case FanyImePipeEventType::HideCaretState:
         return true;
     default:
         return false;
@@ -1595,6 +1632,7 @@ enum class TaskType
 {
     ShowCandidate,
     HideCandidate,
+    HideCaretState,
     MoveCandidate,
     ImeKeyEvent,
     LangbarRightClick,
@@ -1984,11 +2022,16 @@ void WorkerThread()
             break;
         }
 
+        case TaskType::HideCaretState:
+            PostHideCaretState();
+            break;
+
         case TaskType::MoveCandidate: {
             static int cnt = 0;
             ::ReadDataFromNamedPipe(0b001000);
             CAND_DIAG_LOGF(L"task MoveCandidate client={} epoch={} caret=({},{})", task.client_id,
                            task.activation_epoch, Global::Point[0], Global::Point[1]);
+            PostCaretStatePosition(Global::Point[0], Global::Point[1]);
             bool expected = false;
             if (!g_candidate_move_msg_pending.compare_exchange_strong(expected, true))
             {
@@ -2024,18 +2067,35 @@ void WorkerThread()
             break;
         }
 
+        // Clients send the three switch events only after negotiating
+        // CaretStateIndicator; they are badge requests, not state updates.
         case TaskType::IMESwitch: {
-            PostMessage(::global_hwnd, WM_IMESWITCH, task.pipe_data.keycode, 0);
+            const bool capsLockEdge = task.pipe_data.wch == VK_CAPITAL;
+            const bool imeEnabled = task.pipe_data.keycode != 0;
+            const auto capsLockSnapshot =
+                FanyImePipeFlags::DecodeImeSwitchCapsLockSnapshot(task.pipe_data.modifiers_down);
+            const bool capsLockEnabled =
+                capsLockSnapshot.has_value() ? *capsLockSnapshot : GetServerCapsLockState() != 0;
+            const bool japaneseMode = GetConfiguredInputMode() == "japanese";
+            if (FanyImeUi::ShouldShowInputModeEvent(capsLockEdge, capsLockEnabled, imeEnabled, japaneseMode))
+            {
+                PostCaretStateBadge(FanyImeUi::InputModeBadge(imeEnabled, japaneseMode, capsLockEnabled),
+                                    task.pipe_data.point[0], task.pipe_data.point[1]);
+            }
             break;
         }
 
         case TaskType::PuncSwitch: {
-            PostMessage(::global_hwnd, WM_PUNCSWITCH, task.pipe_data.keycode, 0);
+            PostCaretStateBadge(FanyImeUi::PunctuationBadge(task.pipe_data.keycode != 0, task.pipe_data.wch != 0,
+                                                            GetConfiguredInputMode() == "japanese"),
+                                task.pipe_data.point[0], task.pipe_data.point[1]);
             break;
         }
 
         case TaskType::DoubleSingleByteSwitch: {
-            PostMessage(::global_hwnd, WM_DOUBLESINGLEBYTESWITCH, task.pipe_data.keycode, 0);
+            PostCaretStateBadge(
+                FanyImeUi::SingleStateBadge(FanyImeUi::CaretStateKind::Width, task.pipe_data.keycode != 0),
+                task.pipe_data.point[0], task.pipe_data.point[1]);
             break;
         }
 
@@ -2102,6 +2162,7 @@ void WorkerThread()
             CAND_DIAG_LOGF(L"client activated client={} epoch={} hwnd_present={}", task.client_id,
                            task.activation_epoch, ::global_hwnd != nullptr);
             VoiceInput::SetImeActive(true);
+            PostHideCaretState();
             // Activation replaces all composition/candidate state from the
             // previous focus session. A terminal TIP activation also makes
             // the configured floating toolbar visible. Re-activation after a
@@ -2140,6 +2201,7 @@ void WorkerThread()
         case TaskType::ClientDeactivated: {
             CAND_DIAG_LOGF(L"client deactivated client={} epoch={}", task.client_id, task.activation_epoch);
             VoiceInput::SetImeActive(false);
+            PostHideCaretState();
             // Unlike a route-only suspension, terminal TIP deactivation means
             // the user switched to another input method. Forget the previous
             // global authority so switching back starts from default_ime_mode
@@ -2162,6 +2224,7 @@ void WorkerThread()
 
         case TaskType::ClientSuspended: {
             CAND_DIAG_LOGF(L"client suspended client={} epoch={}", task.client_id, task.activation_epoch);
+            PostHideCaretState();
             // A suspension rotates the IPC focus session while the TIP may
             // still own thread focus. It clears candidates just like terminal
             // deactivation, but never changes floating-toolbar visibility.
@@ -3120,6 +3183,11 @@ void MainPipeClientThread(HANDLE clientPipe, uint64_t handlerId)
 
         case FanyImePipeEventType::HideCandidateWnd: {
             EnqueueTask(TaskType::HideCandidate, pipeData, activation.epoch);
+            break;
+        }
+
+        case FanyImePipeEventType::HideCaretState: {
+            EnqueueTask(TaskType::HideCaretState, pipeData, activation.epoch);
             break;
         }
 
@@ -4393,7 +4461,20 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
     if (FanyImeProtocol::IsCharacterSetShortcut(Global::Keycode, Global::ModifiersDown))
     {
         if (g_authoritative_cn_mode != 0 && GetConfiguredCharacterSetShortcutEnabled())
-            SetConfiguredCharacterSet(GetConfiguredCharacterSet() == "traditional" ? "simplified" : "traditional");
+        {
+            const std::string previous = GetConfiguredCharacterSet();
+            const std::string next = previous == "traditional" ? "simplified" : "traditional";
+            // The packet's point[] is this key's badge anchor, not the
+            // candidate anchor: read it locally and leave Global::Point alone.
+            // Legacy clients leave the struct-default point there instead.
+            if (SetConfiguredCharacterSet(next) && GetConfiguredCharacterSet() != previous &&
+                ClientNegotiatedCaretStateIndicator(client_id))
+            {
+                PostCaretStateBadge(FanyImeUi::SingleStateBadge(FanyImeUi::CaretStateKind::CharacterSet,
+                                                                GetConfiguredCharacterSet() == "traditional"),
+                                    namedpipeData.point[0], namedpipeData.point[1]);
+            }
+        }
         return;
     }
 

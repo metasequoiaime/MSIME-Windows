@@ -82,6 +82,48 @@ export function setupDropdownMenu(
     return;
   }
 
+  const enabledItems = (): HTMLElement[] =>
+    Array.from(menu.querySelectorAll<HTMLElement>('.dropdown-item:not([aria-disabled="true"])'));
+
+  // Moves focus one item in `direction`. Entering the menu from outside (the
+  // toggle button still has focus) lands on the first item going down and on
+  // the last item going up.
+  const focusMenuItem = (direction: 1 | -1): void => {
+    const items = enabledItems();
+    if (items.length === 0) return;
+    items.forEach((item) => {
+      item.tabIndex = -1;
+      item.setAttribute('role', 'option');
+    });
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    const next = current < 0
+      ? (direction > 0 ? 0 : items.length - 1)
+      : (current + direction + items.length) % items.length;
+    items[next].focus();
+  };
+
+  btn.addEventListener('keydown', (event: KeyboardEvent) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    const direction = event.key === 'ArrowDown' ? 1 : -1;
+    void openDropdownMenu(menu, menuId).then(() => focusMenuItem(direction));
+  }, { signal });
+
+  menu.addEventListener('keydown', (event: KeyboardEvent) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      focusMenuItem(event.key === 'ArrowDown' ? 1 : -1);
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      const focused = document.activeElement as HTMLElement | null;
+      if (focused && enabledItems().includes(focused)) focused.click();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      menu.classList.remove('open');
+      btn.focus();
+    }
+  }, { signal });
+
   btn.addEventListener('click', (e: Event) => {
     if (useStopPropagation) {
       e.stopPropagation();

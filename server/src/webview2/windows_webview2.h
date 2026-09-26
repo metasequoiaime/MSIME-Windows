@@ -70,6 +70,7 @@ bool ApplyConfiguredUiThemes();
 // config file timestamp before the UI timer observed it.
 bool ApplyConfiguredCandidateSkinIfChanged();
 bool ForceReloadConfiguredCandidateSkin();
+uint64_t GetCandidateSkinReloadRevision();
 bool ApplyConfiguredCandidateAppearance();
 bool ApplyConfiguredFloatingToolbarAppearance();
 bool ApplyConfiguredFloatingToolbarAppearance(std::function<void()> onComplete);

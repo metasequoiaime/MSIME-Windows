@@ -14,6 +14,45 @@
 #include "Ipc.h"
 #include "FanyUtils.h"
 #include "FanyLog.h"
+#include "EditSession.h"
+#include "TfTextLayoutSink.h"
+#include <new>
+
+namespace
+{
+// Resolves the caret anchor in a read-only session so the badge event carries
+// the position the user was looking at when the shortcut took effect.
+class CCaretStateSwitchEditSession : public CEditSessionBase
+{
+  public:
+    CCaretStateSwitchEditSession(CMetasequoiaIME *textService, ITfContext *context, UINT eventType, bool enabled,
+                                 uint64_t focusToken, bool capsLockEdge, bool capsLockEnabled, bool imeOpen)
+        : CEditSessionBase(textService, context), eventType_(eventType), enabled_(enabled), focusToken_(focusToken),
+          capsLockEdge_(capsLockEdge), capsLockEnabled_(capsLockEnabled), imeOpen_(imeOpen)
+    {
+    }
+
+    STDMETHODIMP DoEditSession(TfEditCookie ec) override
+    {
+        if (!_pTextService->_IsFocusSessionCurrent(focusToken_, _pContext))
+            return S_OK;
+        POINT anchor{};
+        if (!ResolveCollapsedSelectionAnchor(_pContext, ec, &anchor))
+            return S_OK;
+        SendCaretStateSwitchEventToUIProcessViaNamedPipe(eventType_, enabled_, anchor, capsLockEdge_, capsLockEnabled_,
+                                                         imeOpen_);
+        return S_OK;
+    }
+
+  private:
+    UINT eventType_;
+    bool enabled_;
+    uint64_t focusToken_;
+    bool capsLockEdge_;
+    bool capsLockEnabled_;
+    bool imeOpen_;
+};
+} // namespace
 
 //////////////////////////////////////////////////////////////////////
 //
@@ -1138,6 +1177,9 @@ void CCompositionProcessorEngine::OnPreservedKey( //
             SetKeyboardOpenCompartment(pThreadMgr, tfClientId, isOpen);
             SyncPunctuationWithImeMode(pThreadMgr, tfClientId, isOpen);
         }
+        // Announce the mode the user chose, even while a deferred close is
+        // still waiting for the composition to commit.
+        SendCaretStateSwitchEvent(FanyImePipeEventType::IMESwitch, isOpen != FALSE);
 
         *pIsEaten = TRUE;
         *pNeedToggleIMEMode = TRUE;
@@ -1166,6 +1208,7 @@ void CCompositionProcessorEngine::OnPreservedKey( //
                                                  Global::MetasequoiaIMEGuidCompartmentDoubleSingleByte);
         CompartmentDoubleSingleByte._GetCompartmentBOOL(isDouble);
         CompartmentDoubleSingleByte._SetCompartmentBOOL(isDouble ? FALSE : TRUE);
+        SendCaretStateSwitchEvent(FanyImePipeEventType::DoubleSingleByteSwitch, isDouble == FALSE);
         *pIsEaten = TRUE;
     }
     else if (IsEqualGUID(rguid, _PreservedKey_Punctuation.Guid))
@@ -1180,6 +1223,12 @@ void CCompositionProcessorEngine::OnPreservedKey( //
         CCompartment CompartmentPunctuation(pThreadMgr, tfClientId, Global::MetasequoiaIMEGuidCompartmentPunctuation);
         CompartmentPunctuation._GetCompartmentBOOL(isPunctuation);
         SetPunctuationMode(pThreadMgr, tfClientId, isPunctuation ? FALSE : TRUE);
+        // A configured punctuation lock can reject the toggle; stay silent then.
+        const BOOL punctuationNow = GetPunctuationMode(pThreadMgr, tfClientId);
+        if (punctuationNow != isPunctuation)
+        {
+            SendCaretStateSwitchEvent(FanyImePipeEventType::PuncSwitch, punctuationNow != FALSE);
+        }
         *pIsEaten = TRUE;
     }
     else
@@ -1534,6 +1583,42 @@ void CCompositionProcessorEngine::InitializeMetasequoiaIMECompartment(_In_ ITfTh
 
     PrivateCompartmentsUpdated(pThreadMgr);
 }
+
+void CCompositionProcessorEngine::SendCaretStateSwitchEvent(UINT eventType, bool enabled, bool capsLockEdge,
+                                                            bool capsLockEnabled)
+{
+    // Only explicit user shortcuts call this. Compartment writes from the
+    // Server, the host's conversion mode or activation never do, so none of
+    // those can surface a badge the user did not ask for.
+    if (!_pOwnerThreadMgr || !_pTextService || !Global::g_connected || !SupportsCaretStateIndicator())
+        return;
+    const uint64_t focusToken = _pTextService->_CaptureFocusSessionToken();
+    if (focusToken == 0)
+        return;
+    ITfDocumentMgr *document = nullptr;
+    if (FAILED(_pOwnerThreadMgr->GetFocus(&document)) || !document)
+        return;
+    ITfContext *context = nullptr;
+    const HRESULT topResult = document->GetTop(&context);
+    document->Release();
+    if (FAILED(topResult) || !context)
+        return;
+    if (!capsLockEdge)
+        capsLockEnabled = Global::CapsLockEnabled.load(std::memory_order_relaxed);
+    // Captured now so the punctuation badge's mode slot reflects this moment,
+    // not whatever the toolbar snapshot says when the event is rendered.
+    const bool imeOpen = GetIMEMode(_pOwnerThreadMgr, _tfClientId) != FALSE;
+    auto *session = new (std::nothrow) CCaretStateSwitchEditSession(_pTextService, context, eventType, enabled,
+                                                                    focusToken, capsLockEdge, capsLockEnabled, imeOpen);
+    if (session)
+    {
+        HRESULT sessionResult = E_FAIL;
+        context->RequestEditSession(_tfClientId, session, TF_ES_ASYNCDONTCARE | TF_ES_READ, &sessionResult);
+        session->Release();
+    }
+    context->Release();
+}
+
 //+---------------------------------------------------------------------------
 //
 // CompartmentCallback
@@ -1564,7 +1649,6 @@ HRESULT CCompositionProcessorEngine::CompartmentCallback(_In_ void *pv, REFGUID 
                                                  Global::MetasequoiaIMEGuidCompartmentDoubleSingleByte);
         CompartmentDoubleSingleByte._GetCompartmentBOOL(isDoubleSingleByte);
         // 0: halfwidth, 1: fullwidth
-        // SendDoubleSingleByteSwitchEventToUIProcessViaNamedPipe(isDoubleSingleByte ? 1 : 0);
         if (ownerWindow && IsWindow(ownerWindow))
         {
             PostMessage(ownerWindow, WM_UpdateDoubleSingleByte, (WPARAM)(isDoubleSingleByte ? 1 : 0), 0);
@@ -1577,7 +1661,6 @@ HRESULT CCompositionProcessorEngine::CompartmentCallback(_In_ void *pv, REFGUID 
         CCompartment CompartmentPunctuation(pThreadMgr, fakeThis->_tfClientId,
                                             Global::MetasequoiaIMEGuidCompartmentPunctuation);
         CompartmentPunctuation._GetCompartmentBOOL(isPunctuation);
-        // SendPuncSwitchEventToUIProcessViaNamedPipe(isPunctuation ? 1 : 0);
         if (ownerWindow && IsWindow(ownerWindow))
         {
             PostMessage(ownerWindow, WM_UpdatePuncMode, (WPARAM)(isPunctuation ? 1 : 0), 0);
@@ -1624,7 +1707,6 @@ HRESULT CCompositionProcessorEngine::CompartmentCallback(_In_ void *pv, REFGUID 
             CompartmentPunctuation._SetCompartmentBOOL(desiredPunctuation);
         }
 
-        // SendIMESwitchEventToUIProcessViaNamedPipe(isOpen ? 1 : 0);
         if (ownerWindow && IsWindow(ownerWindow))
         {
             PostMessage(ownerWindow, WM_UpdateIMEStatus, (WPARAM)(isOpen ? 1 : 0), 0);

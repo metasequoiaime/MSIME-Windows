@@ -2468,6 +2468,11 @@ bool ApplyConfiguredCandidateSkinIfChanged()
     return ApplyConfiguredUiThemes();
 }
 
+uint64_t GetCandidateSkinReloadRevision()
+{
+    return candidateSkinReloadRevision;
+}
+
 bool ForceReloadConfiguredCandidateSkin()
 {
     ++candidateSkinReloadRevision;
@@ -4051,6 +4056,22 @@ HRESULT OnControllerCreatedSettingsWnd(            //
                                     PostSettingsConfig();
                                 }
                             }
+                            else if (path == "general.caret_state_indicator")
+                            {
+                                const bool value = json::value_to<bool>(data.at("value"));
+                                if (SetConfiguredCaretStateIndicatorEnabled(value))
+                                {
+                                    if (!value && ::global_hwnd_caret_state)
+                                        PostMessage(::global_hwnd_caret_state, WM_HIDE_CARET_STATE, 0, 0);
+                                    PostSettingsConfig();
+                                }
+                            }
+                            else if (path == "general.caret_state_indicator_position")
+                            {
+                                const std::string value = json::value_to<std::string>(data.at("value"));
+                                if (SetConfiguredCaretStateIndicatorPosition(value))
+                                    PostSettingsConfig();
+                            }
                             else if (path == "general.floating_toolbar_scale")
                             {
                                 const double value = data.at("value").is_double()
@@ -4674,6 +4695,8 @@ void PostSettingsConfig()
             {"candidate_window_diagnostic_log", GetConfiguredDiagnosticLogEnabled()},
             {"tsf_diagnostic_log", GetConfiguredTsfDiagnosticLogEnabled()},
             {"floating_toolbar", GetConfiguredFloatingToolbarEnabled()},
+            {"caret_state_indicator", GetConfiguredCaretStateIndicatorEnabled()},
+            {"caret_state_indicator_position", GetConfiguredCaretStateIndicatorPosition()},
             {"floating_toolbar_fullwidth", toolbar.fullwidth},
             {"floating_toolbar_punctuation", toolbar.punctuation},
             {"floating_toolbar_character_set", toolbar.character_set},

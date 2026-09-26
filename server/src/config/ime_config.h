@@ -248,6 +248,10 @@ bool GetConfiguredShowQuanpinHelpcodeInCandidateWindow();
 bool SetConfiguredShowQuanpinHelpcodeInCandidateWindow(bool enabled);
 bool GetConfiguredFloatingToolbarEnabled();
 bool SetConfiguredFloatingToolbarEnabled(bool enabled);
+bool GetConfiguredCaretStateIndicatorEnabled();
+bool SetConfiguredCaretStateIndicatorEnabled(bool enabled);
+const std::string &GetConfiguredCaretStateIndicatorPosition();
+bool SetConfiguredCaretStateIndicatorPosition(const std::string &position);
 struct FloatingToolbarItemsConfig
 {
     bool fullwidth = true;

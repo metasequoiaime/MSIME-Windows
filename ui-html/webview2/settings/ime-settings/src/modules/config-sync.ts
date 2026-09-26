@@ -88,6 +88,9 @@ function applyConfigData(data: Record<string, any>, target?: string): void {
   if (typeof data?.general?.floating_toolbar === 'boolean') {
     applyToggleState('ftbToggleBtn', data.general.floating_toolbar);
   }
+  if (typeof data?.general?.caret_state_indicator === 'boolean') {
+    applyToggleState('caretStateIndicatorToggleBtn', data.general.caret_state_indicator);
+  }
   const diagnosticLog = data?.general?.diagnostic_log ?? data?.general?.candidate_window_diagnostic_log;
   if (typeof diagnosticLog === 'boolean') {
     applyToggleState('serverDiagnosticLogToggleBtn', diagnosticLog);
@@ -341,6 +344,7 @@ function applyConfigData(data: Record<string, any>, target?: string): void {
         screen_keyboard: data?.general?.floating_toolbar_screen_keyboard,
         settings: data?.general?.floating_toolbar_settings
       });
+      module.applyCaretStateIndicatorPosition(data?.general?.caret_state_indicator_position);
       module.applyFloatingToolbarAppearanceConfig(
         data?.general?.floating_toolbar_scale,
         data?.general?.floating_toolbar_font_size

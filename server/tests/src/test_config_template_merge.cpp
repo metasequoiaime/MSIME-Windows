@@ -33,6 +33,48 @@ TEST_CASE(shortcut_config_upgrade_preserves_word_selection_and_adds_defaults)
     REQUIRE(merged.find("toggle_character_set_ctrl_shift_f = true") != std::string::npos);
 }
 
+TEST_CASE(config_merge_adds_default_caret_state_indicator)
+{
+    const std::string template_text = "[general]\nfloating_toolbar = true\ncaret_state_indicator = "
+                                      "false\ncaret_state_indicator_position = \"top-left\"\n";
+    const std::string old_config = "[general]\nfloating_toolbar = false\n";
+    const std::string baseline = "[general]\nfloating_toolbar = true\n";
+    const auto merged = MergeConfigIntoTemplate(template_text, old_config, baseline);
+    REQUIRE(merged.find("floating_toolbar = false") != std::string::npos);
+    REQUIRE(merged.find("caret_state_indicator = false") != std::string::npos);
+    REQUIRE(merged.find("caret_state_indicator_position = \"top-left\"") != std::string::npos);
+}
+
+TEST_CASE(shipped_caret_indicator_defaults_and_upgrade_behavior)
+{
+    std::ifstream input(MSIME_DEFAULT_CONFIG_PATH, std::ios::binary);
+    REQUIRE(static_cast<bool>(input));
+    const std::string installed((std::istreambuf_iterator<char>(input)), {});
+    const auto working_path =
+        std::filesystem::path(MSIME_DEFAULT_CONFIG_PATH).parent_path().parent_path().parent_path() /
+        "server/assets/config/config.toml";
+    std::ifstream development(working_path, std::ios::binary);
+    REQUIRE(static_cast<bool>(development));
+    const std::string working((std::istreambuf_iterator<char>(development)), {});
+    REQUIRE(!toml::parse(installed)["general"]["caret_state_indicator"].value_or(true));
+    REQUIRE(!toml::parse(working)["general"]["caret_state_indicator"].value_or(true));
+
+    const std::string old_template = "[general]\nfloating_toolbar = true\n";
+    const auto upgraded = toml::parse(MergeConfigIntoTemplate(installed, old_template, old_template));
+    REQUIRE(!upgraded["general"]["caret_state_indicator"].value_or(true));
+
+    const std::string enabled = "[general]\nfloating_toolbar = true\ncaret_state_indicator = true\n";
+    const auto preserved = toml::parse(MergeConfigIntoTemplate(installed, enabled, old_template));
+    REQUIRE(preserved["general"]["caret_state_indicator"].value_or(false));
+
+    // A value identical to the previous baseline is indistinguishable from an untouched default.
+    const auto changed = toml::parse(MergeConfigIntoTemplate(installed, enabled, enabled));
+    REQUIRE(!changed["general"]["caret_state_indicator"].value_or(true));
+    const std::string previous_off = "[general]\nfloating_toolbar = true\ncaret_state_indicator = false\n";
+    const auto opted_in = toml::parse(MergeConfigIntoTemplate(installed, enabled, previous_off));
+    REQUIRE(opted_in["general"]["caret_state_indicator"].value_or(false));
+}
+
 TEST_CASE(candidate_key_config_rejects_invalid_groups_without_changing_state)
 {
     const auto keys = GetConfiguredWordToCharacterKeys();

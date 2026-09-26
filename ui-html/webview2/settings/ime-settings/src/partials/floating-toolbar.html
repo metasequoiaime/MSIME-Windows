@@ -7,14 +7,72 @@
         <div class="section-title">在桌面显示悬浮工具栏</div>
         <div class="floating-toolbar-description">快速访问输入法状态与常用功能</div>
       </div>
-      <div class="ftb-toggle-btn active" id="ftbToggleBtn" role="switch" aria-checked="true" tabindex="0">
+      <div class="ftb-toggle-btn active" id="ftbToggleBtn" role="switch" aria-label="在桌面显示悬浮工具栏" aria-checked="true" tabindex="0">
         <div class="ftb-toggle-knob"></div>
       </div>
     </div>
 
-    <div class="floating-toolbar-preview" aria-label="悬浮工具栏预览">
+    <div class="floating-toolbar-preview" role="img" aria-label="悬浮工具栏预览">
       <div class="floating-toolbar-preview-label">预览</div>
       <div class="ftb-preview-host" id="ftbPreviewHost"></div>
+    </div>
+  </div>
+
+  <div class="section caret-state-indicator-card">
+    <div class="section-header floating-toolbar-setting-row">
+      <div>
+        <div class="section-title">光标状态提示</div>
+        <div class="floating-toolbar-description">切换输入模式、全半角或中英文标点时在光标附近短暂显示，可与悬浮工具栏同时开启</div>
+      </div>
+      <div class="ftb-toggle-btn" id="caretStateIndicatorToggleBtn" role="switch" aria-label="显示光标状态提示" aria-checked="false" tabindex="0">
+        <div class="ftb-toggle-knob"></div>
+      </div>
+    </div>
+
+    <div class="section-header floating-toolbar-setting-row">
+      <div>
+        <div class="section-title">提示位置</div>
+        <div class="floating-toolbar-description">选择光标状态提示显示在光标的哪个方向</div>
+      </div>
+      <div class="dropdown">
+        <button class="dropdown-toggle" id="caretStateIndicatorPositionBtn">
+          <span>左上方</span>
+          <div class="arrow"><img src="./assets/arrow.svg" alt="arrow"></div>
+        </button>
+        <div class="dropdown-menu compact-scroll-menu" id="caretStateIndicatorPositionMenu">
+          <div class="dropdown-item" data-value="top-left">左上方</div>
+          <div class="dropdown-item" data-value="top">正上方</div>
+          <div class="dropdown-item" data-value="top-right">右上方</div>
+          <div class="dropdown-item" data-value="bottom">下方</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="caret-state-preview" role="img" aria-label="光标状态提示预览：每个文字光标左上方分别显示中、中文标点和中文模式、全角、简体">
+      <div class="floating-toolbar-preview-label">预览</div>
+      <div class="cand-preview" aria-hidden="true">
+        <div class="candidate caret-state-preview-host" id="caretStatePreviewHost" data-position="top-left">
+          <div class="caret-state-preview-item">
+            <div class="caret-state-badge">中</div>
+            <span class="caret-state-preview-caret"></span>
+          </div>
+          <div class="caret-state-preview-item">
+            <div class="caret-state-badge caret-state-badge-punctuation" aria-label="，。  中">
+              <span class="caret-state-punctuation-slot">，。</span>
+              <span class="caret-state-mode-slot">中</span>
+            </div>
+            <span class="caret-state-preview-caret"></span>
+          </div>
+          <div class="caret-state-preview-item">
+            <div class="caret-state-badge">全</div>
+            <span class="caret-state-preview-caret"></span>
+          </div>
+          <div class="caret-state-preview-item">
+            <div class="caret-state-badge">简</div>
+            <span class="caret-state-preview-caret"></span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

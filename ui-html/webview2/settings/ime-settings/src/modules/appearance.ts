@@ -189,7 +189,7 @@ function renderFallbackFonts(): void {
 }
 
 function appearancePreviewRoots(): HTMLElement[] {
-  return Array.from(document.querySelectorAll<HTMLElement>('.cand-preview .candidate'));
+  return Array.from(document.querySelectorAll<HTMLElement>('.cand-preview .candidate:not(.caret-state-preview-host)'));
 }
 
 function themeFallbackColor(): string {
@@ -270,6 +270,19 @@ function applyCandidatePreviewStyle(): void {
       wrapper.style.display = index < previewPageSize ? '' : 'none';
     });
   });
+  syncCaretStateIndicatorPreview();
+}
+
+export function syncCaretStateIndicatorPreview(): void {
+  const preview = document.getElementById('caretStatePreviewHost');
+  if (!preview) return;
+  preview.classList.toggle('theme-light', previewCandTheme === 'light');
+  preview.classList.toggle('theme-dark', previewCandTheme === 'dark');
+  if (previewTextColor && previewTextColor !== 'auto') {
+    preview.style.setProperty('--caret-text-override', previewTextColor);
+  } else {
+    preview.style.removeProperty('--caret-text-override');
+  }
 }
 
 function syncColorControls(color: string | undefined): void {
@@ -286,6 +299,7 @@ function syncColorControls(color: string | undefined): void {
 /** Called when candidate-surface theme (or global follow) resolves to a new dark/light. */
 export function onCandidateSurfaceThemeChanged(theme: ResolvedTheme): void {
   previewCandTheme = theme;
+  syncCaretStateIndicatorPreview();
   if (previewTextColor === 'auto') {
     syncColorControls('auto');
     applyCandidatePreviewStyle();

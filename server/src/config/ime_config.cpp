@@ -115,6 +115,8 @@ constexpr FuzzyPinyinRuleKey kFuzzyPinyinRuleKeys[] = {
     {"fuzzy_uan_uang", metasequoia::FuzzyPinyinRule::UAN_UANG},
 };
 bool g_floating_toolbar_enabled = true;
+bool g_caret_state_indicator_enabled = false;
+std::string g_caret_state_indicator_position = "top-left";
 FloatingToolbarItemsConfig g_floating_toolbar_items;
 double g_floating_toolbar_scale = 1.0;
 int g_floating_toolbar_font_size = kFloatingToolbarFontSizeDefault;
@@ -1030,6 +1032,11 @@ bool LoadImeConfig()
                 g_fuzzy_pinyin_rules |= static_cast<std::uint32_t>(entry.rule);
         }
         g_floating_toolbar_enabled = tbl["general"]["floating_toolbar"].value_or(true);
+        g_caret_state_indicator_enabled = tbl["general"]["caret_state_indicator"].value_or(false);
+        g_caret_state_indicator_position = tbl["general"]["caret_state_indicator_position"].value_or("top-left");
+        if (g_caret_state_indicator_position != "top-left" && g_caret_state_indicator_position != "top" &&
+            g_caret_state_indicator_position != "top-right" && g_caret_state_indicator_position != "bottom")
+            g_caret_state_indicator_position = "top-left";
         // Read the old candidate-only key as a migration fallback. New writes
         // use the unified key.
         g_diagnostic_log_enabled.store(tbl["general"]["diagnostic_log"].value_or(
@@ -2509,6 +2516,36 @@ bool SetConfiguredFloatingToolbarEnabled(bool enabled)
         return false;
     }
     g_floating_toolbar_enabled = enabled;
+    return true;
+}
+
+bool GetConfiguredCaretStateIndicatorEnabled()
+{
+    return g_caret_state_indicator_enabled;
+}
+
+bool SetConfiguredCaretStateIndicatorEnabled(bool enabled)
+{
+    if (!WriteConfiguredValue("general", "caret_state_indicator", enabled ? "true" : "false"))
+    {
+        return false;
+    }
+    g_caret_state_indicator_enabled = enabled;
+    return true;
+}
+
+const std::string &GetConfiguredCaretStateIndicatorPosition()
+{
+    return g_caret_state_indicator_position;
+}
+
+bool SetConfiguredCaretStateIndicatorPosition(const std::string &position)
+{
+    if (position != "top-left" && position != "top" && position != "top-right" && position != "bottom")
+        return false;
+    if (!WriteConfiguredValue("general", "caret_state_indicator_position", EscapeTomlBasicString(position)))
+        return false;
+    g_caret_state_indicator_position = position;
     return true;
 }
 

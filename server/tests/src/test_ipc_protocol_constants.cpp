@@ -119,6 +119,15 @@ TEST_CASE(ipc_focus_restored_is_an_appended_opcode_and_not_a_route_reset)
     REQUIRE(!FanyImePipeEventType::IsTerminalDeactivation(FanyImePipeEventType::FocusRestored));
 }
 
+TEST_CASE(ipc_hide_caret_state_is_append_only_and_not_a_candidate_or_route_reset)
+{
+    REQUIRE_EQ(FanyImePipeEventType::HideCaretState, 16u);
+    REQUIRE(FanyImePipeEventType::HideCaretState != FanyImePipeEventType::HideCandidateWnd);
+    REQUIRE(!FanyImePipeEventType::IsRouteDeactivation(FanyImePipeEventType::HideCaretState));
+    REQUIRE(!FanyImePipeEventType::IsTerminalDeactivation(FanyImePipeEventType::HideCaretState));
+    REQUIRE_EQ(sizeof(FanyImeNamedpipeData), 304u);
+}
+
 TEST_CASE(ipc_uiless_flag_is_outside_key_modifier_mask)
 {
     REQUIRE_EQ(FanyImePipeFlags::UiLess, 0x80000000u);

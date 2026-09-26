@@ -49,6 +49,16 @@ STDAPI CMetasequoiaIME::OnSetFocus(_In_ ITfDocumentMgr *pDocMgrFocus, _In_ ITfDo
         return S_OK;
     }
 
+    const bool documentChanged = (pDocMgrFocus == nullptr) != (_pDocMgrLastFocused == nullptr) ||
+                                 (pDocMgrFocus && !_IsSameComObject(pDocMgrFocus, _pDocMgrLastFocused));
+    if (documentChanged)
+    {
+        // The badge belongs to the document it was shown for, even when
+        // editors share an HWND (or expose none). This hides only the badge;
+        // candidate and input state follow their own focus rules below.
+        SendHideCaretStateEventToUIProcessViaNamedPipe();
+    }
+
     if (pDocMgrFocus && _pContext && _IsComposing() && !_localSessionResetPending.load(std::memory_order_acquire))
     {
         ITfDocumentMgr *compositionDocumentMgr = nullptr;
@@ -149,13 +159,13 @@ STDAPI CMetasequoiaIME::OnSetFocus(_In_ ITfDocumentMgr *pDocMgrFocus, _In_ ITfDo
         ITfContext *pTfContext = _pCandidateListUIPresenter->_GetContextDocument();
         if ((nullptr != pTfContext) && SUCCEEDED(pTfContext->GetDocumentMgr(&pCandidateListDocumentMgr)))
         {
-            if (pCandidateListDocumentMgr != pDocMgrFocus)
+            if (_IsSameComObject(pCandidateListDocumentMgr, pDocMgrFocus))
             {
-                _pCandidateListUIPresenter->OnKillThreadFocus();
+                _pCandidateListUIPresenter->OnSetThreadFocus();
             }
             else
             {
-                _pCandidateListUIPresenter->OnSetThreadFocus();
+                _pCandidateListUIPresenter->OnKillThreadFocus();
             }
 
             pCandidateListDocumentMgr->Release();
@@ -215,7 +225,7 @@ void CMetasequoiaIME::_HandleFocusedContextStackChange(_In_opt_ ITfContext *chan
     ITfDocumentMgr *focusedDocument = nullptr;
     if (FAILED(changedContext->GetDocumentMgr(&changedDocument)) || changedDocument == nullptr ||
         FAILED(_pThreadMgr->GetFocus(&focusedDocument)) || focusedDocument == nullptr ||
-        changedDocument != focusedDocument)
+        !_IsSameComObject(changedDocument, focusedDocument))
     {
         if (changedDocument)
         {
@@ -235,7 +245,7 @@ void CMetasequoiaIME::_HandleFocusedContextStackChange(_In_opt_ ITfContext *chan
         changedDocument->Release();
         return;
     }
-    const bool topContextChanged = newTopContext != _pTextEditSinkContext;
+    const bool topContextChanged = !_IsSameComObject(newTopContext, _pTextEditSinkContext);
     newTopContext->Release();
     if (!topContextChanged)
     {
@@ -259,6 +269,7 @@ void CMetasequoiaIME::_HandleFocusedContextStackChange(_In_opt_ ITfContext *chan
     }
 
     _ClearDeferredKeyDowns();
+    SendHideCaretStateEventToUIProcessViaNamedPipe();
     // The pending smart-punctuation action was armed for the old top context;
     // the edit session that would consume it is about to be invalidated too.
     _ClearSmartPunctuationAction();

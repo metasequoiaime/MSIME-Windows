@@ -132,6 +132,13 @@ function candidatePreviewCss(skin: ExternalSkin): string {
     const border = skinColor(colors.border);
     const text = skinColor(colors.text);
     let css = '';
+    const variables = [surface && `--cand-bg: ${surface}`, border && `--cand-border: ${border}`,
+      text && `--cand-text: ${text}`].filter(Boolean).join('; ');
+    if (variables) {
+      const theme = scope ? 'light' : 'dark';
+      css += `:scope.candidate.theme-${theme} { ${variables}; }\n`;
+      css += `:scope.caret-state-preview-host.theme-${theme} { ${variables}; }\n`;
+    }
     if (accent) css += `${prefix}.cursor, ${prefix}.first::before { background: ${accent}; }\n`;
     if (selected) css += `${prefix}.first, ${prefix}.cand.first { background-color: ${selected}; }\n`;
     if (hover) css += `${prefix}.cand:not(.first):hover { background-color: ${hover} !important; }\n`;
@@ -157,11 +164,16 @@ function candidatePreviewCss(skin: ExternalSkin): string {
 }
 
 // Nesting skin CSS by concatenating it into an "@scope (...) { ... }" string is purely textual, so a stray "}" in the skin closes the block early and everything after it styles the whole settings window instead of just the preview. The scope rule is therefore created empty and every rule parsed out of the skin is re-inserted as a child of it, which nothing can escape from however the braces are balanced.
-function writeScopedSkinRules(style: HTMLStyleElement, skinId: string, css: string): void {
+function writeScopedSkinRules(
+  style: HTMLStyleElement, skinId: string, css: string, includeCaretPreview = false
+): void {
   const sheet = style.sheet;
   if (!sheet) return;
   while (sheet.cssRules.length) sheet.deleteRule(0);
-  sheet.insertRule(`@scope ([data-external-skin-preview="${skinId}"]) {}`, 0);
+  const scopeRoot = includeCaretPreview
+    ? `:is([data-external-skin-preview="${skinId}"], [data-external-caret-skin-preview="${skinId}"])`
+    : `[data-external-skin-preview="${skinId}"]`;
+  sheet.insertRule(`@scope (${scopeRoot}) {}`, 0);
   const scope = sheet.cssRules[0] as CSSGroupingRule;
   const parsed = new CSSStyleSheet();
   parsed.replaceSync(css);
@@ -212,7 +224,7 @@ function injectGeneratedCandidateCss(skin: ExternalSkin, force = false): void {
     style.dataset.externalSkinStyle = skin.id;
     document.head.appendChild(style);
   }
-  writeScopedSkinRules(style, skin.id, css);
+  writeScopedSkinRules(style, skin.id, css, true);
   loadedExternalStyleIds.add(styleId);
 }
 
@@ -286,19 +298,28 @@ function ensureContainerParent(root: HTMLElement): void {
   parent.append(box);
 }
 
-function syncAppearancePreviews(): void {
+export function syncAppearancePreviews(): void {
   const previewClass = builtinPreviewClass(activeSkin);
   const external = findExternalSkin(activeSkin);
   document.querySelectorAll<HTMLElement>('.cand-preview .candidate').forEach((element) => {
+    const caretPreview = element.classList.contains('caret-state-preview-host');
     element.classList.toggle('skin-wechat', previewClass === 'skin-wechat');
     element.classList.toggle('skin-graphite', previewClass === 'skin-graphite');
     element.classList.toggle('skin-willow-green', previewClass === 'skin-willow-green');
-    ensureContainerParent(element);
+    if (!caretPreview) ensureContainerParent(element);
     if (external) {
-      element.dataset.externalSkinPreview = external.id;
-      applyDecorationVars(element, external);
+      if (caretPreview) {
+        element.dataset.externalCaretSkinPreview = external.id;
+        delete element.dataset.externalSkinPreview;
+        clearDecorationVars(element);
+      } else {
+        element.dataset.externalSkinPreview = external.id;
+        delete element.dataset.externalCaretSkinPreview;
+        applyDecorationVars(element, external);
+      }
     } else {
       delete element.dataset.externalSkinPreview;
+      delete element.dataset.externalCaretSkinPreview;
       clearDecorationVars(element);
     }
   });

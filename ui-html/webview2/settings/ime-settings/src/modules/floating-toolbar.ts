@@ -1,5 +1,7 @@
 import { applyDropdownValue, setupDropdownMenu, setupToggleButton } from './shared';
+import { syncCaretStateIndicatorPreview } from './appearance';
 import { updateConfig } from './config-sync';
+import { syncAppearancePreviews } from './skin';
 import ftbHTML from '../../../../ftb/default.html?raw';
 
 type FloatingToolbarItem = 'fullwidth' | 'punctuation' | 'character_set' | 'emoji' | 'screen_keyboard' | 'settings';
@@ -28,11 +30,24 @@ let toolbarFontSize = 24;
 
 export function setupFloatingToolbar(): void {
   mountFloatingToolbarPreview();
+  syncCaretStateIndicatorPreview();
+  syncAppearancePreviews();
 
   setupToggleButton('ftbToggleBtn', (active) => {
     updateConfig('general.floating_toolbar', active);
     document.getElementById('ftbToggleBtn')?.setAttribute('aria-checked', String(active));
   });
+
+  setupToggleButton('caretStateIndicatorToggleBtn', (active) => {
+    updateConfig('general.caret_state_indicator', active);
+    document.getElementById('caretStateIndicatorToggleBtn')?.setAttribute('aria-checked', String(active));
+  });
+
+  setupDropdownMenu('caretStateIndicatorPositionBtn', 'caretStateIndicatorPositionMenu', '', true,
+    'general.caret_state_indicator_position', (value) => {
+      updateCaretPreviewPosition(value);
+      return value;
+    });
 
   setupDropdownMenu('ftbScaleBtn', 'ftbScaleMenu', '', true, 'general.floating_toolbar_scale', (value) => {
     const parsed = Number(value);
@@ -70,6 +85,21 @@ export function applyFloatingToolbarItemsConfig(config: FloatingToolbarItemsConf
     if (checkbox) checkbox.checked = toolbarItemState[item];
   });
   updatePreviewItems();
+}
+
+export function applyCaretStateIndicatorPosition(position?: string): void {
+  const value = position || 'top-left';
+  applyDropdownValue('caretStateIndicatorPositionBtn', 'caretStateIndicatorPositionMenu', value);
+  updateCaretPreviewPosition(value);
+}
+
+function updateCaretPreviewPosition(position: string): void {
+  const host = document.getElementById('caretStatePreviewHost');
+  if (!host) return;
+  host.dataset.position = position;
+  const direction = ({ 'top-left': '左上方', top: '正上方', 'top-right': '右上方', bottom: '下方' } as Record<string, string>)[position];
+  host.closest('.caret-state-preview')?.setAttribute('aria-label',
+    `光标状态提示预览：每个文字光标${direction || '左上方'}分别显示中、中文标点和中文模式、全角、简体`);
 }
 
 export function applyFloatingToolbarAppearanceConfig(scale?: number, fontSize?: number): void {

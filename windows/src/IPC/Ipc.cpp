@@ -479,7 +479,7 @@ bool WritePipeHello(HANDLE hPipeHandle, UINT pipeRole)
         const auto hello =
             FanyImeProtocol::Hello(GetPipeClientId(), NextProtocolId(nextRequestId),
                                    FanyImeProtocol::Capabilities | FanyImeProtocol::CharacterSetShortcut |
-                                       FanyImeProtocol::CompositionRestore);
+                                       FanyImeProtocol::CompositionRestore | FanyImeProtocol::CaretStateIndicator);
         BOOL ret = WriteFile(hPipeHandle, &hello, sizeof(hello), &bytesWritten, NULL);
         // Never authorize keys from merely writing a hello. An old Server
         // without negotiation times out into the existing raw-input fallback.
@@ -929,6 +929,12 @@ bool SupportsCompositionRestore()
 {
     return hPipe && hPipe != INVALID_HANDLE_VALUE &&
            (negotiatedServerCapabilities & FanyImeProtocol::CompositionRestore) != 0;
+}
+
+bool SupportsCaretStateIndicator()
+{
+    return hPipe && hPipe != INVALID_HANDLE_VALUE &&
+           (negotiatedServerCapabilities & FanyImeProtocol::CaretStateIndicator) != 0;
 }
 
 HANDLE GetToTsfWorkerThreadNamedpipe()
@@ -1558,6 +1564,16 @@ int SendHideCandidateWndEventToUIProcessViaNamedPipe()
     return 0;
 }
 
+int SendHideCaretStateEventToUIProcessViaNamedPipe()
+{
+    if (!SupportsCaretStateIndicator())
+        return 0;
+    namedpipeData = {};
+    namedpipeData.event_type = FanyImePipeEventType::HideCaretState;
+    SendToNamedpipe();
+    return 0;
+}
+
 int SendShowCandidateWndEventToUIProcessViaNamedPipe()
 {
     // CandidateListUIPresenter stages the text/caret payload immediately
@@ -1796,35 +1812,27 @@ int SendIMEDeactivationEventToUIProcessViaNamedPipe()
     return 0;
 }
 
-int SendIMESwitchEventToUIProcessViaNamedPipe(UINT uImeStatus)
+int SendCaretStateSwitchEventToUIProcessViaNamedPipe(UINT eventType, bool enabled, POINT anchor, bool capsLockEdge,
+                                                     bool capsLockEnabled, bool imeOpen)
 {
+    // The opcodes predate the badge; a Server that did not acknowledge the
+    // capability would apply them as toolbar state instead.
+    if (!SupportsCaretStateIndicator())
+        return 0;
     namedpipeData = {};
-    namedpipeData.event_type = FanyImePipeEventType::IMESwitch;
-    /* 利用其他的字段，把 IME 的中英状态传递过去 */
-    namedpipeData.keycode = uImeStatus;
+    namedpipeData.event_type = eventType;
+    namedpipeData.keycode = enabled ? 1u : 0u;
+    if (eventType == FanyImePipeEventType::IMESwitch)
+    {
+        namedpipeData.wch = capsLockEdge ? VK_CAPITAL : 0;
+        namedpipeData.modifiers_down = FanyImePipeFlags::EncodeImeSwitchCapsLockSnapshot(capsLockEnabled);
+    }
+    else if (eventType == FanyImePipeEventType::PuncSwitch)
+    {
+        namedpipeData.wch = imeOpen ? 1 : 0;
+    }
+    namedpipeData.point[0] = anchor.x;
+    namedpipeData.point[1] = anchor.y;
     SendToNamedpipe();
-
-    return 0;
-}
-
-int SendPuncSwitchEventToUIProcessViaNamedPipe(BOOL isPunc)
-{
-    namedpipeData = {};
-    namedpipeData.event_type = FanyImePipeEventType::PuncSwitch;
-    /* 利用其他的字段，把标点符号的中英状态传递过去 */
-    namedpipeData.keycode = isPunc;
-    SendToNamedpipe();
-
-    return 0;
-}
-
-int SendDoubleSingleByteSwitchEventToUIProcessViaNamedPipe(BOOL isDoubleSingleByte)
-{
-    namedpipeData = {};
-    namedpipeData.event_type = FanyImePipeEventType::DoubleSingleByteSwitch;
-    /* 利用其他的字段，把全角/半角的状态传递过去 */
-    namedpipeData.keycode = isDoubleSingleByte;
-    SendToNamedpipe();
-
     return 0;
 }

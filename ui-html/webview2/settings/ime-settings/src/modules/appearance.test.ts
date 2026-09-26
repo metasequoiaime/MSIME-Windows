@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { applyAppearanceConfig, setupAppearance } from './appearance';
+import { applyAppearanceConfig, onCandidateSurfaceThemeChanged, setupAppearance } from './appearance';
 
 const transforms = vi.hoisted(() => new Map<string, (value: string) => string>());
 vi.mock('./shared', () => ({
@@ -35,20 +35,24 @@ class Element extends EventTarget {
 
 let list: Element;
 let preview: Element;
+let caretPreview: Element;
 let postMessage: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   list = new Element();
   preview = new Element();
+  caretPreview = new Element();
+  caretPreview.id = 'caretStatePreviewHost';
   postMessage = vi.fn();
   vi.stubGlobal('window', { chrome: { webview: { postMessage } } });
   vi.stubGlobal('document', {
     getElementById: (id: string) => {
       const find = (element: Element): Element | undefined => element.id === id ? element : element.children.map(find).find(Boolean);
-      return id === 'candFallbackFontList' ? list : id.startsWith('candidate-wnd-') ? preview : find(list);
+      return id === 'candFallbackFontList' ? list : id.startsWith('candidate-wnd-') ? preview
+        : id === 'caretStatePreviewHost' ? caretPreview : find(list);
     },
     addEventListener: vi.fn(),
     querySelector: () => null,
-    querySelectorAll: (selector: string) => selector === '.cand-preview .candidate' ? [preview] : [],
+    querySelectorAll: (selector: string) => selector.startsWith('.cand-preview .candidate') ? [preview] : [],
     createElement: () => new Element()
   });
 });
@@ -95,6 +99,18 @@ it('adds one empty selector with the plus button and only saves after choosing a
   const saved = choose(1, 'DengXian');
   expect(labels()).toEqual(['SimSun', 'DengXian']);
   expect(saved).toBe('["SimSun","DengXian"]');
+});
+
+it('keeps the caret preview on the resolved candidate theme and text color', () => {
+  applyAppearanceConfig(undefined, undefined, undefined, { cand_text_color: '#123456' });
+  expect(caretPreview.style.setProperty).toHaveBeenCalledWith('--caret-text-override', '#123456');
+
+  onCandidateSurfaceThemeChanged('light');
+  expect(caretPreview.classList.toggle).toHaveBeenCalledWith('theme-light', true);
+  expect(caretPreview.classList.toggle).toHaveBeenCalledWith('theme-dark', false);
+
+  applyAppearanceConfig(undefined, undefined, undefined, { cand_text_color: 'auto' });
+  expect(caretPreview.style.removeProperty).toHaveBeenCalledWith('--caret-text-override');
 });
 
 it('filters each supplementary font menu independently without persisting search text', () => {

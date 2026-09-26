@@ -3,6 +3,7 @@
 #include "TfTextLayoutSink.h"
 #include "MetasequoiaIME.h"
 #include "GetTextExtentEditSession.h"
+#include "CaretAnchorPolicy.h"
 #include <debugapi.h>
 #include <fmt/xchar.h>
 
@@ -20,6 +21,43 @@ POINT GetPhysicalTextAnchor(_In_ ITfContextView *pContextView, _In_ const RECT &
         }
     }
     return anchor;
+}
+
+bool ResolveCollapsedSelectionAnchor(_In_ ITfContext *context, TfEditCookie editCookie, _Out_ POINT *anchor)
+{
+    if (!context || !anchor)
+        return false;
+
+    TF_SELECTION selection{};
+    ULONG fetched = 0;
+    const HRESULT selectionResult = context->GetSelection(editCookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched);
+    if (FAILED(selectionResult) || fetched != 1 || !selection.range)
+    {
+        if (selection.range)
+            selection.range->Release();
+        return false;
+    }
+
+    const TfAnchor caretAnchor = selection.style.ase == TF_AE_START ? TF_ANCHOR_START : TF_ANCHOR_END;
+    bool resolved = false;
+    if (SUCCEEDED(selection.range->Collapse(editCookie, caretAnchor)))
+    {
+        ITfContextView *view = nullptr;
+        RECT rect{};
+        BOOL clipped = TRUE;
+        const HRESULT viewResult = context->GetActiveView(&view);
+        if (SUCCEEDED(viewResult) && view &&
+            SUCCEEDED(view->GetTextExt(editCookie, selection.range, &rect, &clipped)) &&
+            IsUsableCaretExtent(rect.left, rect.top, rect.right, rect.bottom))
+        {
+            *anchor = GetPhysicalTextAnchor(view, rect);
+            resolved = true;
+        }
+        if (view)
+            view->Release();
+    }
+    selection.range->Release();
+    return resolved;
 }
 
 CTfTextLayoutSink::CTfTextLayoutSink(_In_ CMetasequoiaIME *pTextService)

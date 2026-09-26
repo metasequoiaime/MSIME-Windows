@@ -76,6 +76,8 @@ inline double FTB_CONTENT_HEIGHT_DIP = 0.0;
 
 inline HWND global_hwnd_ftb = NULL;
 inline bool is_global_wnd_ftb_shown = false;
+inline HWND global_hwnd_caret_state = NULL;
+inline bool is_global_wnd_caret_state_shown = false;
 
 //
 // 全屏状态

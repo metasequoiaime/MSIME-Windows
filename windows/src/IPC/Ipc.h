@@ -36,6 +36,7 @@ bool MarkNamedpipeSessionDirtyForOwner(_In_ const void *owner);
 bool EnsureNamedpipeFocusSessionActivated();
 bool SupportsCharacterSetShortcut();
 bool SupportsCompositionRestore();
+bool SupportsCaretStateIndicator();
 bool FlushNamedpipeFocusSessionReset();
 bool FlushNamedpipeImeDeactivation(uint64_t focusToken = 0);
 
@@ -69,9 +70,10 @@ int SendClientSuspendedEventToServerViaNamedPipe();
 int SendIMEStatusSnapshotToUIProcessViaNamedPipe(bool kbdIsOpen, bool fullwidthIsOpen, bool puncIsOpen,
                                                  bool assertsFocusOwnership = false);
 int SendIMEStatusEventToUIProcessViaNamedPipe(bool kbdIsOpen, bool fullwidthIsOpen, bool puncIsOpen);
-int SendIMESwitchEventToUIProcessViaNamedPipe(UINT uImeStatus);
-int SendPuncSwitchEventToUIProcessViaNamedPipe(BOOL isPunc);
-int SendDoubleSingleByteSwitchEventToUIProcessViaNamedPipe(BOOL isDoubleSingleByte);
+// eventType is IMESwitch, PuncSwitch or DoubleSingleByteSwitch. No-op unless
+// the Server negotiated FanyImeProtocol::CaretStateIndicator.
+int SendCaretStateSwitchEventToUIProcessViaNamedPipe(UINT eventType, bool enabled, POINT anchor, bool capsLockEdge,
+                                                     bool capsLockEnabled, bool imeOpen);
 
 bool SendToAuxNamedpipe(const std::wstring &pipeData, bool waitForAcknowledgement = false);
 
@@ -89,6 +91,7 @@ int WriteDataToNamedPipe(              //
 );
 KeyEventSendResult SendKeyEventToUIProcessViaNamedPipe(_Out_opt_ uint64_t *requestId = nullptr);
 int SendHideCandidateWndEventToUIProcessViaNamedPipe();
+int SendHideCaretStateEventToUIProcessViaNamedPipe();
 int SendShowCandidateWndEventToUIProcessViaNamedPipe();
 int SendMoveCandidateWndEventToUIProcessViaNamedPipe();
 int SendLangbarRightClickEventToUIProcessViaNamedPipe(const RECT *prcArea);

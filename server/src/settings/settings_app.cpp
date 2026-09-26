@@ -353,6 +353,8 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
             {"candidate_window_diagnostic_log", GetConfiguredDiagnosticLogEnabled()},
             {"tsf_diagnostic_log", GetConfiguredTsfDiagnosticLogEnabled()},
             {"floating_toolbar", GetConfiguredFloatingToolbarEnabled()},
+            {"caret_state_indicator", GetConfiguredCaretStateIndicatorEnabled()},
+            {"caret_state_indicator_position", GetConfiguredCaretStateIndicatorPosition()},
             {"floating_toolbar_fullwidth", toolbar.fullwidth},
             {"floating_toolbar_punctuation", toolbar.punctuation},
             {"floating_toolbar_character_set", toolbar.character_set},
@@ -661,6 +663,10 @@ bool ApplyConfigUpdate(const json::object &data)
         return SetConfiguredThemeVoice(json::value_to<std::string>(data.at("value")));
     if (path == "general.floating_toolbar")
         return SetConfiguredFloatingToolbarEnabled(json::value_to<bool>(data.at("value")));
+    if (path == "general.caret_state_indicator")
+        return SetConfiguredCaretStateIndicatorEnabled(json::value_to<bool>(data.at("value")));
+    if (path == "general.caret_state_indicator_position")
+        return SetConfiguredCaretStateIndicatorPosition(json::value_to<std::string>(data.at("value")));
     if (path == "general.diagnostic_log" || path == "general.candidate_window_diagnostic_log")
         return SetConfiguredDiagnosticLogEnabled(json::value_to<bool>(data.at("value")));
     if (path == "general.tsf_diagnostic_log")

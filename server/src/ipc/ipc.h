@@ -126,6 +126,9 @@ uint64_t RegisterToTsfPipeClient(uint64_t client_id, HANDLE pipe);
 // optional CompositionRestore capability. Server-to-client replies that older
 // DLLs would reject must be gated on it.
 bool ClientNegotiatedCompositionRestore(uint64_t client_id);
+// True only for a versioned client that advertised CaretStateIndicator, i.e.
+// its character-set shortcut KeyEvent carries a caret anchor in point[].
+bool ClientNegotiatedCaretStateIndicator(uint64_t client_id);
 uint64_t RegisterToTsfWorkerThreadPipeClient(uint64_t client_id, HANDLE pipe);
 uint64_t BeginPipeClientHandler(HANDLE pipe);
 void EndPipeClientHandler(uint64_t handler_id);

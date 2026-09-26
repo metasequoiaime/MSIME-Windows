@@ -541,6 +541,8 @@ CMetasequoiaIME::CMetasequoiaIME()
     _backspaceHoldArmed = false;
     _passthroughStatsVirtualKey = 0;
     _passthroughStatsMessageTime = 0;
+    _capsLockTestKeyDownMessageTime = 0;
+    _capsLockTestKeyDownPending = false;
     _shiftHotkeyArmed = false;
     _ctrlHotkeyArmed = false;
     _modifierHotkeyExpire = {};

@@ -201,6 +201,10 @@ class CCompositionProcessorEngine
     void SyncPunctuationWithImeMode(_In_ ITfThreadMgr *pThreadMgr, TfClientId tfClientId, BOOL isOpen);
     void CommitCompositionOnExternalKeyboardClose();
     void ReleaseConfiguredImeModeDefense();
+    // Requests the transient caret badge for a user-initiated mode change.
+    // Never call it for programmatic compartment writes.
+    void SendCaretStateSwitchEvent(UINT eventType, bool enabled, bool capsLockEdge = false,
+                                   bool capsLockEnabled = false);
 
   private:
     struct _KEYSTROKE

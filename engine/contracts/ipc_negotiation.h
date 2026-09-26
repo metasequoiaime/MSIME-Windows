@@ -20,6 +20,12 @@ constexpr std::uint32_t CharacterSetShortcut = 1u << 3;
 // discarding the whole composition. A client must opt in only after it can
 // rebuild its keystroke buffer from that payload.
 constexpr std::uint32_t CompositionRestore = 1u << 4;
+// Optional: the Server renders IMESwitch / PuncSwitch / DoubleSingleByteSwitch
+// as transient caret badges anchored at point[] and understands HideCaretState.
+// These events are user-shortcut notifications only; authoritative mode state
+// still travels in StatusSnapshot. A client must not send them unless the
+// Server acknowledged this bit.
+constexpr std::uint32_t CaretStateIndicator = 1u << 5;
 constexpr std::uint32_t Capabilities = RequestIds | FocusEpochs | FramedVoice;
 constexpr std::uint32_t RequiredCapabilities = RequestIds | FocusEpochs;
 
