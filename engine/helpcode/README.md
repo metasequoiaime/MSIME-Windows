@@ -9,9 +9,11 @@
 - `shouyou2_0`：`shouyou2_0_helpcode.txt`（首右2.0）
 - `shouyouplus`：`shouyouplus_helpcode.txt`（首右plus）
 - `xiaohe`：`xiaohe_helpcode.txt`（小鹤）
-- `jiajia`：`jiajia_helpcode.txt`（加加）
+- `jiajia`：`jiajia_helpcode.txt`（拼音加加）
 
 公共数据位于 Engine 的 `helpcode/helpcodes/`，平台打包时复制需要的文件到应用资源目录。运行时路径由平台传给引擎，不依赖作者机器的绝对路径。合仓后的消费端无需再单独检出 HelpCode 仓库。
+
+`helpcodes\custom\` 是留给用户的目录：运行时放进去的每个 `.txt` 都是一套方案，方案名为 `custom/<文件名>`，由 `HelpcodeUtils::list_custom_helpcode_schemas` 扫描。文件开头的 `# name:` / `# name_en:` 注释给出中英文显示名，缺省用文件名。面向用户的格式说明见 [helpcodes/custom/README.md](./helpcodes/custom/README.md)，它随安装包一起放进用户的数据目录。安装器升级时保留这个目录。
 
 ## 取码规则
 
