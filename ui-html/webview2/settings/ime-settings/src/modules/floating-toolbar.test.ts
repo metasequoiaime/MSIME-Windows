@@ -52,7 +52,21 @@ it('shows the four runtime samples and preserves fixed punctuation slots', () =>
   expect(styles).toMatch(/\.caret-state-badge\s*\{[^}]*top:\s*23px;[^}]*right:\s*29px;/);
   expect(styles).toMatch(/\[data-position="top"\] \.caret-state-badge/);
   expect(styles).toMatch(/\[data-position="top-right"\] \.caret-state-badge/);
-  expect(styles).toMatch(/\[data-position="bottom"\] \.caret-state-badge\s*\{\s*top:\s*89px;/);
+  // Every lower position shares one vertical offset; bottom centres like top
+  // and bottom-right aligns like top-right (bottom-left keeps the default).
+  expect(styles).toMatch(/\[data-position\^="bottom"\] \.caret-state-badge\s*\{\s*top:\s*89px;/);
+  expect(styles).toMatch(/\[data-position="bottom"\] \.caret-state-badge\s*\{\s*right:\s*auto;\s*left:\s*calc\(65px/);
+  expect(styles).toMatch(/\[data-position="bottom-right"\] \.caret-state-badge\s*\{\s*right:\s*auto;\s*left:\s*23px;/);
+  expect(styles).not.toMatch(/\[data-position="bottom-left"\]/);
+});
+
+it('offers every side and alignment in the position selector', () => {
+  const menu = partial.split('id="caretStateIndicatorPositionMenu"')[1]?.split('</button>')[0] ?? '';
+  const options = Array.from(menu.matchAll(/data-value="([^"]+)">([^<]+)<\/div>/g), ([, value, label]) => [value, label]);
+  expect(options).toEqual([
+    ['top-left', '左上方'], ['top', '正上方'], ['top-right', '右上方'],
+    ['bottom-left', '左下方'], ['bottom', '正下方'], ['bottom-right', '右下方']
+  ]);
 });
 
 it('applies each selector choice immediately to all samples and also follows config snapshots', () => {
@@ -68,7 +82,8 @@ it('applies each selector choice immediately to all samples and also follows con
     expect(call?.[4]).toBe('general.caret_state_indicator_position');
     const change = call?.[5];
     for (const [position, direction] of [
-      ['top-left', '左上方'], ['top', '正上方'], ['top-right', '右上方'], ['bottom', '下方']
+      ['top-left', '左上方'], ['top', '正上方'], ['top-right', '右上方'],
+      ['bottom-left', '左下方'], ['bottom', '正下方'], ['bottom-right', '右下方']
     ]) {
       expect(change?.(position)).toBe(position);
       expect(host.dataset.position).toBe(position);

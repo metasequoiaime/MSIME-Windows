@@ -97,7 +97,10 @@ function updateCaretPreviewPosition(position: string): void {
   const host = document.getElementById('caretStatePreviewHost');
   if (!host) return;
   host.dataset.position = position;
-  const direction = ({ 'top-left': '左上方', top: '正上方', 'top-right': '右上方', bottom: '下方' } as Record<string, string>)[position];
+  const direction = ({
+    'top-left': '左上方', top: '正上方', 'top-right': '右上方',
+    'bottom-left': '左下方', bottom: '正下方', 'bottom-right': '右下方'
+  } as Record<string, string>)[position];
   host.closest('.caret-state-preview')?.setAttribute('aria-label',
     `光标状态提示预览：每个文字光标${direction || '左上方'}分别显示中、中文标点和中文模式、全角、简体`);
 }

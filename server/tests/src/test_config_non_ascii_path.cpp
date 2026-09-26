@@ -103,12 +103,16 @@ TEST_CASE(config_round_trips_under_non_ascii_profile_path)
 
         REQUIRE(SetConfiguredInputMode("japanese"));
         REQUIRE(SetConfiguredInputScheme("wubi"));
-        for (const std::string &position : {"top-left", "top", "top-right", "bottom"})
+        for (const std::string &position : {"top-left", "top", "top-right", "bottom-left", "bottom", "bottom-right"})
         {
             REQUIRE(SetConfiguredCaretStateIndicatorPosition(position));
             InitImeConfig();
             REQUIRE_EQ(GetConfiguredCaretStateIndicatorPosition(), position);
         }
+        // An unknown value is rejected and leaves the stored position alone.
+        REQUIRE(!SetConfiguredCaretStateIndicatorPosition("left"));
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredCaretStateIndicatorPosition(), std::string("bottom-right"));
 
         InitImeConfig();
         REQUIRE_EQ(GetConfiguredInputMode(), std::string("japanese"));
