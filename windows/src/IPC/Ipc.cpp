@@ -1812,7 +1812,7 @@ int SendIMEDeactivationEventToUIProcessViaNamedPipe()
     return 0;
 }
 
-int SendCaretStateSwitchEventToUIProcessViaNamedPipe(UINT eventType, bool enabled, POINT anchor, bool capsLockEdge,
+int SendCaretStateSwitchEventToUIProcessViaNamedPipe(UINT eventType, bool enabled, POINT anchor, UINT trigger,
                                                      bool capsLockEnabled, bool imeOpen)
 {
     // The opcodes predate the badge; a Server that did not acknowledge the
@@ -1824,7 +1824,7 @@ int SendCaretStateSwitchEventToUIProcessViaNamedPipe(UINT eventType, bool enable
     namedpipeData.keycode = enabled ? 1u : 0u;
     if (eventType == FanyImePipeEventType::IMESwitch)
     {
-        namedpipeData.wch = capsLockEdge ? VK_CAPITAL : 0;
+        namedpipeData.wch = static_cast<decltype(namedpipeData.wch)>(trigger);
         namedpipeData.modifiers_down = FanyImePipeFlags::EncodeImeSwitchCapsLockSnapshot(capsLockEnabled);
     }
     else if (eventType == FanyImePipeEventType::PuncSwitch)

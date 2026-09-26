@@ -250,6 +250,11 @@ bool GetConfiguredFloatingToolbarEnabled();
 bool SetConfiguredFloatingToolbarEnabled(bool enabled);
 bool GetConfiguredCaretStateIndicatorEnabled();
 bool SetConfiguredCaretStateIndicatorEnabled(bool enabled);
+// Also announce the current mode when focus moves into another text field,
+// in the same window or another one. Only meaningful while the indicator
+// itself is enabled.
+bool GetConfiguredCaretStateIndicatorOnFocus();
+bool SetConfiguredCaretStateIndicatorOnFocus(bool enabled);
 const std::string &GetConfiguredCaretStateIndicatorPosition();
 bool SetConfiguredCaretStateIndicatorPosition(const std::string &position);
 struct FloatingToolbarItemsConfig

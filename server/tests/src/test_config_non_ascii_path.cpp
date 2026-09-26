@@ -109,6 +109,12 @@ TEST_CASE(config_round_trips_under_non_ascii_profile_path)
             InitImeConfig();
             REQUIRE_EQ(GetConfiguredCaretStateIndicatorPosition(), position);
         }
+        for (const bool onFocus : {true, false})
+        {
+            REQUIRE(SetConfiguredCaretStateIndicatorOnFocus(onFocus));
+            InitImeConfig();
+            REQUIRE_EQ(GetConfiguredCaretStateIndicatorOnFocus(), onFocus);
+        }
         // An unknown value is rejected and leaves the stored position alone.
         REQUIRE(!SetConfiguredCaretStateIndicatorPosition("left"));
         InitImeConfig();

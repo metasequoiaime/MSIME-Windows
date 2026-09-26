@@ -1,5 +1,13 @@
 .floating-toolbar-card { padding: 0; overflow: hidden; }
 .caret-state-indicator-card { padding: 0; overflow: hidden; }
+/* The card title groups the settings below it and carries no switch of its
+   own; a divider sets it apart from the rows. */
+.caret-state-heading { border-bottom: 1px solid var(--divider-color); }
+/* Rows sit between regular and the bold group title. Chinese text falls back
+   to Microsoft YaHei, which ships only Light / Regular / Bold, so any weight
+   from 400 to 500 renders Regular and 550+ renders Bold. A hairline stroke on
+   Regular gives the medium weight the font lacks (WebView2 is Chromium). */
+.section-title.caret-state-option-title { font-weight: 400; -webkit-text-stroke: 0.25px currentColor; }
 .floating-toolbar-setting-row { padding: 20px 24px; }
 .floating-toolbar-description { margin-top: 6px; color: var(--text-muted); font-size: 12px; }
 .floating-toolbar-preview { min-height: 190px; padding: 20px 24px 30px; border-top: 1px solid var(--border-color); background: var(--surface-subtle); }

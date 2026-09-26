@@ -37,3 +37,8 @@ add_executable(test_caret_anchor_policy caret_anchor_policy.cpp)
 target_include_directories(test_caret_anchor_policy PRIVATE ../src)
 target_compile_features(test_caret_anchor_policy PRIVATE cxx_std_17)
 add_test(NAME caret_anchor_policy COMMAND test_caret_anchor_policy)
+
+add_executable(test_focus_announcement_policy focus_announcement_policy.cpp)
+target_include_directories(test_focus_announcement_policy PRIVATE ../src)
+target_compile_features(test_focus_announcement_policy PRIVATE cxx_std_17)
+add_test(NAME focus_announcement_policy COMMAND test_focus_announcement_policy)

@@ -2070,14 +2070,15 @@ void WorkerThread()
         // Clients send the three switch events only after negotiating
         // CaretStateIndicator; they are badge requests, not state updates.
         case TaskType::IMESwitch: {
-            const bool capsLockEdge = task.pipe_data.wch == VK_CAPITAL;
+            const auto trigger = FanyImeUi::DecodeInputModeTrigger(task.pipe_data.wch);
             const bool imeEnabled = task.pipe_data.keycode != 0;
             const auto capsLockSnapshot =
                 FanyImePipeFlags::DecodeImeSwitchCapsLockSnapshot(task.pipe_data.modifiers_down);
             const bool capsLockEnabled =
                 capsLockSnapshot.has_value() ? *capsLockSnapshot : GetServerCapsLockState() != 0;
             const bool japaneseMode = GetConfiguredInputMode() == "japanese";
-            if (FanyImeUi::ShouldShowInputModeEvent(capsLockEdge, capsLockEnabled, imeEnabled, japaneseMode))
+            if (FanyImeUi::ShouldShowInputModeEvent(trigger, GetConfiguredCaretStateIndicatorOnFocus(), capsLockEnabled,
+                                                    imeEnabled, japaneseMode))
             {
                 PostCaretStateBadge(FanyImeUi::InputModeBadge(imeEnabled, japaneseMode, capsLockEnabled),
                                     task.pipe_data.point[0], task.pipe_data.point[1]);

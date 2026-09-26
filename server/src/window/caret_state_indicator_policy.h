@@ -1,5 +1,8 @@
 #pragma once
 
+#include "engine/contracts/windows_ipc.h"
+
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -128,14 +131,41 @@ inline wchar_t EffectiveInputModeGlyph(bool imeEnabled, bool japaneseMode, bool 
     return capsLockEnabled ? L'英' : InputModeGlyph(imeEnabled, japaneseMode);
 }
 
-inline bool ShouldShowInputModeEvent(bool capsLockEdge, bool capsLockEnabled, bool imeEnabled, bool japaneseMode)
+enum class InputModeTrigger
 {
+    UserToggle,
+    CapsLockEdge,
+    FocusEntered,
+};
+
+// Decodes the IMESwitch wch field; values this Server does not know are
+// treated as a plain toggle, as the contract promises older senders.
+inline InputModeTrigger DecodeInputModeTrigger(std::uint32_t wireTrigger)
+{
+    if (wireTrigger == FanyImeCaretStateTrigger::CapsLockEdge)
+        return InputModeTrigger::CapsLockEdge;
+    if (wireTrigger == FanyImeCaretStateTrigger::FocusEntered)
+        return InputModeTrigger::FocusEntered;
+    return InputModeTrigger::UserToggle;
+}
+
+inline bool ShouldShowInputModeEvent(InputModeTrigger trigger, bool focusAnnouncementEnabled, bool capsLockEnabled,
+                                     bool imeEnabled, bool japaneseMode)
+{
+    switch (trigger)
+    {
+    case InputModeTrigger::FocusEntered:
+        // An announcement of the current mode, not a change; opt-in only.
+        return focusAnnouncementEnabled;
+    case InputModeTrigger::CapsLockEdge:
+        // A Caps Lock edge matters only when it changes the effective glyph.
+        return EffectiveInputModeGlyph(imeEnabled, japaneseMode, !capsLockEnabled) !=
+               EffectiveInputModeGlyph(imeEnabled, japaneseMode, capsLockEnabled);
+    case InputModeTrigger::UserToggle:
+        break;
+    }
     // A language toggle under Caps Lock does not change what letters produce.
-    if (!capsLockEdge)
-        return !capsLockEnabled;
-    // A Caps Lock edge matters only when it changes the effective glyph.
-    return EffectiveInputModeGlyph(imeEnabled, japaneseMode, !capsLockEnabled) !=
-           EffectiveInputModeGlyph(imeEnabled, japaneseMode, capsLockEnabled);
+    return !capsLockEnabled;
 }
 
 inline CaretStateBadge InputModeBadge(bool imeEnabled, bool japaneseMode, bool capsLockEnabled)

@@ -4,6 +4,45 @@
 #include "MetasequoiaIME.h"
 #include "CandidateListUIPresenter.h"
 #include "Ipc.h"
+#include "FocusAnnouncementPolicy.h"
+
+namespace
+{
+struct FocusedField
+{
+    // The document can take text: it has a context that is not read-only.
+    bool editable = false;
+    // The window of the document's active view; hosts that expose none fall
+    // back to this thread's keyboard focus window.
+    HWND window = nullptr;
+};
+
+FocusedField ResolveFocusedField(_In_opt_ ITfDocumentMgr *documentMgr)
+{
+    FocusedField field;
+    ITfContext *context = nullptr;
+    if (documentMgr && SUCCEEDED(documentMgr->GetTop(&context)) && context)
+    {
+        TF_STATUS status{};
+        field.editable = FAILED(context->GetStatus(&status)) || (status.dwDynamicFlags & TF_SD_READONLY) == 0;
+        ITfContextView *view = nullptr;
+        if (SUCCEEDED(context->GetActiveView(&view)) && view)
+        {
+            if (FAILED(view->GetWnd(&field.window)))
+            {
+                field.window = nullptr;
+            }
+            view->Release();
+        }
+        context->Release();
+    }
+    if (!field.window)
+    {
+        field.window = GetFocus();
+    }
+    return field;
+}
+} // namespace
 
 //+---------------------------------------------------------------------------
 //
@@ -82,6 +121,34 @@ STDAPI CMetasequoiaIME::OnSetFocus(_In_ ITfDocumentMgr *pDocMgrFocus, _In_ ITfDo
     // (punct key + preceding char); other keys / caret moves clear it instead.
     const bool windowsTextInputHostTransition =
         _focusLostToWindowsTextInputHost || _CaptureWindowsTextInputHostFocusLoss();
+
+    // Decided before the reconnect below flips g_connected. Returning from
+    // TextInputHost (Win+.) lands back in the same field, so it never counts
+    // as moving to another one, however focus was routed meanwhile.
+    {
+        const FocusedField field = ResolveFocusedField(pDocMgrFocus);
+        const bool focusWindowChanged = field.window != _focusAnnouncementWindow;
+        const bool focusSessionStarted = !Global::g_connected;
+        const bool announce = !windowsTextInputHostTransition &&
+                              ShouldAnnounceDocumentFocus(field.editable, focusWindowChanged,
+                                                          _focusAnnouncementEditable, focusSessionStarted);
+        if (announce)
+        {
+            _ScheduleFocusedInputModeAnnouncement();
+        }
+        if (Global::TsfDiagnosticLogEnabled.load(std::memory_order_relaxed))
+        {
+            QueueTsfDiagnosticLog(fmt::format(L"[caret-state] focus editable={} window_changed={} prev_editable={} "
+                                              L"session_started={} text_input_host={} announce={}",
+                                              field.editable, focusWindowChanged, _focusAnnouncementEditable,
+                                              focusSessionStarted, windowsTextInputHostTransition, announce));
+        }
+        if (field.editable)
+        {
+            _focusAnnouncementWindow = field.window;
+        }
+        _focusAnnouncementEditable = field.editable;
+    }
 
     if (pDocMgrFocus && _focusLossDeferPending)
     {

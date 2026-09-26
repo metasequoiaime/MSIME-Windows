@@ -58,6 +58,16 @@ TEST_CASE(shipped_caret_indicator_defaults_and_upgrade_behavior)
     const std::string working((std::istreambuf_iterator<char>(development)), {});
     REQUIRE(!toml::parse(installed)["general"]["caret_state_indicator"].value_or(true));
     REQUIRE(!toml::parse(working)["general"]["caret_state_indicator"].value_or(true));
+    // value_or(true) also fails when a template omits the key: an upgrade
+    // would then drop a user's choice (MergeConfigIntoTemplate keeps only
+    // keys the shipped template has).
+    REQUIRE(!toml::parse(installed)["general"]["caret_state_indicator_on_focus"].value_or(true));
+    REQUIRE(!toml::parse(working)["general"]["caret_state_indicator_on_focus"].value_or(true));
+    const std::string focus_opt_in = "[general]\nfloating_toolbar = true\ncaret_state_indicator_on_focus = true\n";
+    const std::string focus_baseline = "[general]\nfloating_toolbar = true\ncaret_state_indicator_on_focus = false\n";
+    REQUIRE(toml::parse(MergeConfigIntoTemplate(installed, focus_opt_in,
+                                                focus_baseline))["general"]["caret_state_indicator_on_focus"]
+                .value_or(false));
 
     const std::string old_template = "[general]\nfloating_toolbar = true\n";
     const auto upgraded = toml::parse(MergeConfigIntoTemplate(installed, old_template, old_template));
