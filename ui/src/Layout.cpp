@@ -12,6 +12,7 @@
 #include <dwrite_1.h>
 #include <limits>
 #include <numeric>
+#include <vector>
 #include <windows.h>
 #include <wrl/client.h>
 
@@ -2187,14 +2188,38 @@ void TextBlock::Render(DeviceResources &deviceResources)
         cachedTextLayout_->HitTestTextPosition(caretPos, caretAtEnd && !text_.empty() ? TRUE : FALSE, &caretX, &caretY,
                                                &hit);
         const float barWidth = kPreeditCaretBarWidth;
-        const float barHeight = std::max(hit.height > 0.0f ? hit.height : fontSize_ * 1.2f, fontSize_ * 0.8f);
         float left = originX + caretX + kPreeditCaretEndAir;
         if (!caretAtEnd)
         {
             const float slotWidth = hit.width > 1.0f ? hit.width : kPreeditCaretInsertGap;
             left = originX + caretX + (slotWidth - barWidth) * 0.5f;
         }
-        const float top = originY + caretY + barHeight * 0.08f;
+        // Mirrors the CSS caret (`height: 1.2em` inline-block on the baseline,
+        // `translate(..., 10%)`): it ends 0.12em below the baseline, well inside
+        // the line box. Sizing it to the full line height and nudging it down
+        // pushed its bottom past the line into the row below.
+        const float barHeight = fontSize_ * 1.2f;
+        float baseline = hit.height > 0.0f ? hit.height * 0.8f : fontSize_;
+        UINT32 lineCount = 0;
+        cachedTextLayout_->GetLineMetrics(nullptr, 0, &lineCount);
+        if (lineCount > 0)
+        {
+            std::vector<DWRITE_LINE_METRICS> lines(lineCount);
+            if (SUCCEEDED(cachedTextLayout_->GetLineMetrics(lines.data(), lineCount, &lineCount)))
+            {
+                float lineTop = 0.0f;
+                for (const DWRITE_LINE_METRICS &line : lines)
+                {
+                    baseline = line.baseline;
+                    if (caretY < lineTop + line.height - 0.5f)
+                    {
+                        break;
+                    }
+                    lineTop += line.height;
+                }
+            }
+        }
+        const float top = originY + caretY + baseline + fontSize_ * 0.12f - barHeight;
         if (ID2D1SolidColorBrush *caretBrush = deviceResources.GetSolidColorBrush(caretColor_))
         {
             target->FillRectangle(D2D1::RectF(left, top, left + barWidth, top + barHeight), caretBrush);
