@@ -3,10 +3,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, it, vi } from 'vitest';
 import { applyCaretStateIndicatorPosition, setupFloatingToolbar } from './floating-toolbar';
-import { setupDropdownMenu, applyDropdownValue } from './shared';
+import { setupDropdownMenu, applyDropdownValue, setupToggleButton } from './shared';
+import { updateConfig } from './config-sync';
 import partial from '../partials/floating-toolbar.html?raw';
 
 vi.mock('./shared', () => ({ setupDropdownMenu: vi.fn(), applyDropdownValue: vi.fn(), setupToggleButton: vi.fn() }));
+vi.mock('./config-sync', () => ({ updateConfig: vi.fn() }));
 vi.mock('./appearance', () => ({ syncCaretStateIndicatorPreview: vi.fn() }));
 vi.mock('./skin', () => ({ syncAppearancePreviews: vi.fn() }));
 
@@ -24,6 +26,7 @@ it('keeps toolbar and caret controls in separate cards with separate previews', 
   expect(caretCard).toContain('可与悬浮工具栏同时开启');
   expect(caretCard).not.toContain('关闭悬浮工具栏后');
   expect(caretCard).toContain('id="caretStateIndicatorPositionBtn"');
+  expect(caretCard).toContain('class="ftb-toggle-btn" id="caretStateIndicatorOnFocusToggleBtn" role="switch" aria-label="切换输入框时提示当前中英文状态" aria-checked="false"');
   expect(caretCard).toContain('id="caretStatePreviewHost"');
   expect(caretCard).not.toContain('id="ftbPreviewHost"');
   expect(caretCard).toContain('role="img" aria-label="光标状态提示预览：每个文字光标左上方分别显示中、中文标点和中文模式、全角、简体"');
@@ -92,6 +95,27 @@ it('applies each selector choice immediately to all samples and also follows con
       expect(applyDropdownValue).toHaveBeenLastCalledWith('caretStateIndicatorPositionBtn', 'caretStateIndicatorPositionMenu', position);
       expect(host.dataset.position).toBe(position);
     }
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it('persists the focus announcement switch under its own config key', () => {
+  const toggle = { setAttribute: vi.fn() };
+  vi.stubGlobal('document', {
+    getElementById: (id: string) => id === 'caretStateIndicatorOnFocusToggleBtn' ? toggle : null,
+    querySelectorAll: () => []
+  });
+  try {
+    setupFloatingToolbar();
+    const call = vi.mocked(setupToggleButton).mock.calls.find(([id]) => id === 'caretStateIndicatorOnFocusToggleBtn');
+    const onToggle = call?.[1];
+    expect(onToggle).toBeTypeOf('function');
+    onToggle!(true);
+    expect(updateConfig).toHaveBeenLastCalledWith('general.caret_state_indicator_on_focus', true);
+    expect(toggle.setAttribute).toHaveBeenLastCalledWith('aria-checked', 'true');
+    onToggle!(false);
+    expect(updateConfig).toHaveBeenLastCalledWith('general.caret_state_indicator_on_focus', false);
   } finally {
     vi.unstubAllGlobals();
   }

@@ -31,6 +31,11 @@ int main()
     CHECK(!FanyImePipeEventType::IsRouteDeactivation(FanyImePipeEventType::HideCaretState));
     CHECK(FanyImeProtocol::CaretStateIndicator == (1u << 5));
     CHECK((FanyImeProtocol::CaretStateIndicator & FanyImeProtocol::RequiredCapabilities) == 0);
+    // CapsLockEdge keeps the VK_CAPITAL value the first Servers matched on.
+    CHECK(FanyImeCaretStateTrigger::UserToggle == 0);
+    CHECK(FanyImeCaretStateTrigger::CapsLockEdge == 0x14);
+    CHECK(FanyImeCaretStateTrigger::FocusEntered != FanyImeCaretStateTrigger::UserToggle);
+    CHECK(FanyImeCaretStateTrigger::FocusEntered != FanyImeCaretStateTrigger::CapsLockEdge);
     CHECK(FanyImeProtocol::Negotiate(legacy).legacy);
     CHECK(FanyImeProtocol::Negotiate(legacy).accepted);
 

@@ -131,6 +131,10 @@ constexpr UINT_PTR TIMER_REFRESH_LANG_BAR_THEME = 3;
 constexpr UINT_PTR TIMER_DEFERRED_FOCUS_LOSS = 4;
 constexpr UINT_PTR TIMER_FOCUS_STATUS_RESEND = 5;
 constexpr UINT_PTR TIMER_PAIRED_PUNCTUATION_CARET = 6;
+constexpr UINT_PTR TIMER_FOCUS_CARET_STATE = 7;
+// Runs after the focus status resend and the reconnect it may trigger, so the
+// Server has activated this client before the badge request arrives.
+constexpr UINT FOCUS_CARET_STATE_DELAY_MS = 120;
 // （〈《“‘ and their closing halves are all Shift chords. An arrow key that
 // arrives while Shift is still physically down reads as Shift+Arrow, so the
 // host extends the selection over the closing punctuation instead of stepping
@@ -477,6 +481,10 @@ class CMetasequoiaIME : public ITfTextInputProcessorEx,
     void _ClearPendingIpcRequests();
     void _RequestLocalSessionReset(_In_opt_ ITfContext *preferredContext, UINT resetToken);
     bool _CaptureWindowsTextInputHostFocusLoss();
+    // Caret badge on moving focus into another text field: callbacks only
+    // schedule; the timer announces once focus has settled.
+    void _ScheduleFocusedInputModeAnnouncement();
+    void _AnnounceFocusedInputMode();
 
     struct DeferredKeyDown
     {
@@ -796,6 +804,13 @@ class CMetasequoiaIME : public ITfTextInputProcessorEx,
     bool _activationRequired;
     bool _focusLostToWindowsTextInputHost;
     bool _focusLossDeferPending;
+    // Focus window of the last editable document, and whether the last focus
+    // callback landed on an editable document at all. Together they tell a
+    // move to another field from Chromium swapping documents while typing.
+    HWND _focusAnnouncementWindow;
+    bool _focusAnnouncementEditable;
+    // Thread focus left for a real application switch (not TextInputHost).
+    bool _threadFocusLostForAnnouncement;
     bool _hasPendingServerCandidate;
     UINT _pendingServerCandidateMsgType;
     std::wstring _pendingServerCandidateString;

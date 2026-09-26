@@ -354,6 +354,7 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
             {"tsf_diagnostic_log", GetConfiguredTsfDiagnosticLogEnabled()},
             {"floating_toolbar", GetConfiguredFloatingToolbarEnabled()},
             {"caret_state_indicator", GetConfiguredCaretStateIndicatorEnabled()},
+            {"caret_state_indicator_on_focus", GetConfiguredCaretStateIndicatorOnFocus()},
             {"caret_state_indicator_position", GetConfiguredCaretStateIndicatorPosition()},
             {"floating_toolbar_fullwidth", toolbar.fullwidth},
             {"floating_toolbar_punctuation", toolbar.punctuation},
@@ -665,6 +666,8 @@ bool ApplyConfigUpdate(const json::object &data)
         return SetConfiguredFloatingToolbarEnabled(json::value_to<bool>(data.at("value")));
     if (path == "general.caret_state_indicator")
         return SetConfiguredCaretStateIndicatorEnabled(json::value_to<bool>(data.at("value")));
+    if (path == "general.caret_state_indicator_on_focus")
+        return SetConfiguredCaretStateIndicatorOnFocus(json::value_to<bool>(data.at("value")));
     if (path == "general.caret_state_indicator_position")
         return SetConfiguredCaretStateIndicatorPosition(json::value_to<std::string>(data.at("value")));
     if (path == "general.diagnostic_log" || path == "general.candidate_window_diagnostic_log")

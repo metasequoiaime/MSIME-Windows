@@ -72,3 +72,15 @@ it('backfills the word-to-character switch only from a boolean', () => {
   snapshot({ data: { input: { word_to_character: 'yes' } } });
   expect(applyToggleState).not.toHaveBeenCalled();
 });
+
+it('backfills the focus announcement switch only from a boolean', () => {
+  const snapshot = handlers.get('configSnapshot')!;
+  snapshot({ data: { general: { caret_state_indicator_on_focus: true } } });
+  expect(applyToggleState).toHaveBeenCalledWith('caretStateIndicatorOnFocusToggleBtn', true);
+  snapshot({ data: { general: { caret_state_indicator_on_focus: false } } });
+  expect(applyToggleState).toHaveBeenLastCalledWith('caretStateIndicatorOnFocusToggleBtn', false);
+
+  vi.mocked(applyToggleState).mockClear();
+  snapshot({ data: { general: {} } });
+  expect(applyToggleState).not.toHaveBeenCalledWith('caretStateIndicatorOnFocusToggleBtn', expect.anything());
+});

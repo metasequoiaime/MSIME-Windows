@@ -72,7 +72,7 @@ int SendIMEStatusSnapshotToUIProcessViaNamedPipe(bool kbdIsOpen, bool fullwidthI
 int SendIMEStatusEventToUIProcessViaNamedPipe(bool kbdIsOpen, bool fullwidthIsOpen, bool puncIsOpen);
 // eventType is IMESwitch, PuncSwitch or DoubleSingleByteSwitch. No-op unless
 // the Server negotiated FanyImeProtocol::CaretStateIndicator.
-int SendCaretStateSwitchEventToUIProcessViaNamedPipe(UINT eventType, bool enabled, POINT anchor, bool capsLockEdge,
+int SendCaretStateSwitchEventToUIProcessViaNamedPipe(UINT eventType, bool enabled, POINT anchor, UINT trigger,
                                                      bool capsLockEnabled, bool imeOpen);
 
 bool SendToAuxNamedpipe(const std::wstring &pipeData, bool waitForAcknowledgement = false);

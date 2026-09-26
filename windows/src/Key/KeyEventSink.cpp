@@ -794,8 +794,8 @@ void CMetasequoiaIME::_ApplyCapsLockKeyDownSideEffects(bool capsLockEnabled)
     if (_pCompositionProcessorEngine)
     {
         const bool imeOpen = _pCompositionProcessorEngine->GetIMEMode(_GetThreadMgr(), _GetClientId()) != FALSE;
-        _pCompositionProcessorEngine->SendCaretStateSwitchEvent(FanyImePipeEventType::IMESwitch, imeOpen, true,
-                                                                capsLockEnabled);
+        _pCompositionProcessorEngine->SendCaretStateSwitchEvent(
+            FanyImePipeEventType::IMESwitch, imeOpen, FanyImeCaretStateTrigger::CapsLockEdge, capsLockEnabled);
     }
 }
 

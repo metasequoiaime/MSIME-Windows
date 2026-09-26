@@ -26,9 +26,9 @@ class CCaretStateSwitchEditSession : public CEditSessionBase
 {
   public:
     CCaretStateSwitchEditSession(CMetasequoiaIME *textService, ITfContext *context, UINT eventType, bool enabled,
-                                 uint64_t focusToken, bool capsLockEdge, bool capsLockEnabled, bool imeOpen)
+                                 uint64_t focusToken, UINT trigger, bool capsLockEnabled, bool imeOpen)
         : CEditSessionBase(textService, context), eventType_(eventType), enabled_(enabled), focusToken_(focusToken),
-          capsLockEdge_(capsLockEdge), capsLockEnabled_(capsLockEnabled), imeOpen_(imeOpen)
+          trigger_(trigger), capsLockEnabled_(capsLockEnabled), imeOpen_(imeOpen)
     {
     }
 
@@ -39,7 +39,7 @@ class CCaretStateSwitchEditSession : public CEditSessionBase
         POINT anchor{};
         if (!ResolveCollapsedSelectionAnchor(_pContext, ec, &anchor))
             return S_OK;
-        SendCaretStateSwitchEventToUIProcessViaNamedPipe(eventType_, enabled_, anchor, capsLockEdge_, capsLockEnabled_,
+        SendCaretStateSwitchEventToUIProcessViaNamedPipe(eventType_, enabled_, anchor, trigger_, capsLockEnabled_,
                                                          imeOpen_);
         return S_OK;
     }
@@ -48,7 +48,7 @@ class CCaretStateSwitchEditSession : public CEditSessionBase
     UINT eventType_;
     bool enabled_;
     uint64_t focusToken_;
-    bool capsLockEdge_;
+    UINT trigger_;
     bool capsLockEnabled_;
     bool imeOpen_;
 };
@@ -1584,12 +1584,13 @@ void CCompositionProcessorEngine::InitializeMetasequoiaIMECompartment(_In_ ITfTh
     PrivateCompartmentsUpdated(pThreadMgr);
 }
 
-void CCompositionProcessorEngine::SendCaretStateSwitchEvent(UINT eventType, bool enabled, bool capsLockEdge,
+void CCompositionProcessorEngine::SendCaretStateSwitchEvent(UINT eventType, bool enabled, UINT trigger,
                                                             bool capsLockEnabled)
 {
-    // Only explicit user shortcuts call this. Compartment writes from the
-    // Server, the host's conversion mode or activation never do, so none of
-    // those can surface a badge the user did not ask for.
+    // Only explicit user actions call this: shortcuts, Caps Lock, and moving
+    // focus into another text field. Compartment writes from the Server, the
+    // host's conversion mode or activation never do, so none of those can
+    // surface a badge the user did not ask for.
     if (!_pOwnerThreadMgr || !_pTextService || !Global::g_connected || !SupportsCaretStateIndicator())
         return;
     const uint64_t focusToken = _pTextService->_CaptureFocusSessionToken();
@@ -1603,13 +1604,13 @@ void CCompositionProcessorEngine::SendCaretStateSwitchEvent(UINT eventType, bool
     document->Release();
     if (FAILED(topResult) || !context)
         return;
-    if (!capsLockEdge)
+    if (trigger == FanyImeCaretStateTrigger::UserToggle)
         capsLockEnabled = Global::CapsLockEnabled.load(std::memory_order_relaxed);
     // Captured now so the punctuation badge's mode slot reflects this moment,
     // not whatever the toolbar snapshot says when the event is rendered.
     const bool imeOpen = GetIMEMode(_pOwnerThreadMgr, _tfClientId) != FALSE;
     auto *session = new (std::nothrow) CCaretStateSwitchEditSession(_pTextService, context, eventType, enabled,
-                                                                    focusToken, capsLockEdge, capsLockEnabled, imeOpen);
+                                                                    focusToken, trigger, capsLockEnabled, imeOpen);
     if (session)
     {
         HRESULT sessionResult = E_FAIL;

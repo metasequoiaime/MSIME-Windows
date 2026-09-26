@@ -2,6 +2,8 @@
 #include "Private.h"
 #include "MetasequoiaIME.h"
 #include "CandidateListUIPresenter.h"
+#include "CompositionProcessorEngine.h"
+#include "FocusAnnouncementPolicy.h"
 #include <debugapi.h>
 #include <cwchar>
 #include "fmt/xchar.h"
@@ -50,6 +52,43 @@ bool CMetasequoiaIME::_CaptureWindowsTextInputHostFocusLoss()
     return _focusLostToWindowsTextInputHost;
 }
 
+void CMetasequoiaIME::_ScheduleFocusedInputModeAnnouncement()
+{
+    // Re-arming collapses the document- and thread-focus callbacks of one
+    // switch (Chromium fires a burst) into a single announcement.
+    if (_msgWndHandle && IsWindow(_msgWndHandle))
+    {
+        SetTimer(_msgWndHandle, TIMER_FOCUS_CARET_STATE, FOCUS_CARET_STATE_DELAY_MS, nullptr);
+    }
+}
+
+void CMetasequoiaIME::_AnnounceFocusedInputMode()
+{
+    if (!IsNamedpipeFocusStateOwner(this) || !Global::g_connected || !_pThreadMgr || !_pCompositionProcessorEngine)
+    {
+        return;
+    }
+    // Focus may have moved on again while the timer was pending.
+    BOOL hasThreadFocus = FALSE;
+    if (FAILED(_pThreadMgr->IsThreadFocus(&hasThreadFocus)) || !hasThreadFocus)
+    {
+        return;
+    }
+    // The user is already typing into this field; a field change in the
+    // middle of a composition is rare, a host's transient document is not.
+    if (_IsComposing())
+    {
+        return;
+    }
+    // The badge request resolves the caret itself; a document without a
+    // caret (non-edit control) resolves nothing and stays silent. Whether the
+    // user enabled this announcement is the Server's decision.
+    const bool imeOpen = _pCompositionProcessorEngine->GetIMEMode(_pThreadMgr, _tfClientId) != FALSE;
+    const bool capsLockEnabled = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+    _pCompositionProcessorEngine->SendCaretStateSwitchEvent(FanyImePipeEventType::IMESwitch, imeOpen,
+                                                            FanyImeCaretStateTrigger::FocusEntered, capsLockEnabled);
+}
+
 //+---------------------------------------------------------------------------
 //
 // ITfTextLayoutSink::OnSetThreadFocus
@@ -75,6 +114,13 @@ STDAPI CMetasequoiaIME::OnSetThreadFocus()
     {
         PostMessage(_msgWndHandle, WM_ThreadFocus, 0, 0);
     }
+    // Some window switches surface only as thread focus, with no document
+    // focus callback, so the return itself has to count.
+    if (ShouldAnnounceThreadFocusReturn(_threadFocusLostForAnnouncement, _focusLostToWindowsTextInputHost))
+    {
+        _ScheduleFocusedInputModeAnnouncement();
+    }
+    _threadFocusLostForAnnouncement = false;
     if (_pCandidateListUIPresenter)
     {
         ITfDocumentMgr *pCandidateListDocumentMgr = nullptr;
@@ -114,6 +160,11 @@ STDAPI CMetasequoiaIME::OnKillThreadFocus()
     _backspaceHoldArmed = false;
     _focusLostToWindowsTextInputHost = false;
     (void)_CaptureWindowsTextInputHostFocusLoss();
+    _threadFocusLostForAnnouncement = true;
+    if (_msgWndHandle && IsWindow(_msgWndHandle))
+    {
+        KillTimer(_msgWndHandle, TIMER_FOCUS_CARET_STATE);
+    }
 
     // ITfThreadFocusSink reports temporary auxiliary UI transitions as well
     // as real application focus changes. The known-good implementation did

@@ -117,6 +117,7 @@ constexpr FuzzyPinyinRuleKey kFuzzyPinyinRuleKeys[] = {
 };
 bool g_floating_toolbar_enabled = true;
 bool g_caret_state_indicator_enabled = false;
+bool g_caret_state_indicator_on_focus = false;
 std::string g_caret_state_indicator_position = FanyImeUi::kDefaultCaretStatePosition;
 FloatingToolbarItemsConfig g_floating_toolbar_items;
 double g_floating_toolbar_scale = 1.0;
@@ -1034,6 +1035,7 @@ bool LoadImeConfig()
         }
         g_floating_toolbar_enabled = tbl["general"]["floating_toolbar"].value_or(true);
         g_caret_state_indicator_enabled = tbl["general"]["caret_state_indicator"].value_or(false);
+        g_caret_state_indicator_on_focus = tbl["general"]["caret_state_indicator_on_focus"].value_or(false);
         g_caret_state_indicator_position = tbl["general"]["caret_state_indicator_position"].value_or(
             std::string(FanyImeUi::kDefaultCaretStatePosition));
         if (!FanyImeUi::IsValidCaretStatePosition(g_caret_state_indicator_position))
@@ -2532,6 +2534,21 @@ bool SetConfiguredCaretStateIndicatorEnabled(bool enabled)
         return false;
     }
     g_caret_state_indicator_enabled = enabled;
+    return true;
+}
+
+bool GetConfiguredCaretStateIndicatorOnFocus()
+{
+    return g_caret_state_indicator_on_focus;
+}
+
+bool SetConfiguredCaretStateIndicatorOnFocus(bool enabled)
+{
+    if (!WriteConfiguredValue("general", "caret_state_indicator_on_focus", enabled ? "true" : "false"))
+    {
+        return false;
+    }
+    g_caret_state_indicator_on_focus = enabled;
     return true;
 }
 

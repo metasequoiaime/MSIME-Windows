@@ -114,8 +114,8 @@ constexpr std::uint32_t HideCaretState = 16; // focus-context boundary; never cl
 // Caret-badge notifications (FanyImeProtocol::CaretStateIndicator). keycode is
 // the resulting mode (1 = Chinese / Chinese punctuation / fullwidth); point[]
 // is the physical caret anchor or {0, INVALID_Y} when none was resolved.
-// IMESwitch: wch == VK_CAPITAL marks a Caps Lock edge and modifiers_down
-// carries the event-time Caps Lock snapshot (FanyImePipeFlags below).
+// IMESwitch: wch is the trigger (FanyImeCaretStateTrigger below) and
+// modifiers_down carries the event-time Caps Lock snapshot (FanyImePipeFlags).
 // PuncSwitch: wch is the IME open state (1 = Chinese) for the mode slot.
 constexpr std::uint32_t IMESwitch = 7;
 constexpr std::uint32_t PuncSwitch = 8;
@@ -129,6 +129,17 @@ constexpr bool IsTerminalDeactivation(std::uint32_t event_type)
     return event_type == ClientDeactivated;
 }
 } // namespace FanyImePipeEventType
+
+// Why an IMESwitch badge was requested; carried in its wch field. Values are
+// append-only. A Server that predates a value treats it as UserToggle.
+namespace FanyImeCaretStateTrigger
+{
+constexpr std::uint32_t UserToggle = 0;
+constexpr std::uint32_t CapsLockEdge = 0x14; // VK_CAPITAL, as first shipped
+// Keyboard focus moved into another text field; keycode is the
+// current mode, not a change. Shown only when the user opted in.
+constexpr std::uint32_t FocusEntered = 1;
+} // namespace FanyImeCaretStateTrigger
 
 // OR'd into modifiers_down on Main-pipe packets. Server strips UiLess before
 // any key-modifier policy runs. IMESwitch packets use the next two high bits

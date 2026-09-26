@@ -43,6 +43,11 @@ export function setupFloatingToolbar(): void {
     document.getElementById('caretStateIndicatorToggleBtn')?.setAttribute('aria-checked', String(active));
   });
 
+  setupToggleButton('caretStateIndicatorOnFocusToggleBtn', (active) => {
+    updateConfig('general.caret_state_indicator_on_focus', active);
+    document.getElementById('caretStateIndicatorOnFocusToggleBtn')?.setAttribute('aria-checked', String(active));
+  });
+
   setupDropdownMenu('caretStateIndicatorPositionBtn', 'caretStateIndicatorPositionMenu', '', true,
     'general.caret_state_indicator_position', (value) => {
       updateCaretPreviewPosition(value);

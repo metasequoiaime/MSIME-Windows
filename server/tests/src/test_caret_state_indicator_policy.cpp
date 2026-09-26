@@ -111,21 +111,57 @@ TEST_CASE(caret_state_indicator_uses_effective_mode_for_caps_and_language_action
         {true, true, L'日'},
     };
 
+    using FanyImeUi::InputModeTrigger;
+    using FanyImeUi::ShouldShowInputModeEvent;
     for (const auto &mode : modes)
     {
         for (const bool capsEnabled : {false, true})
         {
-            const bool capsEdgeShouldShow = mode.authoritativeGlyph != L'英';
-            REQUIRE_EQ(FanyImeUi::ShouldShowInputModeEvent(true, capsEnabled, mode.imeEnabled, mode.japaneseMode),
-                       capsEdgeShouldShow);
+            // The focus-announcement setting never affects the other triggers.
+            for (const bool onFocus : {false, true})
+            {
+                const bool capsEdgeShouldShow = mode.authoritativeGlyph != L'英';
+                REQUIRE_EQ(ShouldShowInputModeEvent(InputModeTrigger::CapsLockEdge, onFocus, capsEnabled,
+                                                    mode.imeEnabled, mode.japaneseMode),
+                           capsEdgeShouldShow);
+                REQUIRE_EQ(ShouldShowInputModeEvent(InputModeTrigger::UserToggle, onFocus, capsEnabled, mode.imeEnabled,
+                                                    mode.japaneseMode),
+                           !capsEnabled);
+            }
             const auto badge = FanyImeUi::InputModeBadge(mode.imeEnabled, mode.japaneseMode, capsEnabled);
             REQUIRE(!badge.HasModeSlot());
             REQUIRE(badge.text == std::wstring(1, capsEnabled ? L'英' : mode.authoritativeGlyph));
-
-            REQUIRE_EQ(FanyImeUi::ShouldShowInputModeEvent(false, capsEnabled, mode.imeEnabled, mode.japaneseMode),
-                       !capsEnabled);
         }
     }
+}
+
+TEST_CASE(caret_state_indicator_focus_announcement_is_opt_in_and_shows_the_effective_mode)
+{
+    using FanyImeUi::InputModeTrigger;
+    using FanyImeUi::ShouldShowInputModeEvent;
+    for (const bool imeEnabled : {false, true})
+    {
+        for (const bool capsEnabled : {false, true})
+        {
+            // Unlike a toggle, entering a field reports the mode as it is,
+            // Caps Lock included, but only when the user asked for it.
+            REQUIRE(ShouldShowInputModeEvent(InputModeTrigger::FocusEntered, true, capsEnabled, imeEnabled, false));
+            REQUIRE(!ShouldShowInputModeEvent(InputModeTrigger::FocusEntered, false, capsEnabled, imeEnabled, false));
+        }
+    }
+    REQUIRE(FanyImeUi::InputModeBadge(true, false, true).text == L"英");
+    REQUIRE(FanyImeUi::InputModeBadge(true, true, false).text == L"日");
+}
+
+TEST_CASE(caret_state_indicator_decodes_the_ime_switch_trigger)
+{
+    using FanyImeUi::DecodeInputModeTrigger;
+    using FanyImeUi::InputModeTrigger;
+    REQUIRE(DecodeInputModeTrigger(FanyImeCaretStateTrigger::UserToggle) == InputModeTrigger::UserToggle);
+    REQUIRE(DecodeInputModeTrigger(FanyImeCaretStateTrigger::CapsLockEdge) == InputModeTrigger::CapsLockEdge);
+    REQUIRE(DecodeInputModeTrigger(FanyImeCaretStateTrigger::FocusEntered) == InputModeTrigger::FocusEntered);
+    // A value from a newer client degrades to an ordinary toggle.
+    REQUIRE(DecodeInputModeTrigger(0x7F) == InputModeTrigger::UserToggle);
 }
 
 TEST_CASE(caret_state_indicator_uses_the_ime_switch_packet_caps_snapshot)
@@ -137,13 +173,15 @@ TEST_CASE(caret_state_indicator_uses_the_ime_switch_packet_caps_snapshot)
     // language event happened while Caps was on and must remain suppressed.
     const auto ordinaryPacketCapsState = FanyImePipeFlags::DecodeImeSwitchCapsLockSnapshot(capsOnPacket);
     REQUIRE(ordinaryPacketCapsState.has_value());
-    REQUIRE(!FanyImeUi::ShouldShowInputModeEvent(false, *ordinaryPacketCapsState, true, false));
+    REQUIRE(!FanyImeUi::ShouldShowInputModeEvent(FanyImeUi::InputModeTrigger::UserToggle, false,
+                                                 *ordinaryPacketCapsState, true, false));
 
     // Conversely, a queued Caps-off edge restores the authoritative Chinese
     // glyph even if a newer keydown has already turned the global state on.
     const auto capsEdgePacketState = FanyImePipeFlags::DecodeImeSwitchCapsLockSnapshot(capsOffPacket);
     REQUIRE(capsEdgePacketState.has_value());
-    REQUIRE(FanyImeUi::ShouldShowInputModeEvent(true, *capsEdgePacketState, true, false));
+    REQUIRE(FanyImeUi::ShouldShowInputModeEvent(FanyImeUi::InputModeTrigger::CapsLockEdge, false, *capsEdgePacketState,
+                                                true, false));
     REQUIRE(FanyImeUi::InputModeBadge(true, false, *capsEdgePacketState).text == L"中");
 
     // A packet without the Present bit is not an authoritative snapshot.

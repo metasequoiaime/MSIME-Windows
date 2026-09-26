@@ -4066,6 +4066,11 @@ HRESULT OnControllerCreatedSettingsWnd(            //
                                     PostSettingsConfig();
                                 }
                             }
+                            else if (path == "general.caret_state_indicator_on_focus")
+                            {
+                                if (SetConfiguredCaretStateIndicatorOnFocus(json::value_to<bool>(data.at("value"))))
+                                    PostSettingsConfig();
+                            }
                             else if (path == "general.caret_state_indicator_position")
                             {
                                 const std::string value = json::value_to<std::string>(data.at("value"));
@@ -4696,6 +4701,7 @@ void PostSettingsConfig()
             {"tsf_diagnostic_log", GetConfiguredTsfDiagnosticLogEnabled()},
             {"floating_toolbar", GetConfiguredFloatingToolbarEnabled()},
             {"caret_state_indicator", GetConfiguredCaretStateIndicatorEnabled()},
+            {"caret_state_indicator_on_focus", GetConfiguredCaretStateIndicatorOnFocus()},
             {"caret_state_indicator_position", GetConfiguredCaretStateIndicatorPosition()},
             {"floating_toolbar_fullwidth", toolbar.fullwidth},
             {"floating_toolbar_punctuation", toolbar.punctuation},

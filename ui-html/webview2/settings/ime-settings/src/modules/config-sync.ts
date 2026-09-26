@@ -91,6 +91,9 @@ function applyConfigData(data: Record<string, any>, target?: string): void {
   if (typeof data?.general?.caret_state_indicator === 'boolean') {
     applyToggleState('caretStateIndicatorToggleBtn', data.general.caret_state_indicator);
   }
+  if (typeof data?.general?.caret_state_indicator_on_focus === 'boolean') {
+    applyToggleState('caretStateIndicatorOnFocusToggleBtn', data.general.caret_state_indicator_on_focus);
+  }
   const diagnosticLog = data?.general?.diagnostic_log ?? data?.general?.candidate_window_diagnostic_log;
   if (typeof diagnosticLog === 'boolean') {
     applyToggleState('serverDiagnosticLogToggleBtn', diagnosticLog);

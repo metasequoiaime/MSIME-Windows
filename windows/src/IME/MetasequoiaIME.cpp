@@ -521,6 +521,9 @@ CMetasequoiaIME::CMetasequoiaIME()
     _activationRequired = false;
     _focusLostToWindowsTextInputHost = false;
     _focusLossDeferPending = false;
+    _focusAnnouncementWindow = nullptr;
+    _focusAnnouncementEditable = false;
+    _threadFocusLostForAnnouncement = false;
     _hasPendingServerCandidate = false;
     _pendingServerCandidateMsgType = Global::DataFromServerMsgType::OutofRange;
     _hasDeferredKeyInFlight = false;
@@ -1731,6 +1734,7 @@ STDAPI CMetasequoiaIME::Deactivate()
         KillTimer(_msgWndHandle, TIMER_REFRESH_LANG_BAR_THEME);
         KillTimer(_msgWndHandle, TIMER_DEFERRED_FOCUS_LOSS);
         KillTimer(_msgWndHandle, TIMER_FOCUS_STATUS_RESEND);
+        KillTimer(_msgWndHandle, TIMER_FOCUS_CARET_STATE);
         // 不同于上面几个：成对标点的重试定时器还带着 _pairedCaretRetryTimerActive
         // 这一份状态，只 KillTimer 会让标志停在 true，消息窗口重建后就再也装不上
         // 定时器了，所以走完整的取消路径。
@@ -2520,6 +2524,12 @@ LRESULT CALLBACK CMetasequoiaIME_WindowProc(HWND hWnd, UINT message, WPARAM wPar
                 Global::g_connected = false;
                 PostMessage(hWnd, WM_DisconnectNamedpipe, 0, 0);
             }
+            break;
+        }
+        if (wParam == TIMER_FOCUS_CARET_STATE)
+        {
+            KillTimer(hWnd, TIMER_FOCUS_CARET_STATE);
+            pIME->_AnnounceFocusedInputMode();
             break;
         }
         if (wParam == TIMER_FOCUS_STATUS_RESEND)
