@@ -301,6 +301,60 @@ void FillRoundedRect(DeviceResources &deviceResources, const RectF &bounds, floa
     }
 }
 
+// Per-corner radii in top-left, top-right, bottom-right, bottom-left order.
+void FillRoundedRectCorners(DeviceResources &deviceResources, const RectF &bounds, const float (&radii)[4],
+                            D2D1_COLOR_F fill)
+{
+    ID2D1RenderTarget *target = deviceResources.GetRenderTarget();
+    ID2D1SolidColorBrush *fillBrush = deviceResources.GetSolidColorBrush(fill);
+    if (!target || !fillBrush)
+    {
+        return;
+    }
+
+    const float limit = std::max(std::min(bounds.width, bounds.height) * 0.5f, 0.0f);
+    const float tl = std::clamp(radii[0], 0.0f, limit);
+    const float tr = std::clamp(radii[1], 0.0f, limit);
+    const float br = std::clamp(radii[2], 0.0f, limit);
+    const float bl = std::clamp(radii[3], 0.0f, limit);
+    const float left = bounds.x;
+    const float top = bounds.y;
+    const float right = bounds.x + bounds.width;
+    const float bottom = bounds.y + bounds.height;
+
+    ComPtr<ID2D1Factory> factory;
+    target->GetFactory(factory.GetAddressOf());
+    ComPtr<ID2D1PathGeometry> geometry;
+    ComPtr<ID2D1GeometrySink> sink;
+    if (!factory || FAILED(factory->CreatePathGeometry(geometry.GetAddressOf())) ||
+        FAILED(geometry->Open(sink.GetAddressOf())))
+    {
+        return;
+    }
+
+    const auto arcTo = [&sink](float x, float y, float radius) {
+        if (radius > 0.0f)
+        {
+            sink->AddArc(D2D1::ArcSegment(D2D1::Point2F(x, y), D2D1::SizeF(radius, radius), 0.0f,
+                                          D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
+        }
+    };
+    sink->BeginFigure(D2D1::Point2F(left + tl, top), D2D1_FIGURE_BEGIN_FILLED);
+    sink->AddLine(D2D1::Point2F(right - tr, top));
+    arcTo(right, top + tr, tr);
+    sink->AddLine(D2D1::Point2F(right, bottom - br));
+    arcTo(right - br, bottom, br);
+    sink->AddLine(D2D1::Point2F(left + bl, bottom));
+    arcTo(left, bottom - bl, bl);
+    sink->AddLine(D2D1::Point2F(left, top + tl));
+    arcTo(left + tl, top, tl);
+    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+    if (SUCCEEDED(sink->Close()))
+    {
+        target->FillGeometry(geometry.Get(), fillBrush);
+    }
+}
+
 void DrawPopupShadow(DeviceResources &deviceResources, const RectF &bounds, float radius)
 {
     ID2D1RenderTarget *target = deviceResources.GetRenderTarget();
@@ -2872,6 +2926,18 @@ void CandidateList::Render(DeviceResources &deviceResources)
     const std::wstring &fontFamily =
         appearance_.fontFamily.empty() ? theme.textInputFontFamily : appearance_.fontFamily;
 
+    // The list's corners in list coordinates: its arranged width (the list is
+    // stretched to its container) and the bottom of the last row of items.
+    // Only item corners that really sit on them take outerCornerRadius, so a
+    // full-bleed highlight never rounds a corner in the middle of the frame.
+    const float contentRight = bounds_.width;
+    float contentBottom = 0.0f;
+    for (size_t index = 0; index < items_.size(); ++index)
+    {
+        const RectF itemRect = ItemRect(index);
+        contentBottom = std::max(contentBottom, itemRect.y - bounds_.y + itemRect.height);
+    }
+
     for (size_t index = 0; index < items_.size(); ++index)
     {
         const RectF itemRect = ItemRect(index);
@@ -2885,7 +2951,25 @@ void CandidateList::Render(DeviceResources &deviceResources)
                                               : (selected ? appearance_.rowFillSelected : appearance_.rowFillHover);
             if (fill.a > 0.001f)
             {
-                FillRoundedRect(deviceResources, itemRect, appearance_.cornerRadius, fill, fill, 0.0f);
+                if (appearance_.outerCornerRadius > 0.0f)
+                {
+                    constexpr float kEdgeEpsilon = 0.5f;
+                    const float x = itemRect.x - bounds_.x;
+                    const float y = itemRect.y - bounds_.y;
+                    const bool top = appearance_.outerTopCornersEnabled && y <= kEdgeEpsilon;
+                    const bool bottom = y + itemRect.height >= contentBottom - kEdgeEpsilon;
+                    const bool left = x <= kEdgeEpsilon;
+                    const bool right = x + itemRect.width >= contentRight - kEdgeEpsilon;
+                    const float inner = appearance_.cornerRadius;
+                    const float outer = appearance_.outerCornerRadius;
+                    const float radii[4] = {top && left ? outer : inner, top && right ? outer : inner,
+                                            bottom && right ? outer : inner, bottom && left ? outer : inner};
+                    FillRoundedRectCorners(deviceResources, itemRect, radii, fill);
+                }
+                else
+                {
+                    FillRoundedRect(deviceResources, itemRect, appearance_.cornerRadius, fill, fill, 0.0f);
+                }
             }
 
             if (appearance_.showSelectedBar && (selected || pressed))

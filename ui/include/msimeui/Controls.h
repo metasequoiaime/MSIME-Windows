@@ -530,6 +530,13 @@ class CandidateList : public Visual
         float labelFontSize = 12.8f;
         float annotationFontSize = 16.0f;
         float cornerRadius = 4.0f;
+        // Radius for item corners that sit on the list's own corners, so a
+        // fill inside an inset rounded frame follows the frame's R there.
+        // <= 0 keeps cornerRadius on every corner. outerTopCornersEnabled
+        // false leaves the top corners alone when something (e.g. a preedit
+        // row) sits between the list and the frame's top edge.
+        float outerCornerRadius = 0.0f;
+        bool outerTopCornersEnabled = true;
         float contentPadLeft = 5.0f;
         float contentPadRight = 5.0f;
         float textPadLeft = 0.0f;
