@@ -19,19 +19,26 @@
   </div>
 
   <div class="section caret-state-indicator-card">
-    <div class="section-header floating-toolbar-setting-row">
+    <div class="section-header floating-toolbar-setting-row caret-state-heading">
       <div>
         <div class="section-title">光标状态提示</div>
-        <div class="floating-toolbar-description">切换输入模式、全半角或中英文标点时在光标附近短暂显示，可与悬浮工具栏同时开启</div>
+        <div class="floating-toolbar-description">在文字光标附近短暂显示输入法状态，可与悬浮工具栏同时开启</div>
       </div>
-      <div class="ftb-toggle-btn" id="caretStateIndicatorToggleBtn" role="switch" aria-label="显示光标状态提示" aria-checked="false" tabindex="0">
+    </div>
+
+    <div class="section-header floating-toolbar-setting-row">
+      <div>
+        <div class="section-title caret-state-option-title">切换输入法状态时提示</div>
+        <div class="floating-toolbar-description">切换输入模式、全半角或中英文标点时显示</div>
+      </div>
+      <div class="ftb-toggle-btn" id="caretStateIndicatorToggleBtn" role="switch" aria-label="切换输入法状态时提示" aria-checked="false" tabindex="0">
         <div class="ftb-toggle-knob"></div>
       </div>
     </div>
 
     <div class="section-header floating-toolbar-setting-row">
       <div>
-        <div class="section-title">切换输入框时提示</div>
+        <div class="section-title caret-state-option-title">切换输入框时提示</div>
         <div class="floating-toolbar-description">焦点移到另一个输入框时（包括同一窗口内和其他窗口中的），也提示当前中英文状态</div>
       </div>
       <div class="ftb-toggle-btn" id="caretStateIndicatorOnFocusToggleBtn" role="switch" aria-label="切换输入框时提示当前中英文状态" aria-checked="false" tabindex="0">
@@ -41,7 +48,7 @@
 
     <div class="section-header floating-toolbar-setting-row">
       <div>
-        <div class="section-title">提示位置</div>
+        <div class="section-title caret-state-option-title">提示位置</div>
         <div class="floating-toolbar-description">选择光标状态提示显示在光标的哪个方向</div>
       </div>
       <div class="dropdown">
