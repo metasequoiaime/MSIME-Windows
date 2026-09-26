@@ -61,8 +61,6 @@ constexpr UINT kWorkerCompleted = WM_APP + 4;
 constexpr UINT kQuitSettings = WM_APP + 5;
 constexpr UINT_PTR kConfigReloadTimer = 1;
 constexpr UINT_PTR kLingerTimer = 2;
-// 关闭窗口先只隐藏，进程留着已导航完成的 WebView2；这段时间内重新打开就不用再冷启动一次。
-constexpr UINT kLingerTimeoutMs = 10 * 60 * 1000;
 
 ComPtr<ICoreWebView2Controller> g_controller;
 ComPtr<ICoreWebView2CompositionController> g_composition_controller;
@@ -87,6 +85,8 @@ bool g_closing = false;
 bool g_lingering = false;
 bool g_reload_pending = false;
 bool g_settings_light = false;
+// appearance.settings_window_linger 的 UI 线程副本，由 ConfigCompletion 更新。
+std::string g_settings_window_linger = "10m";
 std::wstring g_last_config_message;
 bool g_worker_com_initialized = false; // worker-only
 void CloseSettings(HWND hwnd);
@@ -448,6 +448,7 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
             {"clipboard_history", GetConfiguredClipboardHistoryEnabled()}}},
           {"appearance",
            {{"ui_backend", GetConfiguredUiBackend()},
+            {"settings_window_linger", GetConfiguredSettingsWindowLinger()},
             {"candidate_window_layout", GetConfiguredCandidateWindowLayout()},
             {"candidate_window_follow_cursor", GetConfiguredCandidateWindowFollowCursor()},
             {"candidate_skin", GetConfiguredCandidateSkin()},
@@ -570,8 +571,9 @@ SerialTaskQueue::Completion ConfigCompletion(bool refresh_skin_catalog = false)
     auto message = BuildConfigMessage(refresh_skin_catalog);
     TraceStartup("worker: BuildConfigMessage end");
     const bool light = ResolveConfiguredTheme(GetConfiguredThemeSettings()) == "light";
-    return [message = std::move(message), light] {
+    return [message = std::move(message), light, linger = GetConfiguredSettingsWindowLinger()] {
         g_settings_light = light;
+        g_settings_window_linger = linger;
         ApplySettingsChromeTheme();
         SettingsSplash::SetTheme(light);
         if (g_webview && message != g_last_config_message)
@@ -672,6 +674,8 @@ bool ApplyConfigUpdate(const json::object &data)
         return SetConfiguredTsfPreeditStyle(json::value_to<std::string>(data.at("value")));
     if (path == "appearance.ui_backend")
         return SetConfiguredUiBackend(json::value_to<std::string>(data.at("value")));
+    if (path == "appearance.settings_window_linger")
+        return SetConfiguredSettingsWindowLinger(json::value_to<std::string>(data.at("value")));
     if (path == "appearance.candidate_window_layout")
         return SetConfiguredCandidateWindowLayout(json::value_to<std::string>(data.at("value")));
     if (path == "appearance.candidate_window_follow_cursor")
@@ -1619,6 +1623,14 @@ void SetWebViewVisible(bool visible)
         g_controller->put_IsVisible(visible ? TRUE : FALSE);
 }
 
+// 驻留期间让 WebView2 按低内存目标释放缓存和 GPU 资源，重新露面时恢复正常。
+void SetWebViewMemoryTarget(COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL level)
+{
+    ComPtr<ICoreWebView2_19> webview19;
+    if (g_webview && SUCCEEDED(g_webview.As(&webview19)))
+        webview19->put_MemoryUsageTargetLevel(level);
+}
+
 // 重新露面：取消延迟退出，恢复渲染与配置轮询。
 void CancelLinger(HWND hwnd)
 {
@@ -1626,9 +1638,10 @@ void CancelLinger(HWND hwnd)
         return;
     g_lingering = false;
     KillTimer(hwnd, kLingerTimer);
-    SetWebViewVisible(true);
+    SetWebViewMemoryTarget(COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL);
     if (g_webview3)
         g_webview3->Resume();
+    SetWebViewVisible(true);
     SetTimer(hwnd, kConfigReloadTimer, 300, nullptr);
 }
 
@@ -1645,14 +1658,35 @@ void ActivateWindow(HWND hwnd)
     SetFocus(hwnd);
 }
 
-// 用户关闭窗口时走这里：只隐藏，进程继续持有导航完成的 WebView2，kLingerTimeoutMs
-// 之后才真正退出。隐藏期间停掉配置轮询并让 controller 不可见，避免白拿 CPU。
+// 驻留时长（毫秒）：0 表示关闭即退出，std::nullopt 表示一直驻留。
+std::optional<UINT> SettingsLingerTimeoutMs(const std::string &linger)
+{
+    if (linger == "forever")
+        return std::nullopt;
+    if (linger == "off")
+        return 0u;
+    unsigned minutes = 10;
+    if (linger == "1m")
+        minutes = 1;
+    else if (linger == "5m")
+        minutes = 5;
+    else if (linger == "30m")
+        minutes = 30;
+    else if (linger == "60m")
+        minutes = 60;
+    return minutes * 60u * 1000u;
+}
+
+// 用户关闭窗口时走这里：只隐藏，进程继续持有导航完成的 WebView2，驻留到
+// appearance.settings_window_linger 指定的时长才真正退出，驻留期间重新打开不用再冷启动。
+// 隐藏期间停掉配置轮询、让 controller 不可见并冻结页面，避免白拿 CPU 和内存。
 // 首帧还没出来就被关掉，说明用户不想等这次冷启动，直接退出，别留一个半初始化的进程。
 void HideSettings(HWND hwnd)
 {
     if (g_closing)
         return;
-    if (!g_webview_content_started)
+    const std::optional<UINT> linger_ms = SettingsLingerTimeoutMs(g_settings_window_linger);
+    if (!g_webview_content_started || linger_ms == 0u)
     {
         CloseSettings(hwnd);
         return;
@@ -1673,7 +1707,13 @@ void HideSettings(HWND hwnd)
     SettingsSplash::Dismiss();
     ShowWindow(hwnd, SW_HIDE);
     SetWebViewVisible(false);
-    SetTimer(hwnd, kLingerTimer, kLingerTimeoutMs, nullptr);
+    // TrySuspend 要求 controller 已不可见；冻结页面脚本和定时器，重开时由 CancelLinger 的 Resume 恢复。
+    SetWebViewMemoryTarget(COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW);
+    if (g_webview3)
+        g_webview3->TrySuspend(
+            Callback<ICoreWebView2TrySuspendCompletedHandler>([](HRESULT, BOOL) -> HRESULT { return S_OK; }).Get());
+    if (linger_ms)
+        SetTimer(hwnd, kLingerTimer, *linger_ms, nullptr);
 }
 
 void CloseSettings(HWND hwnd)

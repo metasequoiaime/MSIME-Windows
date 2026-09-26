@@ -40,6 +40,30 @@
       </div>
       <button type="button" class="restart-server-button" id="restartServerBtn">重启</button>
     </div>
+    <div class="divider"></div>
+    <div class="section-header">
+      <div>
+        <div class="section-title">设置窗口后台驻留</div>
+        <div class="floating-toolbar-description">关闭设置窗口后在后台保留一段时间，期间重新打开无需等待加载；驻留越久占用内存越久。</div>
+      </div>
+      <div class="dropdown">
+        <button class="dropdown-toggle" id="settingsLingerBtn">
+          <span>10 分钟</span>
+          <div class="arrow">
+            <img src="./assets/arrow.svg" alt="arrow">
+          </div>
+        </button>
+        <div class="dropdown-menu" id="settingsLingerMenu">
+          <div class="dropdown-item" data-value="off">关闭后立即退出</div>
+          <div class="dropdown-item" data-value="1m">1 分钟</div>
+          <div class="dropdown-item" data-value="5m">5 分钟</div>
+          <div class="dropdown-item" data-value="10m">10 分钟</div>
+          <div class="dropdown-item" data-value="30m">30 分钟</div>
+          <div class="dropdown-item" data-value="60m">1 小时</div>
+          <div class="dropdown-item" data-value="forever">一直驻留</div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- 候选窗样式 -->

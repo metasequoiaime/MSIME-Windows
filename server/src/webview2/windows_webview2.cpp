@@ -3865,6 +3865,14 @@ HRESULT OnControllerCreatedSettingsWnd(            //
                                     PostSettingsConfig();
                                 }
                             }
+                            else if (path == "appearance.settings_window_linger")
+                            {
+                                const std::string value = json::value_to<std::string>(data.at("value"));
+                                if (SetConfiguredSettingsWindowLinger(value))
+                                {
+                                    PostSettingsConfig();
+                                }
+                            }
                             else if (path == "appearance.candidate_window_layout")
                             {
                                 const std::string value = json::value_to<std::string>(data.at("value"));
@@ -4784,6 +4792,7 @@ void PostSettingsConfig()
             {"r_mode", GetConfiguredRModeEnabled()}}},
           {"appearance",
            {{"ui_backend", GetConfiguredUiBackend()},
+            {"settings_window_linger", GetConfiguredSettingsWindowLinger()},
             {"candidate_window_layout", GetConfiguredCandidateWindowLayout()},
             {"candidate_window_follow_cursor", GetConfiguredCandidateWindowFollowCursor()},
             {"candidate_skin", GetConfiguredCandidateSkin()},

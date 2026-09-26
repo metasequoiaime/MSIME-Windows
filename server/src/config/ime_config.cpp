@@ -176,6 +176,7 @@ std::string g_candidate_skin = "fluent";
 std::string g_candidate_window_preedit_style = "pinyin";
 bool g_candidate_fixed_badge = true;
 std::string g_candidate_fixed_badge_style = "paperclip";
+std::string g_settings_window_linger = "10m";
 std::string g_theme_mode = "system";
 std::string g_theme_settings = "follow";
 std::string g_theme_cand = "follow";
@@ -235,6 +236,12 @@ bool IsValidCandidateSkinId(const std::string &skin)
 bool IsValidCandidateFixedBadgeStyle(const std::string &style)
 {
     return style == "paperclip" || style == "pushpin" || style == "dot";
+}
+
+bool IsValidSettingsWindowLinger(const std::string &linger)
+{
+    return linger == "off" || linger == "1m" || linger == "5m" || linger == "10m" || linger == "30m" ||
+           linger == "60m" || linger == "forever";
 }
 
 const std::vector<std::string_view> &AiAssistantProviders()
@@ -1198,6 +1205,10 @@ bool LoadImeConfig()
             const std::string badge_style =
                 tbl["appearance"]["candidate_fixed_badge_style"].value_or(std::string("paperclip"));
             g_candidate_fixed_badge_style = IsValidCandidateFixedBadgeStyle(badge_style) ? badge_style : "paperclip";
+        }
+        {
+            const std::string linger = tbl["appearance"]["settings_window_linger"].value_or(std::string("10m"));
+            g_settings_window_linger = IsValidSettingsWindowLinger(linger) ? linger : "10m";
         }
         {
             const std::string theme_mode = tbl["appearance"]["theme_mode"].value_or(std::string("system"));
@@ -3201,6 +3212,25 @@ bool SetConfiguredCandidateFixedBadgeStyle(const std::string &style)
         return false;
     }
     g_candidate_fixed_badge_style = style;
+    return true;
+}
+
+const std::string &GetConfiguredSettingsWindowLinger()
+{
+    return g_settings_window_linger;
+}
+
+bool SetConfiguredSettingsWindowLinger(const std::string &linger)
+{
+    if (!IsValidSettingsWindowLinger(linger))
+    {
+        return false;
+    }
+    if (!WriteConfiguredValue("appearance", "settings_window_linger", EscapeTomlBasicString(linger)))
+    {
+        return false;
+    }
+    g_settings_window_linger = linger;
     return true;
 }
 

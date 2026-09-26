@@ -790,3 +790,55 @@ TEST_CASE(statistics_retention_defaults_forever_and_round_trips)
 
     fs::remove_all(unique_root, ec);
 }
+
+// 设置窗口驻留时长：出厂模板必须带这个键（否则升级合并时用户的选择会被丢弃），
+// 缺键和非法值回退到 10m，合法值能落盘并在重读后保持。
+TEST_CASE(settings_window_linger_defaults_ten_minutes_and_round_trips)
+{
+    {
+        std::ifstream input(MSIME_DEFAULT_CONFIG_PATH, std::ios::binary);
+        REQUIRE(static_cast<bool>(input));
+        const std::string installed((std::istreambuf_iterator<char>(input)), {});
+        const auto parsed = toml::parse(installed);
+        REQUIRE_EQ(parsed["appearance"]["settings_window_linger"].value_or(std::string()), std::string("10m"));
+    }
+
+    namespace fs = std::filesystem;
+    const fs::path unique_root = MakeProfileRoot();
+    const fs::path local_app_data = unique_root / L"本地";
+    const fs::path data_dir = local_app_data / L"metasequoiaime";
+
+    std::error_code ec;
+    fs::remove_all(unique_root, ec);
+    SeedTemplate(data_dir);
+
+    {
+        ScopedConfigLocation local_app_data_env(local_app_data);
+
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredSettingsWindowLinger(), std::string("10m"));
+
+        WriteText(data_dir / L"config.toml", "[appearance]\ntheme_mode = \"dark\"\n");
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredSettingsWindowLinger(), std::string("10m"));
+
+        WriteText(data_dir / L"config.toml", "[appearance]\nsettings_window_linger = \"2h\"\n");
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredSettingsWindowLinger(), std::string("10m"));
+
+        const std::string before_invalid_set = ReadText(data_dir / L"config.toml");
+        REQUIRE(!SetConfiguredSettingsWindowLinger("2h"));
+        REQUIRE_EQ(GetConfiguredSettingsWindowLinger(), std::string("10m"));
+        REQUIRE_EQ(ReadText(data_dir / L"config.toml"), before_invalid_set);
+
+        for (const char *value : {"off", "1m", "5m", "10m", "30m", "60m", "forever"})
+        {
+            REQUIRE(SetConfiguredSettingsWindowLinger(value));
+            REQUIRE_EQ(GetConfiguredSettingsWindowLinger(), std::string(value));
+            InitImeConfig();
+            REQUIRE_EQ(GetConfiguredSettingsWindowLinger(), std::string(value));
+        }
+    }
+
+    fs::remove_all(unique_root, ec);
+}
