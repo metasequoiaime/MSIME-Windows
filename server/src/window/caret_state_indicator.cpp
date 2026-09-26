@@ -95,8 +95,8 @@ bool PositionWindow(HWND hwnd, POINT caret, bool topmost, bool show)
         SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
 
     const std::string &position = GetConfiguredCaretStateIndicatorPosition();
-    const std::optional<int> y = FanyImeUi::CaretStateIndicatorPlacementY(position == "bottom", caret.y, height,
-                                                                          caretLineHeight, gap, work.top, work.bottom);
+    const std::optional<int> y = FanyImeUi::CaretStateIndicatorPlacementY(
+        FanyImeUi::IsBelowCaretPosition(position), caret.y, height, caretLineHeight, gap, work.top, work.bottom);
     if (!y)
         return false;
     const int preferredX = FanyImeUi::CaretStateIndicatorX(position, caret.x, width, gap);

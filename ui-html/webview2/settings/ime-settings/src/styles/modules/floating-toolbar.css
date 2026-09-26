@@ -16,9 +16,11 @@
 .caret-state-preview-host[data-position="top"] .caret-state-badge,
 .caret-state-preview-host[data-position="bottom"] .caret-state-badge { right: auto; left: calc(65px - var(--badge-width, 30px) / 2); }
 .caret-state-badge-punctuation { --badge-width: 94px; }
-.caret-state-preview-host[data-position="top-right"] .caret-state-preview-caret { left: 15px; }
-.caret-state-preview-host[data-position="top-right"] .caret-state-badge { right: auto; left: 23px; }
-.caret-state-preview-host[data-position="bottom"] .caret-state-badge { top: 89px; }
+.caret-state-preview-host[data-position="top-right"] .caret-state-preview-caret,
+.caret-state-preview-host[data-position="bottom-right"] .caret-state-preview-caret { left: 15px; }
+.caret-state-preview-host[data-position="top-right"] .caret-state-badge,
+.caret-state-preview-host[data-position="bottom-right"] .caret-state-badge { right: auto; left: 23px; }
+.caret-state-preview-host[data-position^="bottom"] .caret-state-badge { top: 89px; }
 .caret-state-punctuation-slot,
 .caret-state-mode-slot { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; min-width: 0; }
 .caret-state-punctuation-slot { left: -1px; width: 64px; }

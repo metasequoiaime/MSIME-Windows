@@ -16,7 +16,9 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $buildDirectory = Join-Path $projectRoot "build$Architecture-release"
 Push-Location $projectRoot
 try {
-    if ($Reconfigure -or -not (Test-Path -LiteralPath (Join-Path $buildDirectory 'CMakeCache.txt'))) {
+    # A failed configure (e.g. vcpkg install error) still leaves CMakeCache.txt behind, so key off
+    # generate.stamp, which is only written once project generation succeeds.
+    if ($Reconfigure -or -not (Test-Path -LiteralPath (Join-Path $buildDirectory 'CMakeFiles\generate.stamp'))) {
         cmake "--preset=for$Architecture-release"
         if ($LASTEXITCODE -ne 0) { throw "TSF $Architecture configure failed ($LASTEXITCODE)" }
     }

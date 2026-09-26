@@ -53,7 +53,26 @@ TEST_CASE(caret_state_indicator_horizontal_positions_follow_badge_width)
     REQUIRE_EQ(FanyImeUi::CaretStateIndicatorX("top-left", 200, punctuationBadgeWidth, 6), 100);
     REQUIRE_EQ(FanyImeUi::CaretStateIndicatorX("top", 200, punctuationBadgeWidth, 6), 153);
     REQUIRE_EQ(FanyImeUi::CaretStateIndicatorX("top-right", 200, punctuationBadgeWidth, 6), 206);
-    REQUIRE_EQ(FanyImeUi::CaretStateIndicatorX("bottom", 200, punctuationBadgeWidth, 6), 100);
+    REQUIRE_EQ(FanyImeUi::CaretStateIndicatorX("bottom-left", 200, punctuationBadgeWidth, 6), 100);
+    // "bottom" is 正下方: centred like "top", matching the settings preview.
+    REQUIRE_EQ(FanyImeUi::CaretStateIndicatorX("bottom", 200, punctuationBadgeWidth, 6), 153);
+    REQUIRE_EQ(FanyImeUi::CaretStateIndicatorX("bottom-right", 200, punctuationBadgeWidth, 6), 206);
+}
+
+TEST_CASE(caret_state_indicator_positions_pair_a_side_with_an_alignment)
+{
+    using FanyImeUi::IsBelowCaretPosition;
+    using FanyImeUi::IsValidCaretStatePosition;
+    for (const std::string position : {"top-left", "top", "top-right", "bottom-left", "bottom", "bottom-right"})
+    {
+        REQUIRE(IsValidCaretStatePosition(position));
+        REQUIRE_EQ(IsBelowCaretPosition(position), position.rfind("bottom", 0) == 0);
+    }
+    REQUIRE(IsValidCaretStatePosition(FanyImeUi::kDefaultCaretStatePosition));
+    REQUIRE(!IsValidCaretStatePosition(""));
+    REQUIRE(!IsValidCaretStatePosition("left"));
+    REQUIRE(!IsValidCaretStatePosition("Bottom"));
+    REQUIRE(!IsBelowCaretPosition("top"));
 }
 
 TEST_CASE(caret_state_indicator_badge_width_follows_structure_not_string_length)

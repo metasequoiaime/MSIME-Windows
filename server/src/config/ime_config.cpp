@@ -1,4 +1,5 @@
 #include "window/ui_backend_policy.h"
+#include "window/caret_state_indicator_policy.h"
 #include "ime_config.h"
 #include <fmt/xchar.h>
 #include <Windows.h>
@@ -116,7 +117,7 @@ constexpr FuzzyPinyinRuleKey kFuzzyPinyinRuleKeys[] = {
 };
 bool g_floating_toolbar_enabled = true;
 bool g_caret_state_indicator_enabled = false;
-std::string g_caret_state_indicator_position = "top-left";
+std::string g_caret_state_indicator_position = FanyImeUi::kDefaultCaretStatePosition;
 FloatingToolbarItemsConfig g_floating_toolbar_items;
 double g_floating_toolbar_scale = 1.0;
 int g_floating_toolbar_font_size = kFloatingToolbarFontSizeDefault;
@@ -1033,10 +1034,10 @@ bool LoadImeConfig()
         }
         g_floating_toolbar_enabled = tbl["general"]["floating_toolbar"].value_or(true);
         g_caret_state_indicator_enabled = tbl["general"]["caret_state_indicator"].value_or(false);
-        g_caret_state_indicator_position = tbl["general"]["caret_state_indicator_position"].value_or("top-left");
-        if (g_caret_state_indicator_position != "top-left" && g_caret_state_indicator_position != "top" &&
-            g_caret_state_indicator_position != "top-right" && g_caret_state_indicator_position != "bottom")
-            g_caret_state_indicator_position = "top-left";
+        g_caret_state_indicator_position = tbl["general"]["caret_state_indicator_position"].value_or(
+            std::string(FanyImeUi::kDefaultCaretStatePosition));
+        if (!FanyImeUi::IsValidCaretStatePosition(g_caret_state_indicator_position))
+            g_caret_state_indicator_position = FanyImeUi::kDefaultCaretStatePosition;
         // Read the old candidate-only key as a migration fallback. New writes
         // use the unified key.
         g_diagnostic_log_enabled.store(tbl["general"]["diagnostic_log"].value_or(
@@ -2541,7 +2542,7 @@ const std::string &GetConfiguredCaretStateIndicatorPosition()
 
 bool SetConfiguredCaretStateIndicatorPosition(const std::string &position)
 {
-    if (position != "top-left" && position != "top" && position != "top-right" && position != "bottom")
+    if (!FanyImeUi::IsValidCaretStatePosition(position))
         return false;
     if (!WriteConfiguredValue("general", "caret_state_indicator_position", EscapeTomlBasicString(position)))
         return false;

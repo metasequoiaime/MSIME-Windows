@@ -18,7 +18,7 @@ tsf_diagnostic_log = false
 floating_toolbar = true
 # 切换输入状态时在光标附近显示短暂提示（与悬浮工具栏独立，默认关闭）
 caret_state_indicator = false
-# 光标状态提示位置：top-left / top / top-right / bottom
+# 光标状态提示位置：top-left / top / top-right / bottom-left / bottom / bottom-right（top、bottom 为正上方、正下方）
 caret_state_indicator_position = "top-left"
 # 悬浮工具栏组件（中英文切换始终显示）
 floating_toolbar_fullwidth = true

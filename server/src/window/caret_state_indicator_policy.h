@@ -73,13 +73,34 @@ inline std::optional<int> CaretStateIndicatorPlacementY(bool requestedBelow, int
     return fits(above) ? std::optional<int>(above) : (fits(below) ? std::optional<int>(below) : std::nullopt);
 }
 
+// Configured badge positions: a vertical side of the caret line, then a
+// horizontal alignment. "top" / "bottom" are centred on the caret.
+inline constexpr const char *kCaretStatePositions[] = {"top-left",    "top",    "top-right",
+                                                       "bottom-left", "bottom", "bottom-right"};
+inline constexpr const char *kDefaultCaretStatePosition = "top-left";
+
+inline bool IsValidCaretStatePosition(const std::string &position)
+{
+    for (const char *candidate : kCaretStatePositions)
+    {
+        if (position == candidate)
+            return true;
+    }
+    return false;
+}
+
+inline bool IsBelowCaretPosition(const std::string &position)
+{
+    return position.rfind("bottom", 0) == 0;
+}
+
 inline int CaretStateIndicatorX(const std::string &position, int anchorX, int indicatorWidth, int gap)
 {
-    if (position == "top")
+    if (position == "top" || position == "bottom")
         return anchorX - indicatorWidth / 2;
-    if (position == "top-right")
+    if (position == "top-right" || position == "bottom-right")
         return anchorX + gap;
-    // "top-left" and "bottom" both sit left of the caret.
+    // "top-left" and "bottom-left" sit left of the caret.
     return anchorX - indicatorWidth - gap;
 }
 
