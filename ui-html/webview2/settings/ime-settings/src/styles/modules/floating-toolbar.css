@@ -47,10 +47,10 @@
 .ftb-preview-host .drag-handle { position: relative; width: calc(var(--ftb-handle-width) * var(--ftb-scale)); height: calc(var(--ftb-handle-height) * var(--ftb-scale)); margin-right: 0; border-radius: calc(2px * var(--ftb-scale)); background: #8e8cd8; }
 .ftb-preview-host .divider { align-self: stretch; width: calc(1.2px * var(--ftb-scale)); height: auto; margin: 0 0 0 calc(4px * var(--ftb-scale)); background-color: rgba(255, 255, 255, 0.15); }
 .ftb-preview-host .icon { display: flex; align-items: center; justify-content: center; width: calc(var(--ftb-icon-size) * var(--ftb-scale)); height: calc(var(--ftb-icon-size) * var(--ftb-scale)); color: #fff; border-radius: calc(6px * var(--ftb-scale)); font-family: "Segoe UI Symbol", "Microsoft YaHei", sans-serif; font-size: calc(var(--ftb-icon-size) * 0.833 * var(--ftb-scale)); }
-.ftb-preview-host .icon svg { width: 100%; height: 100%; display: block; }
+.ftb-preview-host .icon-glyph { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-size: calc(var(--ftb-icon-size) * 0.82 * var(--ftb-scale)); font-style: normal; line-height: 1; }
+.ftb-preview-host .icon-glyph.is-fallback { font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif; font-size: calc(var(--ftb-icon-size) * 0.8 * var(--ftb-scale)); }
 .ftb-preview-host .left-section { display: flex; align-items: center; gap: calc(4px * var(--ftb-scale)); }
 .ftb-preview-host .right-section { display: flex; align-items: center; gap: calc(var(--ftb-gap) * var(--ftb-scale)); }
-.ftb-preview-host svg { display: block; }
 .floating-toolbar-appearance .section-header { padding: 16px 24px; gap: 16px; }
 .floating-toolbar-appearance .floating-toolbar-description { margin-top: 4px; }
 
@@ -66,10 +66,6 @@
 
 .ftb-preview-host.theme-light .icon {
   color: #1a1a1a;
-}
-
-.ftb-preview-host.theme-light .icon svg {
-  filter: invert(1);
 }
 
 html[data-theme="light"] .floating-toolbar-preview,
