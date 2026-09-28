@@ -32,6 +32,8 @@ std::string ResolveEffectiveBackend(std::string configured_backend, SchemeType s
             return "engine-wubi";
         case SchemeType::JapaneseRomaji:
             return "engine-japanese-romaji";
+        case SchemeType::JapaneseKana:
+            return "engine-japanese-kana";
         default:
             throw std::runtime_error("Unknown input scheme.");
         }
@@ -60,6 +62,10 @@ std::shared_ptr<IInputSession> CreateInputSessionFromConfig()
     if (backend == "engine-japanese-romaji")
     {
         return std::make_shared<EngineInputSession>(SchemeType::JapaneseRomaji);
+    }
+    if (backend == "engine-japanese-kana")
+    {
+        return std::make_shared<EngineInputSession>(SchemeType::JapaneseKana);
     }
 
     throw std::runtime_error("Unsupported effective input session backend: " + backend);

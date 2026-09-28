@@ -94,8 +94,34 @@
         <input type="radio" name="japanese-input-method" value="romaji" checked>
         <span>罗马音</span>
       </label>
+      <label class="radio-option">
+        <input type="radio" name="japanese-input-method" value="kana">
+        <span>JIS 假名键盘</span>
+      </label>
     </div>
-    <div class="input-setting-description japanese-scheme-description">直接输入罗马音，提供平假名、片假名及日语词库候选</div>
+    <div class="input-setting-description japanese-scheme-description">罗马音：键入罗马音转换假名；JIS 假名键盘：按 JIS 106 配列每个按键直接对应一个假名（与 ATOK / MS-IME 的假名输入一致）</div>
+  </div>
+
+  <!-- 日文输入选项 -->
+  <div class="section japanese-scheme-settings" hidden>
+    <div class="section-header">
+      <div>
+        <div class="section-title">日文标点</div>
+        <div class="input-setting-description">日语模式下输出 、。「」『』 等日文标点；关闭则使用半角标点</div>
+      </div>
+      <div class="ftb-toggle-btn active" id="japanesePunctuationToggleBtn" role="switch" aria-checked="true" tabindex="0">
+        <div class="ftb-toggle-knob"></div>
+      </div>
+    </div>
+    <div class="section-header">
+      <div>
+        <div class="section-title">F9 / F10 假名形态切换</div>
+        <div class="input-setting-description">日语输入时，F9 将平假名转为片假名，F10 将片假名转为平假名</div>
+      </div>
+      <div class="ftb-toggle-btn active" id="japaneseKatakanaFkeyToggleBtn" role="switch" aria-checked="true" tabindex="0">
+        <div class="ftb-toggle-knob"></div>
+      </div>
+    </div>
   </div>
 
   <div class="section section-page-option">

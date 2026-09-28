@@ -19,6 +19,7 @@ ICandidateProvider &ProviderRegistry::resolve(SchemeType scheme_type)
     case SchemeType::Wubi:
         return wubi_provider_;
     case SchemeType::JapaneseRomaji:
+    case SchemeType::JapaneseKana:
         return japanese_provider_;
     default:
         throw std::runtime_error("Unknown scheme type.");
@@ -37,6 +38,7 @@ void ProviderRegistry::reset_cache(SchemeType scheme_type)
         wubi_provider_.reset_cache();
         return;
     case SchemeType::JapaneseRomaji:
+    case SchemeType::JapaneseKana:
         japanese_provider_.reset_cache();
         return;
     default:

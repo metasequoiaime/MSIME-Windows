@@ -829,6 +829,22 @@ HRESULT OnControllerCreatedSettingsWnd(            //
                                     PostSettingsConfig();
                                 }
                             }
+                            else if (path == "input.japanese_punctuation")
+                            {
+                                const bool value = json::value_to<bool>(data.at("value"));
+                                if (SetConfiguredJapanesePunctuation(value))
+                                {
+                                    PostSettingsConfig();
+                                }
+                            }
+                            else if (path == "input.japanese_katakana_fkey")
+                            {
+                                const bool value = json::value_to<bool>(data.at("value"));
+                                if (SetConfiguredJapaneseKatakanaFkey(value))
+                                {
+                                    PostSettingsConfig();
+                                }
+                            }
                             else if (path == "general.candidate_translations")
                             {
                                 const bool value = json::value_to<bool>(data.at("value"));
@@ -1293,6 +1309,8 @@ void PostSettingsConfig()
            {{"mode", GetConfiguredInputMode()},
             {"schema", GetConfiguredInputSchemeName()},
             {"japanese_schema", GetConfiguredJapaneseSchema()},
+            {"japanese_punctuation", GetConfiguredJapanesePunctuation()},
+            {"japanese_katakana_fkey", GetConfiguredJapaneseKatakanaFkey()},
             {"character_set", GetConfiguredCharacterSet()},
             {"default_ime_mode", GetConfiguredDefaultImeMode()},
             {"ime_mode_scope", GetConfiguredImeModeScope()},

@@ -48,7 +48,7 @@ void InputSession::apply_candidate_positions(std::vector<WordItem> &items)
     if (!fixed_positions_enabled_ || items.empty())
         return;
     const auto journal = path_to_utf8(paths_.user(assets::user_journal));
-    if (local_input_mode_ == LocalInputMode::None && !dedicated_english_mode_ && scheme() != SchemeType::JapaneseRomaji)
+    if (local_input_mode_ == LocalInputMode::None && !dedicated_english_mode_ && !IsJapaneseScheme(scheme()))
         user_dictionary::apply_fixed_positions(
             journal, position_context(false), items, engine_.get_request().raw_input.size() == 1,
             [this](const std::string &key, const std::string &word) { return engine_.find_candidate(key, word); },
@@ -68,7 +68,7 @@ KeyResult InputSession::set_candidate_position(std::size_t index, int position)
     const bool english = selected.source == CandidateSource::EnglishDictionary;
     if (!english &&
         ((selected.source != CandidateSource::Database && selected.source != CandidateSource::UserDatabase) ||
-         scheme() == SchemeType::JapaneseRomaji))
+         IsJapaneseScheme(scheme())))
         return {};
     const auto context = position_context(english);
     const bool wubi = wubi_candidates_are_native() && local_input_mode_ != LocalInputMode::SuperJianpin;
@@ -100,7 +100,7 @@ KeyResult InputSession::remove_candidate(std::size_t index)
     const bool english = selected.source == CandidateSource::EnglishDictionary;
     if (!english &&
         ((selected.source != CandidateSource::Database && selected.source != CandidateSource::UserDatabase) ||
-         scheme() == SchemeType::JapaneseRomaji || HelpcodeUtils::count_utf8_chars(selected.word) <= 1))
+         IsJapaneseScheme(scheme()) || HelpcodeUtils::count_utf8_chars(selected.word) <= 1))
         return {};
 
     const bool wubi = wubi_candidates_are_native() && local_input_mode_ != LocalInputMode::SuperJianpin;

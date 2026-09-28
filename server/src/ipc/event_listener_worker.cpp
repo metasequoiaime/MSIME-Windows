@@ -704,8 +704,7 @@ void WorkerThread()
             const SchemeType wanted = GetConfiguredActiveInputScheme();
             const bool has_session = g_inputSession != nullptr;
             const bool configured_scheme_matches = has_session && g_inputSession->current_scheme_type() == wanted;
-            const bool session_is_japanese =
-                has_session && g_inputSession->current_scheme_type() == SchemeType::JapaneseRomaji;
+            const bool session_is_japanese = has_session && IsJapaneseScheme(g_inputSession->current_scheme_type());
             if (FanyImeIpc::InputSessionMatchesConfig(configured_scheme_matches, g_r_mode_triggered,
                                                       session_is_japanese))
             {

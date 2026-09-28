@@ -10,6 +10,7 @@
 #include "ipc/candidate_translation_policy.h"
 #include "ipc/input_key_policy.h"
 #include "engine/contracts/ipc_negotiation.h"
+#include "engine/japanese/romaji_converter.h"
 #include "defines/defines.h"
 #include "defines/globals.h"
 #include "utils/common_utils.h"
@@ -38,11 +39,60 @@ bool IsJapaneseInputMode()
     return GetConfiguredInputMode() == "japanese";
 }
 
+// True for the JIS direct-kana scheme (input.japanese_schema="kana").
+bool IsJapaneseKanaLayoutActive()
+{
+    return g_inputSession != nullptr && g_inputSession->current_scheme_type() == SchemeType::JapaneseKana;
+}
+
+// Physical keys that carry a kana in the JIS layout (letters, digit row and
+// the symbol positions). Mirrors the TSF-side table in
+// CompositionProcessorEngine_KeyClassify.cpp; the server maps by virtual-key, so
+// the two must agree.
+bool IsJapaneseKanaPhysicalKey(UINT keycode)
+{
+    if (keycode >= 'A' && keycode <= 'Z')
+        return true;
+    if (keycode >= '0' && keycode <= '9')
+        return true;
+    switch (keycode)
+    {
+    case VK_OEM_1:
+    case VK_OEM_MINUS:
+    case VK_OEM_3:
+    case VK_OEM_4:
+    case VK_OEM_5:
+    case VK_OEM_6:
+    case VK_OEM_7:
+    case VK_OEM_COMMA:
+    case VK_OEM_PERIOD:
+    case VK_OEM_2:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// A bare (no Ctrl/Alt; Shift selects the shifted legend) physical kana key in
+// the direct-kana scheme. These keys are always plain reading input and must
+// reach JapaneseKanaScheme::handle_key via the session-forward path rather
+// than paging/selection/punctuation or the ASCII-insert edit path.
+bool IsJapaneseKanaInputKey(UINT keycode, UINT modifiers_down)
+{
+    if (!IsJapaneseKanaLayoutActive() || (modifiers_down & 0b00000110u))
+    {
+        return false;
+    }
+    return IsJapaneseKanaPhysicalKey(keycode);
+}
+
 // 日语模式下 '-' 不翻页，而是长音符（ー）的输入键。空编码时也要起头组合，
 // 候选框第一项是长音符 ー、第二项是普通连字符 '-'（见日语候选提供者）。
+// JIS 假名配列下该键是 ほ/ー，走假名直输入，不走这里的长音候选。
 bool IsJapaneseLongVowelKey(UINT keycode, WCHAR wch)
 {
-    return keycode == VK_OEM_MINUS && wch == L'-' && IsJapaneseInputMode() && g_inputSession != nullptr;
+    return keycode == VK_OEM_MINUS && wch == L'-' && IsJapaneseInputMode() && g_inputSession != nullptr &&
+           !IsJapaneseKanaLayoutActive();
 }
 
 // 日语模式下 '-' '=' 一律不当翻页键用。
@@ -54,6 +104,12 @@ bool IsJapaneseDisabledPagingKey(UINT keycode)
 bool IsCommitWithHighlightedCandidatePunctuationInCandidateMode(UINT keycode, WCHAR wch)
 {
     if (keycode == VK_TAB)
+    {
+        return false;
+    }
+    // Direct-kana layout: shifted digits/symbols are small kana / voicing marks,
+    // never punctuation commits.
+    if (IsJapaneseKanaLayoutActive() && IsJapaneseKanaPhysicalKey(keycode))
     {
         return false;
     }
@@ -134,6 +190,11 @@ bool IsSelectionKey(UINT keycode)
 {
     if (keycode == VK_SPACE)
         return true;
+    // Direct-kana layout: digits are reading input (ぬふあう…), never selection.
+    if (IsJapaneseKanaLayoutActive() && keycode >= '0' && keycode <= '9')
+    {
+        return false;
+    }
     if (keycode >= '0' && keycode <= '9')
     {
         const std::string raw = g_inputSession ? g_inputSession->get_pinyin_sequence_with_cases() : std::string{};
@@ -154,6 +215,11 @@ bool IsPagingKey(UINT keycode)
     {
         return false;
     }
+    // Direct-kana layout: comma/period/brackets/minus are kana reading keys.
+    if (IsJapaneseKanaLayoutActive() && IsJapaneseKanaPhysicalKey(keycode))
+    {
+        return false;
+    }
     return keycode == VK_OEM_MINUS || keycode == VK_OEM_PLUS || keycode == VK_TAB || keycode == VK_PRIOR ||
            keycode == VK_NEXT || keycode == VK_LEFT || keycode == VK_RIGHT || keycode == VK_UP || keycode == VK_DOWN ||
            ((keycode == VK_OEM_COMMA || keycode == VK_OEM_PERIOD) && GetConfiguredPagingCommaPeriodEnabled()) ||
@@ -163,6 +229,10 @@ bool IsPagingKey(UINT keycode)
 bool IsCandidateNavigationKey(UINT keycode)
 {
     if (IsJapaneseDisabledPagingKey(keycode))
+    {
+        return false;
+    }
+    if (IsJapaneseKanaLayoutActive() && IsJapaneseKanaPhysicalKey(keycode))
     {
         return false;
     }
@@ -459,7 +529,7 @@ void HandleTranslationCommitKey(uint64_t client_id, uint64_t activation_epoch, u
     // 拿不到译文时回 NavigationIgnored：这颗键已经被 TSF 吃掉了，必须给一条回复，
     // 而且这条回复既不上屏也不给 wch 补标点。
     Global::MsgTypeToTsf = Global::DataFromServerMsgType::NavigationIgnored;
-    const bool japanese = g_inputSession && g_inputSession->current_scheme_type() == SchemeType::JapaneseRomaji;
+    const bool japanese = g_inputSession && IsJapaneseScheme(g_inputSession->current_scheme_type());
     if (g_translation_candidates_active || IsUiLessMode() || japanese || !GetConfiguredCandidateTranslationsEnabled() ||
         Global::candidate_ui.items.empty())
     {
@@ -698,6 +768,36 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
         g_r_mode_triggered = true;
     }
 
+    // F9 / F10 flip the kana form of the leading Japanese candidate
+    // (F9 -> katakana, F10 -> hiragana). Only active in Japanese mode with a
+    // non-empty composition, and gated by input.japanese_katakana_fkey.
+    if (GetConfiguredJapaneseKatakanaFkey() && IsJapaneseInputMode() && g_inputSession && !input_before_key.empty() &&
+        (Global::Keycode == VK_F9 || Global::Keycode == VK_F10))
+    {
+        if (g_inputSession->cycle_japanese_kana_form(Global::Keycode == VK_F9))
+        {
+            PrepareCandidateList(client_id, activation_epoch);
+            // cycle_japanese_kana_form only flips the forced-form flag that
+            // reshapes candidates; the inline preedit (segmented_pinyin) stays
+            // hiragana. Convert the preedit string itself so the user sees the
+            // flip immediately, and persist it: Enter commits the rendered
+            // preedit on the TSF side. Pending romaji (ASCII) is left untouched
+            // by the kana-only codepoint conversion. The next letter key makes
+            // the engine re-segment, naturally restoring the automatic form.
+            const std::string current_preedit = GlobalIme::composition.segmented_pinyin;
+            GlobalIme::composition.segmented_pinyin = Global::Keycode == VK_F9
+                                                          ? japanese::HiraganaToKatakana(current_preedit)
+                                                          : japanese::KatakanaToHiragana(current_preedit);
+            // The TSF side renders the Server preedit in Japanese mode, so the
+            // flipped kana must travel as a Preedit frame (a Normal frame is
+            // only consumed on selection keys and would be dropped here).
+            Global::MsgTypeToTsf = Global::DataFromServerMsgType::Preedit;
+            Global::candidate_ui.selected_text = GetPreedit();
+            SendCurrentDataToClient(client_id, activation_epoch, request_id);
+            return;
+        }
+    }
+
     if (FanyImeIpc::IsBackendIndependentCompositionResetKey(Global::Keycode))
     {
         // TSF completes/cancels the composition locally. Keep every backend in
@@ -709,16 +809,22 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
     }
 
     const bool unicode_composition_active = IsUnicodeCompositionActive(input_before_key);
+    // JIS direct-kana reading key (letters/digits/symbols without Ctrl/Alt).
+    // These are forwarded verbatim to the kana scheme, which maps the virtual
+    // key to a kana; they must bypass paging/selection/punctuation and the
+    // ASCII raw-insert edit path below.
+    const bool is_japanese_kana_input = IsJapaneseKanaInputKey(Global::Keycode, Global::ModifiersDown);
     const bool is_paging_key = IsPagingKey(Global::Keycode);
-    const bool is_manual_pinyin_separator = IsManualPinyinSeparatorKey(Global::Keycode, Global::Wch);
+    const bool is_manual_pinyin_separator =
+        !is_japanese_kana_input && IsManualPinyinSeparatorKey(Global::Keycode, Global::Wch);
     const bool is_microsoft_shuangpin_ing_key =
         IsMicrosoftShuangpinIngKey(Global::Keycode, Global::Wch, input_before_key);
     // 日语模式下 '-' 是长音符输入键，既不翻页也不做词转字。
     const bool is_japanese_long_vowel = IsJapaneseLongVowelKey(Global::Keycode, Global::Wch);
-    const int word_character_direction =
-        FanyImeIpc::WordToCharacterDirection(Global::Keycode, Global::Wch, Global::ModifiersDown,
-                                             GetConfiguredWordToCharacterEnabled() && !is_japanese_long_vowel,
-                                             GetConfiguredWordToCharacterKeys() == "minus_equal");
+    const int word_character_direction = FanyImeIpc::WordToCharacterDirection(
+        Global::Keycode, Global::Wch, Global::ModifiersDown,
+        GetConfiguredWordToCharacterEnabled() && !is_japanese_long_vowel && !is_japanese_kana_input,
+        GetConfiguredWordToCharacterKeys() == "minus_equal");
     const bool is_commit_with_highlighted_candidate_punctuation =
         word_character_direction != 0 ||
         (!is_manual_pinyin_separator && !is_microsoft_shuangpin_ing_key &&
@@ -729,11 +835,11 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
     const bool is_unicode_hex_digit = unicode_composition_active && !is_unicode_shift_digit_selection &&
                                       Global::Keycode >= '0' && Global::Keycode <= '9';
     const bool is_unicode_plus = unicode_composition_active && Global::Keycode == VK_OEM_PLUS && Global::Wch == L'+';
-    const bool is_composition_edit_key = Global::Keycode == VK_LEFT || Global::Keycode == VK_RIGHT ||
-                                         Global::Keycode == VK_BACK || Global::Keycode == VK_DELETE ||
-                                         (Global::Keycode >= 'A' && Global::Keycode <= 'Z') ||
-                                         is_manual_pinyin_separator || is_microsoft_shuangpin_ing_key ||
-                                         is_unicode_hex_digit || is_unicode_plus || is_japanese_long_vowel;
+    const bool is_composition_edit_key =
+        Global::Keycode == VK_LEFT || Global::Keycode == VK_RIGHT || Global::Keycode == VK_BACK ||
+        Global::Keycode == VK_DELETE || (Global::Keycode >= 'A' && Global::Keycode <= 'Z' && !is_japanese_kana_input) ||
+        is_manual_pinyin_separator || is_microsoft_shuangpin_ing_key || is_unicode_hex_digit || is_unicode_plus ||
+        is_japanese_long_vowel;
     const bool should_forward_key_to_session = !is_commit_with_highlighted_candidate_punctuation && !is_selection_key &&
                                                !is_paging_key && !is_composition_edit_key;
 
@@ -1013,9 +1119,9 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
     //
     // 普通的拼音字符，发送 preedit 到 TSF 端
     //
-    if (FanyImeIpc::ShouldSendCompositionReply(Global::Keycode >= 'A' && Global::Keycode <= 'Z',
-                                               is_manual_pinyin_separator, is_microsoft_shuangpin_ing_key,
-                                               is_unicode_hex_digit, is_unicode_plus, is_japanese_long_vowel))
+    if (FanyImeIpc::ShouldSendCompositionReply(
+            (Global::Keycode >= 'A' && Global::Keycode <= 'Z') || is_japanese_kana_input, is_manual_pinyin_separator,
+            is_microsoft_shuangpin_ing_key, is_unicode_hex_digit, is_unicode_plus, is_japanese_long_vowel))
     {
         if (IsUiLessMode())
         {
@@ -1024,7 +1130,10 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
         }
         else
         {
-            if (GlobalSettings::getTsfPreeditStyle() == GlobalSettings::TsfPreeditStyle::Pinyin)
+            // Japanese mode always renders the Server preedit (romaji -> kana),
+            // regardless of the configured TSF preedit style.
+            if (GlobalSettings::getTsfPreeditStyle() == GlobalSettings::TsfPreeditStyle::Pinyin ||
+                IsJapaneseInputMode())
             {
                 std::wstring preedit = GetPreedit();
                 Global::MsgTypeToTsf = Global::DataFromServerMsgType::Preedit;
@@ -1080,7 +1189,8 @@ void HandleImeKey(uint64_t client_id, uint64_t activation_epoch, uint64_t reques
             SendCurrentDataToClient(client_id, activation_epoch, request_id);
             PublishRestoredCompositionCandidates(client_id, activation_epoch);
         }
-        else if (GlobalSettings::getTsfPreeditStyle() == GlobalSettings::TsfPreeditStyle::Pinyin)
+        else if (GlobalSettings::getTsfPreeditStyle() == GlobalSettings::TsfPreeditStyle::Pinyin ||
+                 IsJapaneseInputMode())
         {
             if (!g_inputSession->get_pinyin_sequence().empty())
             {

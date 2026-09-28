@@ -344,7 +344,9 @@ function applyConfigData(data: Record<string, any>, target?: string): void {
         data?.input?.wubi_schema,
         data?.input?.default_ime_mode,
         data?.input?.ime_mode_scope,
-        data?.input?.japanese_schema
+        data?.input?.japanese_schema,
+        data?.input?.japanese_punctuation,
+        data?.input?.japanese_katakana_fkey
       );
       module.applyFrequencyConfig(data?.frequency_adjustment);
       module.applyZhEnMixedInputConfig(

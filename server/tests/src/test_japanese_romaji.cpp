@@ -96,9 +96,9 @@ TEST_CASE(JapaneseRomajiSchemeAcceptsLongVowelKeyInsteadOfPaging)
     REQUIRE_EQ(request.segmentation, std::string("こーひー"));
     REQUIRE_EQ(request.key_strokes.size(), static_cast<size_t>(6));
 
-    // 服务端回填编码（造词、光标编辑）时也必须保留 '-'。
+    // 服务端回填编码（造词、光标编辑）时也必须保留 '-'；预编辑显示的是假名转换结果。
     scheme.set_raw_input("ko-hi-", "ko-hi-");
-    REQUIRE_EQ(scheme.get_preedit(), std::string("ko-hi-"));
+    REQUIRE_EQ(scheme.get_preedit(), std::string("こーひー"));
 }
 
 TEST_CASE(JapaneseRomajiSchemeStartsCompositionFromBareLongVowelKey)
@@ -151,7 +151,8 @@ TEST_CASE(JapanesePreeditPreservesTypedCasesAcrossEngineAndCandidateUi)
     }
     REQUIRE_EQ(session.get_pinyin_sequence(), std::string("nihongo"));
     REQUIRE_EQ(session.get_pinyin_sequence_with_cases(), std::string("NiHonGo"));
-    REQUIRE_EQ(session.get_pinyin_segmentation_with_cases(), std::string("NiHonGo"));
+    // 内联组合（与回车提交）显示实时假名转换；罗马音仍保留在 raw input 中供查询与编辑。
+    REQUIRE_EQ(session.get_pinyin_segmentation_with_cases(), std::string("にほんご"));
 }
 
 TEST_CASE(TemporaryJapaneseSessionDoesNotMutateChineseSession)
@@ -185,7 +186,14 @@ TEST_CASE(JapaneseProviderCombinesGeneratedKanaAndSqliteCandidates)
         kana.valid = true;
         const auto kana_candidates = provider.query(kana);
         REQUIRE(ContainsWord(kana_candidates, "にほんご"));
-        REQUIRE(ContainsWord(kana_candidates, "ニホンゴ"));
+        // Auto + regular word: hiragana leads, katakana is hidden until F9 so the
+        // kanji/word candidate keeps position 2.
+        REQUIRE(!ContainsWord(kana_candidates, "ニホンゴ"));
+        QueryRequest kata_form = kana;
+        kata_form.japanese_kana_form = JapaneseKanaForm::Katakana;
+        const auto kata_candidates = provider.query(kata_form);
+        REQUIRE_EQ(kata_candidates[0].word, std::string("ニホンゴ"));
+        REQUIRE_EQ(kata_candidates[1].word, std::string("にほんご"));
 
         QueryRequest single_kana;
         single_kana.scheme = SchemeType::JapaneseRomaji;
@@ -194,8 +202,9 @@ TEST_CASE(JapaneseProviderCombinesGeneratedKanaAndSqliteCandidates)
         single_kana.valid = true;
         const auto single_kana_candidates = provider.query(single_kana);
         REQUIRE(single_kana_candidates.size() >= 2);
+        // Candidate 1 is the kana, candidate 2 is the matching word (not katakana).
         REQUIRE_EQ(single_kana_candidates[0].word, std::string("か"));
-        REQUIRE_EQ(single_kana_candidates[1].word, std::string("カ"));
+        REQUIRE_EQ(single_kana_candidates[1].word, std::string("かわいい"));
         REQUIRE_EQ(single_kana_candidates[0].pinyin, std::string("Ka"));
 
         QueryRequest direct;
@@ -229,7 +238,8 @@ TEST_CASE(JapaneseProviderCombinesGeneratedKanaAndSqliteCandidates)
         REQUIRE(ContainsWord(fuzzy_candidates, "かわいい") || ContainsWord(fuzzy_candidates, "可愛い"));
         const size_t phrase_index =
             (std::min)(WordIndex(fuzzy_candidates, "かわいい"), WordIndex(fuzzy_candidates, "可愛い"));
-        REQUIRE(phrase_index < WordIndex(fuzzy_candidates, "か"));
+        // Kana is always candidate 1; the decoded phrase follows it.
+        REQUIRE(WordIndex(fuzzy_candidates, "か") < phrase_index);
     }
     std::filesystem::remove(path);
 }
@@ -261,7 +271,12 @@ TEST_CASE(JapaneseProviderShowsPhrasesBeforeConvertedKana)
         request.valid = true;
         const auto candidates = provider.query(request);
         REQUIRE(ContainsWord(candidates, "にほん"));
-        REQUIRE(ContainsWord(candidates, "ニホン"));
+        // Auto keeps katakana hidden for a regular (non-loanword) reading.
+        REQUIRE(!ContainsWord(candidates, "ニホン"));
+        QueryRequest kata_request = request;
+        kata_request.japanese_kana_form = JapaneseKanaForm::Katakana;
+        const auto kata_candidates = provider.query(kata_request);
+        REQUIRE(ContainsWord(kata_candidates, "ニホン"));
     }
     std::filesystem::remove(path);
 }

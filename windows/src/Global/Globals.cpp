@@ -276,6 +276,35 @@ extern const struct _PUNCTUATION PunctuationTable[23] = {
     {L'?', L"？"},  // ？
 };
 
+// Japanese-mode punctuation. Covers the same input keys as PunctuationTable so
+// the lookup loop is uniform; only the outputs that differ from Chinese are
+// rewritten (comma → 、, brackets → 「」, backslash/backtick → ・).
+extern const struct _PUNCTUATION JapanesePunctuationTable[23] = {
+    {L'`', L"・"},  // ・
+    {L'~', L"~"},   // ~
+    {L'!', L"！"},  // ！
+    {L'@', L"@"},   // @
+    {L'#', L"#"},   // #
+    {L'$', L"￥"},  // ￥
+    {L'%', L"%"},   // %
+    {L'^', L"……"},  // ……
+    {L'&', L"&"},   // &
+    {L'*', L"*"},   // *
+    {L'(', L"（"},  // （
+    {L')', L"）"},  // ）
+    {L'_', L"——"},  // ——
+    {L'[', L"「"},  // 「
+    {L']', L"」"},  // 」
+    {L'{', L"{"},   // {
+    {L'}', L"}"},   // }
+    {L'\\', L"・"}, // ・
+    {L';', L"；"},  // ；
+    {L':', L"："},  // ：
+    {L',', L"、"},  // 、
+    {L'.', L"。"},  // 。
+    {L'?', L"？"},  // ？
+};
+
 //
 // Will commit the highlighted candidate string with a punctuation character.
 //

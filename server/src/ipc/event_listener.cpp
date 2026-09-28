@@ -435,7 +435,7 @@ void UpdateCloudInput(const std::string &input, uint64_t client_id, uint64_t act
 {
     std::lock_guard lock(g_async_request_mutex);
     const std::string effective_input = GetConfiguredCloudCandidatesEnabled() ? input : std::string{};
-    const bool japanese = g_inputSession && g_inputSession->current_scheme_type() == SchemeType::JapaneseRomaji;
+    const bool japanese = g_inputSession && IsJapaneseScheme(g_inputSession->current_scheme_type());
     CloudIme::OnInputChanged(effective_input, japanese);
     ++g_cloud_generation;
     g_cloud_request_origin = effective_input.empty()
@@ -567,7 +567,7 @@ AsyncRequestOrigin FindAiRequestOrigin(const std::string &input, uint64_t genera
 
 std::string CandidateTextForOutput(const std::string &text)
 {
-    if (g_inputSession && g_inputSession->current_scheme_type() == SchemeType::JapaneseRomaji)
+    if (g_inputSession && IsJapaneseScheme(g_inputSession->current_scheme_type()))
         return text;
     return GetConfiguredCharacterSet() == "traditional" ? ChineseConverter::ToTraditional(text) : text;
 }

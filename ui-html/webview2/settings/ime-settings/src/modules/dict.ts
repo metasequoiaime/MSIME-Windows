@@ -6,7 +6,7 @@ import { onHostMessage } from '../utils/host-messages';
 import type { SettingsMessage } from '../../../../shared/messages';
 type DictionaryRequest = Extract<SettingsMessage, { type: 'dictionaryRequest' }>['data'];
 import { serializeHostMessage } from '../../../../shared/messages';
-type DictionaryType = 'quanpin' | 'wubi' | 'english';
+type DictionaryType = 'quanpin' | 'wubi' | 'english' | 'japanese';
 type DictionaryRow = { code?: string; word: string; weight?: number; display?: string };
 
 let dictionary: DictionaryType = 'quanpin';
@@ -98,21 +98,38 @@ function updateMode(): void {
   pager?.reset();
   const english = dictionary === 'english';
   const quanpin = dictionary === 'quanpin';
+  const japanese = dictionary === 'japanese';
   const search = document.getElementById('dictSearch') as HTMLInputElement;
   search.value = '';
+  // Japanese user dictionary is import-only: imported words are merged straight
+  // into the live Japanese candidates, so query/add/table UI is hidden there.
+  const setShown = (id: string, shown: boolean) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = shown ? '' : 'none';
+  };
+  setShown('dictSearch', !japanese);
+  setShown('dictSearchButton', !japanese);
+  setShown('dictAddButton', !japanese);
+  setShown('dictTableHeaderWrap', !japanese);
+  const tableWrap = document.querySelector<HTMLElement>('.dict-table-wrap');
+  if (tableWrap) tableWrap.style.display = japanese ? 'none' : '';
   search.placeholder = english ? '输入英文前缀，例如 meta' : quanpin
     ? '输入完整全拼，例如 nihao' : '输入五笔编码前缀';
-  document.getElementById('dictHint')!.textContent = english
-    ? '按英文前缀查询；批量导入格式为：单词<Tab>显示内容<Tab>权重（兼容无权重的两列文件）'
-    : quanpin
-      ? '全拼新增会校验拼音合法性、汉字数量和重复词条；批量导入格式为：词语<Tab>全拼[<Tab>权重]（兼容 Rime userdb.txt / dict.yaml，全拼可用空格或 \' 分音节）'
-      : '管理 86 五笔编码、词条及权重；批量导入格式为：词语<Tab>五笔编码[<Tab>权重]（兼容 Rime dict.yaml）';
+  document.getElementById('dictHint')!.textContent = japanese
+    ? '批量导入日语词，支持：罗马音,词；罗马音,假名,汉字；纯文本“罗马音 词”；MOZC/系统 .dic（假名<Tab>汉字）；Anki 导出。导入的词排在假名之后、内置词之前。'
+    : english
+      ? '按英文前缀查询；批量导入格式为：单词<Tab>显示内容<Tab>权重（兼容无权重的两列文件）'
+      : quanpin
+        ? '全拼新增会校验拼音合法性、汉字数量和重复词条；批量导入格式为：词语<Tab>全拼[<Tab>权重]（兼容 Rime userdb.txt / dict.yaml，全拼可用空格或 \' 分音节）'
+        : '管理 86 五笔编码、词条及权重；批量导入格式为：词语<Tab>五笔编码[<Tab>权重]（兼容 Rime dict.yaml）';
   const importButton = document.getElementById('dictImportButton') as HTMLButtonElement | null;
   if (importButton) importButton.style.display = '';
   document.getElementById('dictTableHeader')!.innerHTML = english
     ? '<th class="dict-index-column">No.</th><th>单词</th><th>显示内容</th><th>权重</th><th>操作</th>'
     : '<th class="dict-index-column">No.</th><th>编码</th><th>词条</th><th>权重</th><th>操作</th>';
-  document.getElementById('dictRows')!.innerHTML = '<tr><td colspan="5" class="dict-empty">输入查询条件后查看词条</td></tr>';
+  document.getElementById('dictRows')!.innerHTML = japanese
+    ? '<tr><td colspan="5" class="dict-empty">点击“批量导入”选择日语词库文件</td></tr>'
+    : '<tr><td colspan="5" class="dict-empty">输入查询条件后查看词条</td></tr>';
   syncTableHeaderWidth();
 }
 
@@ -136,6 +153,7 @@ function closeDialog(): void {
 }
 
 function query(offset = 0): void {
+  if (dictionary === 'japanese') return;
   if (offset === 0) lastQuery = (document.getElementById('dictSearch') as HTMLInputElement).value.trim();
   if (!lastQuery) { showToast('请输入查询内容', false); return; }
   post('query', { ...(dictionary === 'english' ? { word: lastQuery } : { code: lastQuery }), offset, limit: DICTIONARY_PAGE_SIZE });

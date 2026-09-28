@@ -41,8 +41,10 @@ set(METASEQUOIA_IME_ENGINE_SOURCES
     core/input_session_editing.cpp
     core/input_session_candidates.cpp
     english/english_dictionary.cpp
+    japanese/japanese_glossary.cpp
     japanese/japanese_matrix_search.cpp
     japanese/japanese_sentence_decoder.cpp
+    japanese/kana_layout.cpp
     japanese/romaji_converter.cpp
     local_modes/date_time_query.cpp
     local_modes/emoji_query.cpp
@@ -64,6 +66,7 @@ set(METASEQUOIA_IME_ENGINE_SOURCES
     quanpin/quanpin_utils.cpp
     quanpin/lattice_rerank.cpp
     quanpin/word_lattice.cpp
+    schemes/japanese_kana_scheme.cpp
     schemes/japanese_romaji_scheme.cpp
     schemes/quanpin_scheme.cpp
     schemes/shuangpin_scheme.cpp

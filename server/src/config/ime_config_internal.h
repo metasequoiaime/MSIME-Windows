@@ -104,6 +104,8 @@ struct ConfigValueUpdate
 extern SchemeType g_input_scheme;
 extern std::string g_input_mode;
 extern std::string g_japanese_schema;
+extern bool g_japanese_punctuation;
+extern bool g_japanese_katakana_fkey;
 extern std::string g_character_set;
 extern std::string g_default_ime_mode;
 extern std::string g_ime_mode_scope;

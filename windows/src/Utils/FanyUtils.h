@@ -16,6 +16,12 @@ std::string::size_type count_utf8_chars(const std::string &str);
 BOOL ReadConfiguredDefaultImeModeChinese();
 // Read input.mode from the shared config. TRUE when Japanese input is active.
 BOOL ReadConfiguredJapaneseInputMode();
+// Read input.japanese_punctuation from the shared config. TRUE (default) means
+// Japanese input uses Japanese punctuation (、。「」『』); FALSE uses ASCII.
+BOOL ReadConfiguredJapanesePunctuation();
+// Read input.japanese_schema from the shared config. TRUE when it is "kana"
+// (JIS direct-kana layout); FALSE for "romaji" (default).
+BOOL ReadConfiguredJapaneseKanaLayout();
 // Read input.punctuation_lock from shared config.toml.
 // 0 = follow IME, 1 = always Chinese punctuation, 2 = always English punctuation.
 int ReadConfiguredPunctuationLock();

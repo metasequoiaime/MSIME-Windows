@@ -73,6 +73,11 @@ void EngineInputSession::switch_scheme(SchemeType scheme_type)
     ApplyConfiguration();
 }
 
+bool EngineInputSession::cycle_japanese_kana_form(bool to_katakana)
+{
+    return session_.cycle_japanese_kana_form(to_katakana).handled;
+}
+
 void EngineInputSession::reset_state()
 {
     return session_.reset_state();

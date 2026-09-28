@@ -11,6 +11,7 @@
 #include "engine/quanpin/quanpin_utils.h"
 #include "engine/user_dictionary/user_dictionary_journal.h"
 #include "engine/english/english_dictionary.h"
+#include "engine/japanese/romaji_converter.h"
 
 #include <cpp-pinyin/G2pglobal.h>
 #include <cpp-pinyin/Pinyin.h>
@@ -20,6 +21,8 @@
 #include <utf8.h>
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -531,6 +534,254 @@ json::object ImportChinese(const json::object &request)
     if (inserted > 0)
         NotifyImeServerClearDictCache();
     return Result(inserted > 0 || (failed == 0 && skipped > 0), message);
+}
+
+json::object ImportJapanese(const json::object &request)
+{
+    // Accepts the common word-list shapes people actually have and folds them all
+    // into (romaji code, surface word):
+    //   romaji,word            Excel/CSV two columns
+    //   romaji,kana,kanji      Excel/CSV three columns
+    //   romaji word            plain text, whitespace separated
+    //   hiragana<TAB>surface   MOZC / system .dic style
+    //   kana,kanji / kanji,kana  Anki exports
+    // Imported words are given a high weight so they lead the word pool (they
+    // still follow the generated kana candidate, which is always candidate 1).
+    std::string content = StringValue(request, "content");
+    if (content.size() >= 3 && static_cast<unsigned char>(content[0]) == 0xEF &&
+        static_cast<unsigned char>(content[1]) == 0xBB && static_cast<unsigned char>(content[2]) == 0xBF)
+        content.erase(0, 3);
+    if (content.find_first_not_of(" \t\r\n") == std::string::npos)
+        return Result(false, "文件内容为空");
+
+    std::string error;
+    Db db = OpenDatabase("msime.db", error);
+    if (!db)
+        return Result(false, "打开日语词库失败：" + error);
+
+    char *errmsg = nullptr;
+    const char *kCreateTable = "CREATE TABLE IF NOT EXISTS japanese_lexicon("
+                               "code TEXT NOT NULL,value TEXT NOT NULL,weight INTEGER NOT NULL DEFAULT 0,"
+                               "PRIMARY KEY(code,value))";
+    if (sqlite3_exec(db.get(), kCreateTable, nullptr, nullptr, &errmsg) != SQLITE_OK)
+    {
+        std::string detail = errmsg ? errmsg : "建表失败";
+        sqlite3_free(errmsg);
+        return Result(false, "初始化日语词库表失败：" + detail);
+    }
+
+    constexpr int kImportedBaseWeight = 1200000;
+
+    const auto trim = [](std::string s) {
+        const auto issp = [](unsigned char c) { return c == ' ' || c == '\t' || c == '\r' || c == '"'; };
+        while (!s.empty() && issp(static_cast<unsigned char>(s.front())))
+            s.erase(s.begin());
+        while (!s.empty() && issp(static_cast<unsigned char>(s.back())))
+            s.pop_back();
+        return s;
+    };
+    const auto codepoints = [](const std::string &s) {
+        std::vector<std::uint32_t> cps;
+        auto it = s.begin();
+        while (it != s.end())
+        {
+            try
+            {
+                cps.push_back(utf8::next(it, s.end()));
+            }
+            catch (...)
+            {
+                break;
+            }
+        }
+        return cps;
+    };
+    const auto is_romaji = [](const std::string &s) {
+        if (s.empty())
+            return false;
+        for (char c : s)
+            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-' || c == '\''))
+                return false;
+        return s[0] >= 'a' && s[0] <= 'z' || (s[0] >= 'A' && s[0] <= 'Z');
+    };
+    const auto is_kana_char = [](std::uint32_t cp) {
+        return (cp >= 0x3040 && cp <= 0x30FF) || cp == 0x30FC || cp == 0x30FB;
+    };
+    const auto is_all_kana = [&](const std::string &s) {
+        const auto cps = codepoints(s);
+        if (cps.empty())
+            return false;
+        for (auto cp : cps)
+            if (!is_kana_char(cp))
+                return false;
+        return true;
+    };
+    const auto has_kanji = [&](const std::string &s) {
+        for (auto cp : codepoints(s))
+            if (cp >= 0x4E00 && cp <= 0x9FFF)
+                return true;
+        return false;
+    };
+    const auto kata_to_hira = [](std::string s) {
+        std::string out;
+        out.reserve(s.size());
+        auto it = s.begin();
+        while (it != s.end())
+        {
+            std::uint32_t cp = 0;
+            try
+            {
+                cp = utf8::next(it, s.end());
+            }
+            catch (...)
+            {
+                break;
+            }
+            if (cp >= 0x30A1 && cp <= 0x30F3)
+                cp -= 0x60;
+            utf8::append(cp, std::back_inserter(out));
+        }
+        return out;
+    };
+    const auto split_fields = [&trim](const std::string &line) {
+        std::vector<std::string> fields;
+        char delim = '\t';
+        if (line.find('\t') == std::string::npos)
+            delim = line.find(',') != std::string::npos ? ',' : ' ';
+        std::string token;
+        for (std::size_t i = 0; i <= line.size(); ++i)
+        {
+            const bool end = i == line.size();
+            const char c = end ? delim : line[i];
+            if (end || c == delim)
+            {
+                const std::string f = trim(token);
+                if (!f.empty())
+                    fields.push_back(f);
+                token.clear();
+                if (delim == ' ' && !end)
+                    while (i + 1 < line.size() && line[i + 1] == ' ')
+                        ++i;
+            }
+            else
+            {
+                token.push_back(c);
+            }
+        }
+        return fields;
+    };
+
+    int inserted = 0, skipped = 0, failed = 0;
+    std::vector<std::string> error_details;
+    const auto append_error = [&](int line_no, const std::string &detail) {
+        ++failed;
+        if (error_details.size() < 5)
+            error_details.push_back("第 " + std::to_string(line_no) + " 行：" + detail);
+    };
+
+    Stmt insert = Prepare(db.get(),
+                          "INSERT INTO japanese_lexicon(code,value,weight) VALUES(?1,?2,?3) "
+                          "ON CONFLICT(code,value) DO UPDATE SET weight=excluded.weight",
+                          error);
+    if (!insert)
+        return Result(false, "准备写入语句失败：" + error);
+
+    sqlite3_exec(db.get(), "BEGIN IMMEDIATE", nullptr, nullptr, nullptr);
+    std::istringstream stream(content);
+    std::string line;
+    int line_no = 0;
+    while (std::getline(stream, line))
+    {
+        ++line_no;
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        const std::string trimmed = trim(line);
+        if (trimmed.empty() || trimmed[0] == '#' || trimmed.rfind("//", 0) == 0 || trimmed == "---" || trimmed == "...")
+            continue;
+
+        const auto fields = split_fields(trimmed);
+        if (fields.size() < 2)
+        {
+            append_error(line_no, "至少需要“罗马音/假名”和“词”两列");
+            continue;
+        }
+
+        const std::string *romaji_field = nullptr;
+        const std::string *kana_field = nullptr;
+        const std::string *kanji_field = nullptr;
+        int weight_bonus = 0;
+        for (const auto &f : fields)
+        {
+            if (!romaji_field && is_romaji(f))
+                romaji_field = &f;
+            else if (std::all_of(f.begin(), f.end(), [](char c) { return c >= '0' && c <= '9'; }))
+            {
+                const long parsed = std::strtol(f.c_str(), nullptr, 10);
+                weight_bonus = static_cast<int>(std::min(std::max(parsed, 0L), 100000L));
+            }
+            else if (has_kanji(f))
+            {
+                if (!kanji_field)
+                    kanji_field = &f;
+            }
+            else if (is_all_kana(f) && !kana_field)
+                kana_field = &f;
+        }
+
+        std::string code;
+        if (romaji_field)
+        {
+            code = *romaji_field;
+        }
+        else if (kana_field)
+        {
+            code = japanese::HiraganaToRomaji(kata_to_hira(*kana_field));
+        }
+        std::transform(code.begin(), code.end(), code.begin(),
+                       [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+
+        std::string value;
+        if (kanji_field)
+            value = *kanji_field;
+        else if (kana_field)
+            value = *kana_field;
+        else if (romaji_field)
+        {
+            const auto conv = japanese::ConvertRomaji(code);
+            value = conv.complete ? conv.hiragana : std::string{};
+        }
+
+        if (code.empty() || !is_romaji(code) || value.empty())
+        {
+            append_error(line_no, "无法识别罗马音/假名或词面");
+            continue;
+        }
+
+        sqlite3_reset(insert.get());
+        sqlite3_clear_bindings(insert.get());
+        sqlite3_bind_text(insert.get(), 1, code.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insert.get(), 2, value.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(insert.get(), 3, kImportedBaseWeight + std::min(weight_bonus, 100000));
+        if (sqlite3_step(insert.get()) == SQLITE_DONE)
+            ++inserted;
+        else
+            append_error(line_no, "写入失败");
+    }
+    sqlite3_exec(db.get(), "COMMIT", nullptr, nullptr, nullptr);
+
+    if (inserted == 0 && failed == 0 && skipped == 0)
+        return Result(false, "文件中没有可导入的词条");
+
+    std::string message = "成功导入 " + std::to_string(inserted) + " 条日语词";
+    if (failed > 0)
+    {
+        message += "，失败 " + std::to_string(failed) + " 条";
+        for (const auto &d : error_details)
+            message += "；" + d;
+    }
+    if (inserted > 0)
+        NotifyImeServerClearDictCache();
+    return Result(inserted > 0, message);
 }
 
 json::object ImportHans(const json::object &request)
@@ -1428,6 +1679,12 @@ json::object HandleRequest(const json::object &request)
         return HandleWubi(request);
     if (dictionary == "quick")
         return HandleQuickPhrase(request);
+    if (dictionary == "japanese")
+    {
+        if (action == "import")
+            return ImportJapanese(request);
+        return Result(false, "日语词库目前支持导入操作");
+    }
     if (dictionary != "quanpin")
         return Result(false, "未知词库");
     if (action == "query")

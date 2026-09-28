@@ -368,6 +368,8 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
            {{"mode", GetConfiguredInputMode()},
             {"schema", GetConfiguredInputSchemeName()},
             {"japanese_schema", GetConfiguredJapaneseSchema()},
+            {"japanese_punctuation", GetConfiguredJapanesePunctuation()},
+            {"japanese_katakana_fkey", GetConfiguredJapaneseKatakanaFkey()},
             {"character_set", GetConfiguredCharacterSet()},
             {"default_ime_mode", GetConfiguredDefaultImeMode()},
             {"ime_mode_scope", GetConfiguredImeModeScope()},
@@ -639,6 +641,10 @@ bool ApplyConfigUpdate(const json::object &data)
         return SetConfiguredInputScheme(json::value_to<std::string>(data.at("value")));
     if (path == "input.japanese_schema")
         return SetConfiguredJapaneseSchema(json::value_to<std::string>(data.at("value")));
+    if (path == "input.japanese_punctuation")
+        return SetConfiguredJapanesePunctuation(json::value_to<bool>(data.at("value")));
+    if (path == "input.japanese_katakana_fkey")
+        return SetConfiguredJapaneseKatakanaFkey(json::value_to<bool>(data.at("value")));
     if (path == "input.character_set")
         return SetConfiguredCharacterSet(json::value_to<std::string>(data.at("value")));
     if (path == "input.default_ime_mode")

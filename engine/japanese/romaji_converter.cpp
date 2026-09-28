@@ -131,6 +131,19 @@ std::string HiraganaToKatakana(std::string_view hiragana)
     return utf8::utf32to8(codepoints);
 }
 
+std::string KatakanaToHiragana(std::string_view katakana)
+{
+    std::u32string codepoints = utf8::utf8to32(katakana);
+    for (char32_t &codepoint : codepoints)
+    {
+        if (codepoint >= U'ァ' && codepoint <= U'ヶ')
+        {
+            codepoint -= 0x60;
+        }
+    }
+    return utf8::utf32to8(codepoints);
+}
+
 bool IsSingleKanaConversion(const RomajiConversion &conversion)
 {
     if (!conversion.complete || conversion.hiragana.empty())

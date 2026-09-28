@@ -75,9 +75,23 @@ void ApplyCloudCandidate(const std::string &candidate, const std::string &pinyin
 
     size_t insert_index = items.size() >= 1 ? 1 : 0;
     items.insert(items.begin() + insert_index, *accepted);
-    const bool preserve_single_kana_pair =
-        g_inputSession->current_scheme_type() == SchemeType::JapaneseRomaji &&
-        japanese::IsSingleKanaConversion(japanese::ConvertRomaji(g_inputSession->get_pinyin_sequence()));
+    const SchemeType cloud_scheme = g_inputSession->current_scheme_type();
+    bool preserve_single_kana_pair = false;
+    if (cloud_scheme == SchemeType::JapaneseRomaji)
+    {
+        preserve_single_kana_pair =
+            japanese::IsSingleKanaConversion(japanese::ConvertRomaji(g_inputSession->get_pinyin_sequence()));
+    }
+    else if (cloud_scheme == SchemeType::JapaneseKana)
+    {
+        // Direct-kana input already holds kana; a single mora is exactly one
+        // UTF-8 code point (every kana here is a 3-byte E0-sequence).
+        const std::string &raw = g_inputSession->get_pinyin_sequence();
+        std::size_t code_points = 0;
+        for (unsigned char c : raw)
+            code_points += ((c & 0xC0) != 0x80) ? 1u : 0u;
+        preserve_single_kana_pair = code_points == 1;
+    }
     FanyImeIpc::NormalizeMixedCandidateOrder(items, preserve_single_kana_pair ? 2 : 1);
     Global::cloud_candidate = {true, candidate, cloud_query_state.committed_pinyin};
 
@@ -284,7 +298,7 @@ void ApplyCandidateTranslations(std::vector<EnglishIme::TranslationResult> resul
 {
     if (!EnglishIme::IsTranslationCurrent(generation) || !GetConfiguredCandidateTranslationsEnabled() ||
         IsUiLessMode() || g_candidate_translation_signature.empty() || g_translation_candidates_active ||
-        (g_inputSession && g_inputSession->current_scheme_type() == SchemeType::JapaneseRomaji))
+        (g_inputSession && IsJapaneseScheme(g_inputSession->current_scheme_type())))
         return;
 
     std::vector<EnglishIme::TranslationQuery> misses;

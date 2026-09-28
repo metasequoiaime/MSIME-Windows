@@ -233,8 +233,12 @@ shuangpin_preedit_mode = "shuangpin"
 shuangpin_schema = "xiaohe"
 # 五笔方案，当前仅支持 "wubi86"；98 版待词库发布后另开任务接线
 wubi_schema = "wubi86"
-# 日语方案，当前支持："romaji"
+# 日语方案，可选："romaji"（罗马音输入）, "kana"（JIS 假名键盘直输入）
 japanese_schema = "romaji"
+# 日语模式下输出日文标点（、。「」『』等）。关闭则使用半角 ASCII 标点。
+japanese_punctuation = true
+# 日语组合中 F9 / F10 切换假名形态（F9 片假名 / F10 平假名）。
+japanese_katakana_fkey = true
 # 模糊音，全拼与双拼均生效；默认全部关闭，升级用户零行为变化
 # 总开关：关闭时所有规则不生效，已选规则保留，便于临时停用后恢复
 fuzzy_pinyin = false

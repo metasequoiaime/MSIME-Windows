@@ -531,6 +531,8 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
             const int previous_preedit_font_size = GetConfiguredCandidateWindowPreeditFontSize();
             const std::string previous_cand_text_color = GetConfiguredCandidateTextColor();
             const VoiceInputConfig previous_voice_input = GetConfiguredVoiceInput();
+            const bool previous_japanese_punctuation = GetConfiguredJapanesePunctuation();
+            const bool previous_japanese_katakana_fkey = GetConfiguredJapaneseKatakanaFkey();
             if (ReloadImeConfigIfChanged())
             {
                 FanyNamedPipe::EnqueueApplyCandidatePageSizeTask();
@@ -538,6 +540,13 @@ LRESULT CALLBACK WndProcCandWindow(HWND hwnd, UINT message, WPARAM wParam, LPARA
                     ApplyConfiguredInputScheme();
                 else if (previous_shuangpin_schema != GetConfiguredShuangpinSchema())
                     ApplyConfiguredShuangpinSchema();
+                // The engine session snapshots the Japanese punctuation mode at
+                // construction; a toggle while Japanese stays active needs a
+                // session rebuild to take effect (the mode change above already
+                // rebuilds via ApplyConfiguredInputScheme).
+                else if (previous_japanese_punctuation != GetConfiguredJapanesePunctuation() ||
+                         previous_japanese_katakana_fkey != GetConfiguredJapaneseKatakanaFkey())
+                    FanyNamedPipe::EnqueueReloadInputSessionTask();
                 if (previous_character_set != GetConfiguredCharacterSet())
                 {
                     UpdateFtbCharacterSetState(::webviewFtbWnd);

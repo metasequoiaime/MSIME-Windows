@@ -15,6 +15,7 @@ struct RomajiConversion
 
 RomajiConversion ConvertRomaji(std::string_view input);
 std::string HiraganaToKatakana(std::string_view hiragana);
+std::string KatakanaToHiragana(std::string_view katakana);
 std::string HiraganaToRomaji(std::string_view kana);
 bool IsSingleKanaConversion(const RomajiConversion &conversion);
 

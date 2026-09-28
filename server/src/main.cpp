@@ -75,6 +75,8 @@ const char *SchemeTypeToString(SchemeType scheme_type)
         return "wubi";
     case SchemeType::JapaneseRomaji:
         return "japanese-romaji";
+    case SchemeType::JapaneseKana:
+        return "japanese-kana";
     default:
         return "unknown";
     }

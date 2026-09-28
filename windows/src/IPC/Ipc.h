@@ -210,6 +210,11 @@ inline std::atomic_bool SmartPunctuationDirectLetterEnabled{false};
 inline std::atomic_bool PairedPunctuationEnabled{true};
 inline std::atomic_bool MicrosoftShuangpinEnabled{false};
 inline std::atomic_bool JapaneseInputModeEnabled{false};
+// Japanese input uses the JIS direct-kana layout (input.japanese_schema="kana")
+// instead of romaji conversion. Gates the extra digit/symbol kana keys.
+inline std::atomic_bool JapaneseKanaLayoutEnabled{false};
+// Japanese-mode punctuation (、。「」『』). Default on until config says otherwise.
+inline std::atomic_bool JapanesePunctuationEnabled{true};
 inline std::atomic_bool CapsLockEnabled{false};
 inline std::atomic_bool TsfDiagnosticLogEnabled{false};
 // Default off, like the persisted setting: until the Server sends the switch on

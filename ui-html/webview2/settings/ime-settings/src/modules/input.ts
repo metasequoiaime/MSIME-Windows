@@ -28,7 +28,9 @@ export function applyInputConfig(
   wubiSchema: string | undefined,
   defaultImeMode?: string | undefined,
   imeModeScope?: string | undefined,
-  japaneseSchema?: string | undefined
+  japaneseSchema?: string | undefined,
+  japanesePunctuation?: boolean,
+  japaneseKatakanaFkey?: boolean
 ): void {
   applyingInputConfig = true;
   try {
@@ -51,9 +53,15 @@ export function applyInputConfig(
   applyDropdownValue('defaultImeModeBtn', 'defaultImeModeMenu', defaultImeMode);
   applyDropdownValue('imeModeScopeBtn', 'imeModeScopeMenu', imeModeScope);
   const japaneseRadio = document.querySelector<HTMLInputElement>(
-    `input[name="japanese-input-method"][value="${japaneseSchema === 'romaji' ? japaneseSchema : 'romaji'}"]`
+    `input[name="japanese-input-method"][value="${japaneseSchema === 'kana' ? 'kana' : 'romaji'}"]`
   );
   if (japaneseRadio) japaneseRadio.checked = true;
+  if (typeof japanesePunctuation === 'boolean') {
+    applyToggleState('japanesePunctuationToggleBtn', japanesePunctuation);
+  }
+  if (typeof japaneseKatakanaFkey === 'boolean') {
+    applyToggleState('japaneseKatakanaFkeyToggleBtn', japaneseKatakanaFkey);
+  }
   } finally {
     applyingInputConfig = false;
   }
@@ -212,10 +220,17 @@ export function setupInput(): void {
 
   document.querySelectorAll<HTMLInputElement>('input[name="japanese-input-method"]').forEach((radio) => {
     radio.addEventListener('change', () => {
-      if (radio.checked && radio.value === 'romaji' && !applyingInputConfig) {
+      if (radio.checked && (radio.value === 'romaji' || radio.value === 'kana') && !applyingInputConfig) {
         updateInputConfig('input.japanese_schema', radio.value);
       }
     });
+  });
+
+  setupToggleButton('japanesePunctuationToggleBtn', (active) => {
+    updateConfig('input.japanese_punctuation', active);
+  });
+  setupToggleButton('japaneseKatakanaFkeyToggleBtn', (active) => {
+    updateConfig('input.japanese_katakana_fkey', active);
   });
 
   setupDropdownMenu('characterSetBtn', 'characterSetMenu', 'changeCharacterSet', true, 'input.character_set');

@@ -18,7 +18,9 @@ SchemeType GetConfiguredInputScheme()
 
 SchemeType GetConfiguredActiveInputScheme()
 {
-    return g_input_mode == "japanese" ? SchemeType::JapaneseRomaji : g_input_scheme;
+    if (g_input_mode == "japanese")
+        return g_japanese_schema == "kana" ? SchemeType::JapaneseKana : SchemeType::JapaneseRomaji;
+    return g_input_scheme;
 }
 
 std::string GetConfiguredInputSchemeName()
@@ -476,7 +478,7 @@ const std::string &GetConfiguredJapaneseSchema()
 
 bool SetConfiguredJapaneseSchema(const std::string &schema)
 {
-    if (schema != "romaji")
+    if (schema != "romaji" && schema != "kana")
     {
         return false;
     }
@@ -485,6 +487,39 @@ bool SetConfiguredJapaneseSchema(const std::string &schema)
         return false;
     }
     g_japanese_schema = schema;
+    // Rebuild the input session (romaji vs JIS kana are distinct schemes/backends)
+    // and broadcast InputModeChanged so the TSF DLL re-reads the kana-layout flag.
+    NotifyImeServerInputSchemeChanged();
+    return true;
+}
+
+bool GetConfiguredJapanesePunctuation()
+{
+    return g_japanese_punctuation;
+}
+
+bool SetConfiguredJapanesePunctuation(bool enabled)
+{
+    if (!WriteConfiguredValue("input", "japanese_punctuation", enabled ? "true" : "false"))
+    {
+        return false;
+    }
+    g_japanese_punctuation = enabled;
+    return true;
+}
+
+bool GetConfiguredJapaneseKatakanaFkey()
+{
+    return g_japanese_katakana_fkey;
+}
+
+bool SetConfiguredJapaneseKatakanaFkey(bool enabled)
+{
+    if (!WriteConfiguredValue("input", "japanese_katakana_fkey", enabled ? "true" : "false"))
+    {
+        return false;
+    }
+    g_japanese_katakana_fkey = enabled;
     return true;
 }
 

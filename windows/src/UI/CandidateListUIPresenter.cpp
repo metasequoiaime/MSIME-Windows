@@ -141,7 +141,19 @@ HRESULT CMetasequoiaIME::_HandleCandidateFinalizeForVKReturn(TfEditCookie ec, _I
     // matches the Normal branch of _HandleCandidateFinalize and mirrors the
     // Server, which drops its own creating_word state when the candidate
     // presenter teardown below sends HideCandidateWnd.
-    const std::wstring commitText = GlobalIme::word_for_creating_word + keyStrokebuffer.ToWString();
+    //
+    // Japanese mode is server-driven: the rendered preedit is romaji->kana
+    // (including F9/F10 katakana flips), while the local keystroke buffer
+    // still holds the raw romaji. Commit what the user sees, not the raw keys.
+    std::wstring commitText = GlobalIme::word_for_creating_word;
+    if (Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed))
+    {
+        commitText += _pCompositionProcessorEngine->GetRenderedPreedit();
+    }
+    else
+    {
+        commitText += keyStrokebuffer.ToWString();
+    }
     GlobalIme::word_for_creating_word.clear();
     GlobalIme::pending_create_word_preedit.clear();
 

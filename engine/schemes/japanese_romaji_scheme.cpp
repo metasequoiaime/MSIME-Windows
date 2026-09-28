@@ -84,7 +84,15 @@ QueryRequest JapaneseRomajiScheme::build_request() const
 
 std::string JapaneseRomajiScheme::get_preedit() const
 {
-    return raw_input_;
+    // The inline composition (and, on Enter, the committed text) must show the
+    // live kana conversion rather than the typed romaji. Fully converted mora
+    // become hiragana; the still-unmatched romaji tail stays as letters, e.g.
+    // "kannk" -> "かんk".
+    std::string lower = raw_input_;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    const auto converted = japanese::ConvertRomaji(lower);
+    return converted.hiragana + converted.pending;
 }
 
 SchemeType JapaneseRomajiScheme::type() const

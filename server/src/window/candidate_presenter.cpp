@@ -4,6 +4,7 @@
 #include "defines/defines.h"
 #include "defines/globals.h"
 #include "global/globals.h"
+#include "ipc/event_listener.h"
 #include "ipc/ipc.h"
 #include "log/candidate_diag_log.h"
 #include "skin/candidate_skin_catalog.h"
@@ -616,6 +617,10 @@ void CandidatePresenter::ApplySkin()
 std::uint64_t CandidatePresenter::FillItemsFromUi()
 {
     const Global::CandidatePageSnapshotPtr page = Global::LoadCandidatePageSnapshot();
+    // Japanese loanword/slang glosses are a built-in local preview, not the
+    // online candidate translation feature, so they render even when the
+    // global "candidate translations" switch is off.
+    const bool japanese_scheme = g_inputSession && IsJapaneseScheme(g_inputSession->current_scheme_type());
     std::vector<msimeui::CandidateList::Item> items;
     for (size_t i = 0; i < page->page_views.size(); ++i)
     {
@@ -624,7 +629,7 @@ std::uint64_t CandidatePresenter::FillItemsFromUi()
         item.label = std::to_wstring(i + 1);
         item.text = string_to_wstring(view.text + view.badge);
         item.annotation = string_to_wstring(view.annotation);
-        if (GetConfiguredCandidateTranslationsEnabled())
+        if (GetConfiguredCandidateTranslationsEnabled() || japanese_scheme)
             item.translation = string_to_wstring(view.translation);
         items.push_back(std::move(item));
     }

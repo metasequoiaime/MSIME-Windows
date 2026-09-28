@@ -608,6 +608,11 @@ void CMetasequoiaIME::IpcWorkerThread(CMetasequoiaIME *pIME)
         else if (buf.msg_type == Global::DataToTsfWorkerThreadMsgType::InputModeChanged)
         {
             Global::JapaneseInputModeEnabled.store(buf.data[0] == L'1', std::memory_order_relaxed);
+            // The frame only carries the JP on/off bit. The kana-vs-romaji
+            // layout choice lives in the same [input] table, so re-read it here
+            // whenever the server broadcasts an input-mode/scheme change.
+            Global::JapaneseKanaLayoutEnabled.store(FanyUtils::ReadConfiguredJapaneseKanaLayout() != FALSE,
+                                                    std::memory_order_relaxed);
             const HWND ownerWindow = pIME->_msgWndHandle;
             if (ownerWindow && IsWindow(ownerWindow))
             {

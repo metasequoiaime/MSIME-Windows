@@ -1,10 +1,13 @@
 #include "japanese_candidate_provider.h"
+#include "../japanese/japanese_glossary.h"
 #include "../japanese/japanese_matrix_search.h"
 #include "../japanese/romaji_converter.h"
 #include "../quanpin/quanpin_query.h"
 #include <algorithm>
+#include <cctype>
 #include <mutex>
 #include <iterator>
+#include <string_view>
 #include <unordered_map>
 #include "../core/data_path.h"
 #include "../contracts/assets/assets.h"
@@ -55,6 +58,20 @@ std::string EscapeLikePrefix(const std::string &code)
     escaped.push_back('%');
     return escaped;
 }
+
+// Count UTF-8 code points in a string. Japanese "字数" is the number of
+// characters, not bytes, so length-based association sorting must use this.
+std::size_t Utf8CharCount(std::string_view s)
+{
+    std::size_t count = 0;
+    for (unsigned char c : s)
+    {
+        if ((c & 0xC0) != 0x80)
+            ++count;
+    }
+    return count;
+}
+
 } // namespace
 
 JapaneseCandidateProvider::JapaneseCandidateProvider(std::string db_path, std::string model_path)
@@ -72,40 +89,73 @@ JapaneseCandidateProvider::~JapaneseCandidateProvider()
 
 std::vector<WordItem> JapaneseCandidateProvider::query(const QueryRequest &request)
 {
-    if (!request.valid || request.scheme != SchemeType::JapaneseRomaji)
+    if (!request.valid || (request.scheme != SchemeType::JapaneseRomaji && request.scheme != SchemeType::JapaneseKana))
     {
         return {};
     }
 
-    std::vector<WordItem> candidates;
-    std::unordered_set<std::string> seen;
+    const bool direct_kana_input = request.scheme == SchemeType::JapaneseKana;
 
     // 单独按 '-' 时给出两个候选：长音符 ー 在前，普通连字符 '-' 在后。
     // 这里直接返回，避免句子搜索在两项之间插进无关候选。
     if (request.raw_input == "-")
     {
+        std::vector<WordItem> candidates;
+        std::unordered_set<std::string> seen;
         AppendUnique(candidates, seen, request.raw_input_with_cases, "ー", 1000000, CandidateSource::Generated);
         AppendUnique(candidates, seen, request.raw_input_with_cases, "-", 999999, CandidateSource::Generated);
         return candidates;
     }
 
-    const auto conversion = japanese::ConvertRomaji(request.raw_input);
-    const bool kana_first = japanese::IsSingleKanaConversion(conversion);
-
-    if (kana_first)
+    // Romaji mode converts the typed letters; direct-kana (JIS) mode already
+    // holds the full hiragana string with no pending tail.
+    japanese::RomajiConversion conversion;
+    if (direct_kana_input)
     {
-        AppendUnique(candidates, seen, request.raw_input_with_cases, conversion.hiragana, 1000000,
-                     CandidateSource::Generated);
-        AppendUnique(candidates, seen, request.raw_input_with_cases, japanese::HiraganaToKatakana(conversion.hiragana),
-                     999999, CandidateSource::Generated);
+        conversion.hiragana = request.raw_input;
+        conversion.pending.clear();
+        conversion.complete = true;
+    }
+    else
+    {
+        conversion = japanese::ConvertRomaji(request.raw_input);
     }
 
     if (!sentence_decoder_)
         sentence_decoder_ = SharedSentenceDecoder(model_path_);
-    if (sentence_decoder_ && sentence_decoder_->ready())
+
+    // Gather every non-kana candidate into one pool. The kana forms are placed
+    // at the very top afterwards, and the pool is split into the top two common
+    // words (by weight) plus an association tail sorted by character length.
+    std::vector<WordItem> word_pool;
+    std::unordered_set<std::string> seen;
+
+    // Internet slang abbreviations (w, ktkr, ggrks, ...) are not romaji the
+    // converter understands, so they would never surface from the model. On an
+    // exact match inject the slang surface as a high-priority QuickPhrase
+    // candidate (right after the kana lead); its full-form gloss is attached
+    // at candidate-page build time via japanese::LookUpCandidateGloss.
+    if (!direct_kana_input)
+    {
+        std::string typed_lower = request.raw_input;
+        std::transform(typed_lower.begin(), typed_lower.end(), typed_lower.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        for (const auto &slang : japanese::InternetSlangEntries())
+        {
+            if (slang.code == typed_lower)
+            {
+                AppendUnique(word_pool, seen, request.raw_input_with_cases, slang.surface, 1250000,
+                             CandidateSource::QuickPhrase);
+            }
+        }
+    }
+
+    const bool hiragana_complete = !conversion.hiragana.empty();
+
+    if (sentence_decoder_ && sentence_decoder_->ready() && hiragana_complete)
     {
         const auto pending_kana = japanese::KanaForRomajiPrefix(conversion.pending);
-        if (!conversion.hiragana.empty() && !conversion.pending.empty())
+        if (!conversion.pending.empty())
         {
             const std::string typed = request.raw_input;
             for (const auto &kana : pending_kana)
@@ -115,21 +165,21 @@ std::vector<WordItem> JapaneseCandidateProvider::query(const QueryRequest &reque
                     const std::string romaji = japanese::HiraganaToRomaji(lemma.reading);
                     if (romaji.size() < typed.size() || romaji.compare(0, typed.size(), typed) != 0)
                         continue;
-                    AppendUnique(candidates, seen, request.raw_input_with_cases, lemma.surface,
-                                 980000 - lemma.word_cost, CandidateSource::Database);
+                    AppendUnique(word_pool, seen, request.raw_input_with_cases, lemma.surface, 980000 - lemma.word_cost,
+                                 CandidateSource::Database);
                 }
             }
         }
-        else if (conversion.pending.empty() && conversion.hiragana.size() >= 6)
+        else if (conversion.hiragana.size() >= 6)
         {
             for (const auto &lemma : sentence_decoder_->PrefixLemmas(conversion.hiragana, 16))
-                AppendUnique(candidates, seen, request.raw_input_with_cases, lemma.surface, 980000 - lemma.word_cost,
+                AppendUnique(word_pool, seen, request.raw_input_with_cases, lemma.surface, 980000 - lemma.word_cost,
                              CandidateSource::Database);
         }
         japanese::JapaneseMatrixSearch search(*sentence_decoder_);
         for (const auto &sentence : search.SearchConverted(conversion, 12))
         {
-            AppendUnique(candidates, seen, request.raw_input_with_cases, sentence.text, 900000 - sentence.cost,
+            AppendUnique(word_pool, seen, request.raw_input_with_cases, sentence.text, 900000 - sentence.cost,
                          CandidateSource::Database);
         }
     }
@@ -150,39 +200,65 @@ std::vector<WordItem> JapaneseCandidateProvider::query(const QueryRequest &reque
             const auto *value = reinterpret_cast<const char *>(sqlite3_column_text(query_statement_, 1));
             if (code && value)
             {
-                AppendUnique(candidates, seen, code, value, sqlite3_column_int64(query_statement_, 2));
+                AppendUnique(word_pool, seen, code, value, sqlite3_column_int64(query_statement_, 2));
             }
         }
-    }
-
-    if (!conversion.hiragana.empty() && !kana_first)
-    {
-        AppendUnique(candidates, seen, request.raw_input_with_cases, conversion.hiragana, 1000000,
-                     CandidateSource::Generated);
-        AppendUnique(candidates, seen, request.raw_input_with_cases, japanese::HiraganaToKatakana(conversion.hiragana),
-                     999999, CandidateSource::Generated);
     }
 
     const auto dynamic = dynamic_candidates_.get(request.raw_input);
     if (dynamic.has_value())
     {
-        std::size_t insertion = std::min<std::size_t>(kana_first ? 2 : 1, candidates.size());
         for (const auto &item : *dynamic)
         {
             if (seen.insert(item.word).second)
             {
-                candidates.insert(candidates.begin() + static_cast<std::ptrdiff_t>(insertion), item);
-                ++insertion;
+                word_pool.push_back(item);
             }
         }
     }
+
+    // Candidate 1 is always the katakana form of the whole reading. Hiragana no
+    // longer occupies a candidate slot: Return commits the rendered preedit
+    // (hiragana) directly, so the katakana conversion is what users need at the
+    // top of the list, followed by the kanji/word pool below.
+    std::vector<WordItem> kana_leads;
+    if (hiragana_complete)
+    {
+        const std::string kata = japanese::HiraganaToKatakana(conversion.hiragana);
+        AppendUnique(kana_leads, seen, request.raw_input_with_cases, kata, 1000000, CandidateSource::Generated);
+    }
+
+    // Split the word pool: top two by weight are "common" candidates, the rest
+    // become association candidates sorted by character count ascending
+    // (shorter words first), ties broken by weight descending.
+    std::sort(word_pool.begin(), word_pool.end(),
+              [](const WordItem &a, const WordItem &b) { return a.weight > b.weight; });
+
+    std::vector<WordItem> common;
+    std::vector<WordItem> association;
+    const std::size_t common_count = std::min<std::size_t>(2, word_pool.size());
+    common.assign(word_pool.begin(), word_pool.begin() + static_cast<std::ptrdiff_t>(common_count));
+    association.assign(word_pool.begin() + static_cast<std::ptrdiff_t>(common_count), word_pool.end());
+    std::stable_sort(association.begin(), association.end(), [](const WordItem &a, const WordItem &b) {
+        const std::size_t la = Utf8CharCount(a.word);
+        const std::size_t lb = Utf8CharCount(b.word);
+        if (la != lb)
+            return la < lb;
+        return a.weight > b.weight;
+    });
+
+    std::vector<WordItem> candidates;
+    candidates.reserve(kana_leads.size() + common.size() + association.size());
+    candidates.insert(candidates.end(), kana_leads.begin(), kana_leads.end());
+    candidates.insert(candidates.end(), common.begin(), common.end());
+    candidates.insert(candidates.end(), association.begin(), association.end());
     return candidates;
 }
 
 std::optional<WordItem> JapaneseCandidateProvider::find_candidate(SchemeType scheme, const std::string &key,
                                                                   const std::string &value)
 {
-    if (scheme != SchemeType::JapaneseRomaji || !ensure_query_statement())
+    if (!IsJapaneseScheme(scheme) || !ensure_query_statement())
         return std::nullopt;
     sqlite3_reset(query_statement_);
     sqlite3_clear_bindings(query_statement_);
@@ -226,8 +302,7 @@ int JapaneseCandidateProvider::delete_by_pinyin_and_word(SchemeType, std::string
 int JapaneseCandidateProvider::cache_dynamic_candidate(SchemeType scheme, const std::string &code,
                                                        const std::string &word, CandidateSource source)
 {
-    if (scheme != SchemeType::JapaneseRomaji || code.empty() || word.empty() ||
-        source != CandidateSource::CloudSuggestion)
+    if (!IsJapaneseScheme(scheme) || code.empty() || word.empty() || source != CandidateSource::CloudSuggestion)
     {
         return -1;
     }

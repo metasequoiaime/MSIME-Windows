@@ -23,11 +23,59 @@
 
 namespace
 {
+// True while the JIS direct-kana layout (input.japanese_schema="kana") is on.
+bool IsJapaneseKanaLayoutActive()
+{
+    return Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed) &&
+           Global::JapaneseKanaLayoutEnabled.load(std::memory_order_relaxed);
+}
+
+// Physical keys that carry a kana in the JIS 106 layout: letters, the digit
+// row and the symbol positions (れ け ほ へ ゛ ゜ ろ ね る め). Shift selects the
+// shifted legend (small kana / voiced kana / を / ー) on the server side, which
+// maps by virtual-key rather than produced character.
+bool IsJapaneseKanaPhysicalKey(UINT uCode)
+{
+    if (uCode >= 'A' && uCode <= 'Z')
+        return true;
+    if (uCode >= '0' && uCode <= '9')
+        return true;
+    switch (uCode)
+    {
+    case VK_OEM_1:      // れ / れ
+    case VK_OEM_MINUS:  // ほ / ー
+    case VK_OEM_3:      // へ / べ
+    case VK_OEM_4:      // ゛
+    case VK_OEM_5:      // ろ
+    case VK_OEM_6:      // ゜
+    case VK_OEM_7:      // け / げ
+    case VK_OEM_COMMA:  // ね
+    case VK_OEM_PERIOD: // る
+    case VK_OEM_2:      // め
+        return true;
+    default:
+        return false;
+    }
+}
+
+// A JIS kana key counts as an input key only without Ctrl/Alt (Shift alone is
+// the shifted kana legend).
+bool IsJapaneseKanaInputKey(UINT uCode)
+{
+    if (!IsJapaneseKanaLayoutActive() || !IsJapaneseKanaPhysicalKey(uCode))
+        return false;
+    const bool ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+    const bool alt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+    return !ctrl && !alt;
+}
+
 // 日语模式禁用 -/= 翻页：'-' 是长音符（ー）的输入键。空编码时也要起头组合，
 // 候选框第一项是长音符 ー、第二项是普通连字符 '-'（候选由服务端提供）。
+// JIS 假名配列下该键是 ほ/ー，由服务器按物理键直映射，不走这里的长音候选。
 bool IsJapaneseLongVowelKey(UINT uCode, WCHAR wch)
 {
-    return uCode == VK_OEM_MINUS && wch == L'-' && Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed);
+    return uCode == VK_OEM_MINUS && wch == L'-' && Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed) &&
+           !Global::JapaneseKanaLayoutEnabled.load(std::memory_order_relaxed);
 }
 
 // '_' '=' '+' 在日语模式下也不翻页，但它们没有假名写法，按标点上屏处理，
@@ -40,6 +88,11 @@ bool IsJapaneseMinusEqualPunctuationKey(UINT uCode, WCHAR wch, BOOL fComposing, 
         return false;
     }
     if (keystrokeLength == 0 || !Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed))
+    {
+        return false;
+    }
+    // JIS layout: OEM_MINUS is the ほ/ー kana key, handled as direct input.
+    if (Global::JapaneseKanaLayoutEnabled.load(std::memory_order_relaxed))
     {
         return false;
     }
@@ -128,6 +181,17 @@ BOOL CCompositionProcessorEngine::IsVirtualKeyNeedForFreshComposition(UINT uCode
     }
     // 日语模式下 '-' 单独按也要起头组合，弹出候选框选长音符 ー 或普通 '-'。
     if (IsJapaneseLongVowelKey(uCode, pwch ? *pwch : 0))
+    {
+        if (pKeyState)
+        {
+            pKeyState->Category = CATEGORY_COMPOSING;
+            pKeyState->Function = FUNCTION_INPUT;
+        }
+        return TRUE;
+    }
+    // JIS direct-kana layout: the digit and symbol-row kana keys start a
+    // composition on an empty buffer exactly like the letter keys.
+    if (IsJapaneseKanaInputKey(uCode))
     {
         if (pKeyState)
         {
@@ -248,6 +312,23 @@ BOOL CCompositionProcessorEngine::IsVirtualKeyNeed( //
         {
             pKeyState->Category = CATEGORY_COMPOSING;
             pKeyState->Function = FUNCTION_PUNCTUATION;
+        }
+        return TRUE;
+    }
+
+    // JIS direct-kana layout: while entering reading text (empty buffer,
+    // composing, or the incremental candidate list), every physical kana key —
+    // including the digit row, comma/period and the voiced/half-voiced-mark
+    // keys — is plain kana input and must not become candidate navigation or
+    // punctuation. Candidate navigation still works via Space / PgUp / PgDn,
+    // and the full candidate window (CANDIDATE_ORIGINAL) keeps digit selection.
+    if ((fComposing || candidateMode == CANDIDATE_INCREMENTAL || candidateMode == CANDIDATE_NONE) &&
+        IsJapaneseKanaInputKey(uCode))
+    {
+        if (pKeyState)
+        {
+            pKeyState->Category = CATEGORY_COMPOSING;
+            pKeyState->Function = FUNCTION_INPUT;
         }
         return TRUE;
     }

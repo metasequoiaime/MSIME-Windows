@@ -84,6 +84,10 @@ class InputSession
     // Switching schemes discards the current composition. A frontend that promises to preserve
     // typed text must commit it before calling this method.
     void switch_scheme(SchemeType scheme_type);
+    // Japanese-only: cycle the top candidate kana form. to_katakana true forces Katakana,
+    // false forces Hiragana. Only acts while a Japanese composition is active; otherwise
+    // unhandled so the key passes through to the host.
+    KeyResult cycle_japanese_kana_form(bool to_katakana);
     SchemeType scheme() const;
 
     bool has_composition() const;

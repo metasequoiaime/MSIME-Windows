@@ -44,6 +44,8 @@ namespace ime_config_detail
 SchemeType g_input_scheme = SchemeType::Shuangpin;
 std::string g_input_mode = "chinese";
 std::string g_japanese_schema = "romaji";
+bool g_japanese_punctuation = true;
+bool g_japanese_katakana_fkey = true;
 std::string g_character_set = "simplified";
 std::string g_default_ime_mode = "chinese";
 std::string g_ime_mode_scope = "app";
@@ -365,8 +367,10 @@ bool LoadImeConfig()
         }
         {
             const std::string schema = tbl["input"]["japanese_schema"].value_or(std::string("romaji"));
-            g_japanese_schema = schema == "romaji" ? schema : "romaji";
+            g_japanese_schema = schema == "kana" ? schema : "romaji";
         }
+        g_japanese_punctuation = tbl["input"]["japanese_punctuation"].value_or(true);
+        g_japanese_katakana_fkey = tbl["input"]["japanese_katakana_fkey"].value_or(true);
         const std::string character_set = tbl["input"]["character_set"].value_or(std::string("simplified"));
         g_character_set = character_set == "traditional" ? "traditional" : "simplified";
         {

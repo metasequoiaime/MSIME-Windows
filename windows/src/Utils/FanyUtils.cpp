@@ -322,6 +322,116 @@ BOOL ReadConfiguredJapaneseInputMode()
     return FALSE;
 }
 
+// Reads [input] japanese_punctuation: TRUE (default) means Japanese input uses
+// Japanese punctuation (、。「」『』); FALSE uses ASCII.
+BOOL ReadConfiguredJapanesePunctuation()
+{
+    const std::filesystem::path configPath = SharedConfigPath();
+    if (configPath.empty())
+    {
+        return TRUE;
+    }
+
+    std::ifstream input(configPath);
+    if (!input)
+    {
+        return TRUE;
+    }
+
+    bool inInputSection = false;
+    std::string line;
+    while (std::getline(input, line))
+    {
+        const size_t comment = line.find('#');
+        if (comment != std::string::npos)
+        {
+            line = line.substr(0, comment);
+        }
+        line = TrimAscii(line);
+        if (line.empty())
+        {
+            continue;
+        }
+        if (line.front() == '[' && line.back() == ']')
+        {
+            inInputSection = (line == "[input]");
+            continue;
+        }
+        if (!inInputSection)
+        {
+            continue;
+        }
+        const size_t eq = line.find('=');
+        if (eq == std::string::npos)
+        {
+            continue;
+        }
+        const std::string key = TrimAscii(line.substr(0, eq));
+        if (key != "japanese_punctuation")
+        {
+            continue;
+        }
+        const std::string value = to_lower_copy(TrimAscii(line.substr(eq + 1)));
+        return value != "false";
+    }
+    return TRUE;
+}
+
+// Reads [input] japanese_schema: "kana" selects the JIS direct-kana layout,
+// anything else (default) is romaji conversion.
+BOOL ReadConfiguredJapaneseKanaLayout()
+{
+    const std::filesystem::path configPath = SharedConfigPath();
+    if (configPath.empty())
+    {
+        return FALSE;
+    }
+
+    std::ifstream input(configPath);
+    if (!input)
+    {
+        return FALSE;
+    }
+
+    bool inInputSection = false;
+    std::string line;
+    while (std::getline(input, line))
+    {
+        const size_t comment = line.find('#');
+        if (comment != std::string::npos)
+        {
+            line = line.substr(0, comment);
+        }
+        line = TrimAscii(line);
+        if (line.empty())
+        {
+            continue;
+        }
+        if (line.front() == '[' && line.back() == ']')
+        {
+            inInputSection = (line == "[input]");
+            continue;
+        }
+        if (!inInputSection)
+        {
+            continue;
+        }
+        const size_t eq = line.find('=');
+        if (eq == std::string::npos)
+        {
+            continue;
+        }
+        const std::string key = TrimAscii(line.substr(0, eq));
+        if (key != "japanese_schema")
+        {
+            continue;
+        }
+        const std::string value = to_lower_copy(UnquoteTomlBasicString(TrimAscii(line.substr(eq + 1))));
+        return value == "kana" ? TRUE : FALSE;
+    }
+    return FALSE;
+}
+
 namespace
 {
 SwitchLanguageHotkeys ParseSwitchLanguageHotkeys(const std::filesystem::path &configPath)

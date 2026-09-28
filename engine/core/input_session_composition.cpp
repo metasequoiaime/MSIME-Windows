@@ -395,7 +395,11 @@ std::string InputSession::get_pinyin_segmentation_with_cases() const
     }
     if (is_japanese())
     {
-        return request().raw_input_with_cases.empty() ? request().raw_input : request().raw_input_with_cases;
+        // Japanese composition displays (and, on Enter, commits) the live kana
+        // conversion, not the typed romaji. The romaji remains available through
+        // raw_input for candidate queries and backspace editing.
+        const auto converted = japanese::ConvertRomaji(request().raw_input);
+        return converted.hiragana + converted.pending;
     }
     if (is_shuangpin() && shuangpin_preedit_uses_raw_)
     {
@@ -827,7 +831,7 @@ bool InputSession::candidates_follow_pinyin() const
 
 bool InputSession::is_japanese() const
 {
-    return current_scheme_type() == SchemeType::JapaneseRomaji;
+    return IsJapaneseScheme(current_scheme_type());
 }
 
 void InputSession::clear_pending_sequence()
@@ -857,6 +861,7 @@ void InputSession::apply_pending_sequence()
         engine_.replace_wubi_raw_input(raw_input, raw_input_with_cases);
         break;
     case SchemeType::JapaneseRomaji:
+    case SchemeType::JapaneseKana:
         engine_.replace_japanese_raw_input(raw_input, raw_input_with_cases);
         break;
     }

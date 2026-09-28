@@ -588,6 +588,14 @@ HRESULT CMetasequoiaIME::_HandleCompositionInputWorker(_In_ CCompositionProcesso
         CStringRange curReadingStr;
         std::wstring readingStr = readingStrings.GetAt(0)->ToWString();
         const auto &preeditStyle = GlobalSettings::getTsfPreeditStyle();
+        // Japanese romaji->kana conversion lives in the Server, so the inline
+        // composition must come from the Server's Preedit frame instead of the
+        // local raw keystroke buffer; that also makes Enter finalize kana (the
+        // composition text is what gets committed). The Empty style still wins:
+        // the user explicitly asked for no inline preedit.
+        const bool serverDrivenPreedit = preeditStyle == GlobalSettings::TsfPreeditStyle::Pinyin ||
+                                         (Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed) &&
+                                          preeditStyle != GlobalSettings::TsfPreeditStyle::Empty);
 
         if (preeditStyle == GlobalSettings::TsfPreeditStyle::Empty)
         {
@@ -596,7 +604,7 @@ HRESULT CMetasequoiaIME::_HandleCompositionInputWorker(_In_ CCompositionProcesso
             readingStr.clear();
             curReadingStr.Set(readingStr.c_str(), readingStr.length());
         }
-        else if (preeditStyle == GlobalSettings::TsfPreeditStyle::Pinyin)
+        else if (serverDrivenPreedit)
         {
             bool gotServerPreedit = false;
             if (!GlobalIme::pending_create_word_preedit.empty())

@@ -36,6 +36,17 @@ class ImeSession
         rescoring_context_ = std::move(context);
     }
     void set_wubi_input_options(metasequoia::WubiInputOptions options);
+    // Japanese-only: pins the top candidate kana form for the current
+    // composition. Reset to Auto on scheme switch / reset.
+    void set_japanese_kana_form(JapaneseKanaForm form)
+    {
+        japanese_kana_form_ = form;
+        refresh_candidates();
+    }
+    JapaneseKanaForm japanese_kana_form() const
+    {
+        return japanese_kana_form_;
+    }
     void replace_shuangpin_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases);
     void replace_quanpin_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases);
     void replace_wubi_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases);
@@ -103,6 +114,7 @@ class ImeSession
     SentenceAssociationOptions sentence_association_;
     std::string rescoring_context_;
     metasequoia::WubiInputOptions wubi_options_;
+    JapaneseKanaForm japanese_kana_form_ = JapaneseKanaForm::Auto;
     // Resolved when the scheme changes rather than on every keystroke.
     WubiScheme *wubi_scheme_ = nullptr;
     // Once a composition has been answered by pinyin it stays with pinyin until it ends.

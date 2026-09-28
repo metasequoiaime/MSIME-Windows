@@ -522,7 +522,7 @@ std::optional<OnlineQuery> InputSession::online_query() const
         return std::nullopt;
     query.query_text = state.query_text;
     query.cache_key = state.cache_key;
-    if (request.scheme == SchemeType::JapaneseRomaji)
+    if (IsJapaneseScheme(request.scheme))
     {
         query.cloud_eligible = true;
         return query;
@@ -571,6 +571,17 @@ void InputSession::switch_scheme(SchemeType scheme_type)
     reset_composition();
     engine_.switch_scheme(scheme_type);
     update_mixed_candidates();
+}
+
+KeyResult InputSession::cycle_japanese_kana_form(bool to_katakana)
+{
+    if (!is_japanese() || !has_composition())
+    {
+        return {};
+    }
+    engine_.set_japanese_kana_form(to_katakana ? JapaneseKanaForm::Katakana : JapaneseKanaForm::Hiragana);
+    update_mixed_candidates();
+    return {true, std::nullopt, std::nullopt};
 }
 
 SchemeType InputSession::scheme() const
@@ -997,7 +1008,7 @@ std::optional<std::string> InputSession::learn_candidate(std::size_t index)
         return std::nullopt;
     }
     if ((selected.source != CandidateSource::Database && selected.source != CandidateSource::UserDatabase) ||
-        engine_.current_scheme_type() == SchemeType::JapaneseRomaji)
+        IsJapaneseScheme(engine_.current_scheme_type()))
     {
         return std::nullopt;
     }
@@ -1012,7 +1023,7 @@ KeyResult InputSession::pin_candidate(std::size_t index)
     const auto source = candidates()[index].source;
     if (source != CandidateSource::EnglishDictionary &&
         ((source != CandidateSource::Database && source != CandidateSource::UserDatabase) ||
-         scheme() == SchemeType::JapaneseRomaji))
+         IsJapaneseScheme(scheme())))
         return {};
 
     // Manual pinning is independent of automatic learning preferences and never selects text.

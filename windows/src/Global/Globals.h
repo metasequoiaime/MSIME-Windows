@@ -128,6 +128,9 @@ extern const GUID MetasequoiaIMEGuidCompartmentPunctuation;
 
 extern const WCHAR FullWidthCharTable[];
 extern const struct _PUNCTUATION PunctuationTable[23];
+// Japanese-mode punctuation table (、。「」『』…). Parallel to PunctuationTable;
+// selected at runtime when Japanese input is active and japanese punctuation is on.
+extern const struct _PUNCTUATION JapanesePunctuationTable[23];
 extern const std::unordered_set<WCHAR> CommitWithHighlightedCandPunc;
 
 extern const GUID MetasequoiaIMEGuidLangBarIMEMode;

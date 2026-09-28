@@ -75,9 +75,14 @@ bool IsSystemCtrlSpaceToggleHeld()
 
 BOOL CCompositionProcessorEngine::IsPunctuation(WCHAR wch)
 {
-    for (int i = 0; i < ARRAYSIZE(Global::PunctuationTable); i++)
+    const bool japanese = Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed) &&
+                          Global::JapanesePunctuationEnabled.load(std::memory_order_relaxed);
+    const auto &table = japanese ? Global::JapanesePunctuationTable : Global::PunctuationTable;
+    const int table_size = japanese ? static_cast<int>(ARRAYSIZE(Global::JapanesePunctuationTable))
+                                    : static_cast<int>(ARRAYSIZE(Global::PunctuationTable));
+    for (int i = 0; i < table_size; i++)
     {
-        if (Global::PunctuationTable[i]._Code == wch)
+        if (table[i]._Code == wch)
         {
             return TRUE;
         }
@@ -117,11 +122,16 @@ BOOL CCompositionProcessorEngine::IsPunctuation(WCHAR wch)
 
 const WCHAR *CCompositionProcessorEngine::GetPunctuation(WCHAR wch)
 {
-    for (int i = 0; i < ARRAYSIZE(Global::PunctuationTable); i++)
+    const bool japanese = Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed) &&
+                          Global::JapanesePunctuationEnabled.load(std::memory_order_relaxed);
+    const auto &table = japanese ? Global::JapanesePunctuationTable : Global::PunctuationTable;
+    const int table_size = japanese ? static_cast<int>(ARRAYSIZE(Global::JapanesePunctuationTable))
+                                    : static_cast<int>(ARRAYSIZE(Global::PunctuationTable));
+    for (int i = 0; i < table_size; i++)
     {
-        if (Global::PunctuationTable[i]._Code == wch)
+        if (table[i]._Code == wch)
         {
-            return Global::PunctuationTable[i]._Punctuation;
+            return table[i]._Punctuation;
         }
     }
 
@@ -131,15 +141,21 @@ const WCHAR *CCompositionProcessorEngine::GetPunctuation(WCHAR wch)
 
         if (pPuncPair->_punctuation._Code == wch)
         {
+            // The opening/closing glyphs depend on the active punctuation mode,
+            // so resolve them from the current flag rather than the values baked
+            // into the pair at construction time (mode may switch afterwards).
+            const bool isDoubleQuote = (wch == L'"');
+            const WCHAR *opening = japanese ? (isDoubleQuote ? L"「" : L"『") : (isDoubleQuote ? L"“" : L"‘");
+            const WCHAR *closing = japanese ? (isDoubleQuote ? L"」" : L"』") : (isDoubleQuote ? L"”" : L"’");
             if (!pPuncPair->_isPairToggle)
             {
                 pPuncPair->_isPairToggle = TRUE;
-                return pPuncPair->_punctuation._Punctuation;
+                return opening;
             }
             else
             {
                 pPuncPair->_isPairToggle = FALSE;
-                return pPuncPair->_pairPunctuation;
+                return closing;
             }
         }
     }
@@ -252,7 +268,12 @@ std::wstring CCompositionProcessorEngine::ResolvePunctuation(WCHAR wch, WCHAR pr
     // Direct ASCII output is opt-in (smart_punctuation_direct_digit and
     // smart_punctuation_direct_letter, both default off): the default path
     // leaves ',' '.' ':' to the reversible space conversion.
-    if (Global::SmartPunctuationEnabled.load(std::memory_order_relaxed) && IsSmartAsciiPunctuationKey(wch))
+    // feature; Japanese input always resolves through the punctuation table so
+    // 、。 are produced instead of raw ASCII.
+    const bool japanesePunct = Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed) &&
+                               Global::JapanesePunctuationEnabled.load(std::memory_order_relaxed);
+    if (!japanesePunct && Global::SmartPunctuationEnabled.load(std::memory_order_relaxed) &&
+        IsSmartAsciiPunctuationKey(wch))
     {
         const bool afterDigit = precedingChar >= L'0' && precedingChar <= L'9';
         const bool afterLetter =
@@ -460,12 +481,16 @@ BOOL CCompositionProcessorEngine::GetDoubleSingleByteMode(_In_ ITfThreadMgr *pTh
 
 void CCompositionProcessorEngine::SetupPunctuationPair()
 {
+    const bool japanese = Global::JapaneseInputModeEnabled.load(std::memory_order_relaxed) &&
+                          Global::JapanesePunctuationEnabled.load(std::memory_order_relaxed);
+
+    _PunctuationPair.Clear();
+    _PunctuationNestPair.Clear();
+
     // Punctuation pair
     const int pair_count = 2;
-    // Left quotation mark and right quotation mark “”
-    CPunctuationPair punc_quotation_mark(L'"', L"“", L"”");
-    // Left single quotation mark and right single quotation mark ‘’
-    CPunctuationPair punc_apostrophe(L'\'', L"‘", L"’");
+    CPunctuationPair punc_quotation_mark(L'"', japanese ? L"「" : L"“", japanese ? L"」" : L"”");
+    CPunctuationPair punc_apostrophe(L'\'', japanese ? L"『" : L"‘", japanese ? L"』" : L"’");
 
     CPunctuationPair puncPairs[pair_count] = {
         punc_quotation_mark,
@@ -478,7 +503,8 @@ void CCompositionProcessorEngine::SetupPunctuationPair()
         *pPuncPair = puncPairs[i];
     }
 
-    // Punctuation nest pair
+    // Punctuation nest pair (book title brackets). Japanese uses the same 《〉/〈〉
+    // nesting as Chinese; only the simple bracket [ ] differs, which lives in the table.
     CPunctuationNestPair punc_angle_bracket(L'<', L"《", L"〈", L'>', L"》", L"〉");
 
     CPunctuationNestPair *pPuncNestPair = _PunctuationNestPair.Append();
@@ -492,6 +518,10 @@ void CCompositionProcessorEngine::InitializeMetasequoiaIMECompartment(_In_ ITfTh
     const BOOL openChinese = FanyUtils::ReadConfiguredDefaultImeModeChinese();
     Global::JapaneseInputModeEnabled.store(FanyUtils::ReadConfiguredJapaneseInputMode() != FALSE,
                                            std::memory_order_relaxed);
+    Global::JapaneseKanaLayoutEnabled.store(FanyUtils::ReadConfiguredJapaneseKanaLayout() != FALSE,
+                                            std::memory_order_relaxed);
+    Global::JapanesePunctuationEnabled.store(FanyUtils::ReadConfiguredJapanesePunctuation() != FALSE,
+                                             std::memory_order_relaxed);
     // Use the suppressing writer so the OPENCLOSE sink does not treat this as
     // a user choice and drop the defense we are about to arm.
     SetKeyboardOpenCompartment(pThreadMgr, tfClientId, openChinese);

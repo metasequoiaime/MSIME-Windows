@@ -3,6 +3,7 @@
 #include "../schemes/shuangpin_scheme.h"
 #include "../schemes/wubi_scheme.h"
 #include "../schemes/japanese_romaji_scheme.h"
+#include "../schemes/japanese_kana_scheme.h"
 #include "../quanpin/quanpin_utils.h"
 #include "../shuangpin/shuangpin_query.h"
 #include <algorithm>
@@ -75,6 +76,7 @@ void ImeSession::switch_scheme(SchemeType scheme_type)
     scheme_ = create_scheme(scheme_type);
     bind_wubi_scheme();
     state_ = CompositionState{};
+    japanese_kana_form_ = JapaneseKanaForm::Auto;
 }
 
 void ImeSession::set_shuangpin_helpcode_enabled(bool enabled)
@@ -152,6 +154,7 @@ void ImeSession::reset()
     scheme_->reset();
     composition_uses_pinyin_fallback_ = false;
     state_ = CompositionState{};
+    japanese_kana_form_ = JapaneseKanaForm::Auto;
 }
 
 SchemeType ImeSession::candidate_scheme() const
@@ -207,12 +210,11 @@ std::vector<WordItem> ImeSession::query_raw_candidates(const std::string &raw_in
 
 void ImeSession::replace_japanese_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases)
 {
-    if (scheme_->type() != SchemeType::JapaneseRomaji)
+    if (scheme_->type() != SchemeType::JapaneseRomaji && scheme_->type() != SchemeType::JapaneseKana)
         return;
-    auto *japanese_scheme = dynamic_cast<JapaneseRomajiScheme *>(scheme_.get());
-    if (!japanese_scheme)
-        return;
-    japanese_scheme->set_raw_input(raw_input, raw_input_with_cases);
+    // Both Japanese schemes expose set_raw_input via the common interface; the
+    // concrete scheme decides how to interpret the stored text (romaji vs kana).
+    scheme_->set_raw_input(raw_input, raw_input_with_cases);
     refresh_candidates();
 }
 
@@ -230,6 +232,7 @@ void ImeSession::replace_active_raw_input(const std::string &raw_input, const st
         replace_wubi_raw_input(raw_input, raw_input_with_cases);
         return;
     case SchemeType::JapaneseRomaji:
+    case SchemeType::JapaneseKana:
         replace_japanese_raw_input(raw_input, raw_input_with_cases);
         return;
     }
@@ -290,6 +293,7 @@ void ImeSession::apply_request_options(QueryRequest &request) const
     request.fuzzy_pinyin = fuzzy_pinyin_;
     request.sentence_association = sentence_association_;
     request.rescoring_context = rescoring_context_;
+    request.japanese_kana_form = japanese_kana_form_;
 }
 
 void ImeSession::refresh_candidates()
@@ -374,6 +378,8 @@ std::unique_ptr<IInputScheme> ImeSession::create_scheme(SchemeType scheme_type) 
         return std::make_unique<WubiScheme>();
     case SchemeType::JapaneseRomaji:
         return std::make_unique<JapaneseRomajiScheme>();
+    case SchemeType::JapaneseKana:
+        return std::make_unique<JapaneseKanaScheme>();
     default:
         throw std::runtime_error("Unknown scheme type.");
     }

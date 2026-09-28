@@ -16,6 +16,8 @@
 #include <utf8.h>
 #include "global/globals.h"
 #include "engine/common/helpcode_utils.h"
+#include "engine/japanese/japanese_glossary.h"
+#include "engine/core/scheme_type.h"
 #include "engine/quanpin/quanpin_query.h"
 #include "engine/user_dictionary/user_dictionary_journal.h"
 #include "cloud/cloud_translation.h"
@@ -263,6 +265,16 @@ std::string BuildCurrentCandidatePage()
             if (gloss != g_candidate_translation_glosses.end())
                 view.translation = gloss->second;
         }
+        // Japanese candidates carry a local preview gloss (English original for
+        // katakana loanwords such as コーヒー -> coffee, full forms for slang
+        // abbreviations such as キタコレ -> 来たこれ). This is a local table, so
+        // it needs no translation request and renders through the exact same
+        // candidate-window UI as Chinese translation previews.
+        if (IsJapaneseScheme(current_scheme) && view.translation.empty())
+        {
+            if (std::string japanese_gloss = japanese::LookUpCandidateGloss(word); !japanese_gloss.empty())
+                view.translation = std::move(japanese_gloss);
+        }
         const std::string visible = view.text + view.annotation + view.badge;
         const int display_length = static_cast<int>(utf8::distance(visible.begin(), visible.end()));
         candidate_string += CandidateViewHtml(view);
@@ -291,7 +303,7 @@ std::string BuildCurrentCandidatePage()
 
 void PrepareCandidateTranslationRequest()
 {
-    const bool japanese = g_inputSession && g_inputSession->current_scheme_type() == SchemeType::JapaneseRomaji;
+    const bool japanese = g_inputSession && IsJapaneseScheme(g_inputSession->current_scheme_type());
     const bool enabled = GetConfiguredCandidateTranslationsEnabled() && !IsUiLessMode() && !japanese;
     auto &ui = Global::candidate_ui;
     if (g_translation_candidates_active)
