@@ -1,41 +1,14 @@
 name: 功能建议 / Feature Request
-description: 希望增加功能或改善体验？说说你的使用场景。Suggest a feature or improvement.
+description: 希望增加功能或改善体验？
 title: "[Feat] "
 labels: ["enhancement"]
 type: Feature
 body:
-  - type: markdown
-    attributes:
-      value: |
-        感谢建议！本仓库统一接收水杉输入法相关功能请求（TSF、Server、词典、设置、安装器等）。
-
-        Thanks for the suggestion! Please file all Metasequoia IME feature requests here.
-
-        使用问题 / 讨论请优先使用 [Telegram](https://t.me/msimegroup) 或 QQ 群 `829919142`。
-  - type: dropdown
-    id: component
-    attributes:
-      label: 相关组件 / Component
-      description: 可选择多项。不知道属于哪个部分时，选“不确定”即可。Select all that apply; choose Not sure if unsure.
-      multiple: true
-      options:
-        - 候选窗 / Candidate window
-        - 悬浮工具栏 / Floating toolbar
-        - 词典 / Dictionary and Lexicon
-        - 辅助码 / Auxiliary code
-        - 设置 / Settings
-        - 安装器 / Installer
-        - 引擎服务 / Engine
-        - 文档 / Docs
-        - 不确定 / Not sure
-        - 其他 / Other
-    validations:
-      required: true
   - type: textarea
     id: problem
     attributes:
       label: 问题与动机 / Problem & Motivation
-      description: 说说你在什么情况下遇到不便，以及它对你的影响。不需要了解技术实现。Describe your situation and the difficulty.
+      description: 说说你在什么情况下遇到不便，功能出发点是什么？Describe your situation and the difficulty.
       placeholder: |-
         例如：在高分辨率屏幕上打字时，候选字太小，看清后才能选字，打字容易中断。
     validations:
@@ -44,25 +17,15 @@ body:
     id: proposal
     attributes:
       label: 建议方案 / Proposal
-      description: 描述你希望达到的效果即可，不用设计实现方案。还没想好可以跳过。Describe the result you would like; an implementation plan is not needed.
+      description: 描述你希望达到的效果即可，不用设计实现方案。Describe the result you would like; an implementation plan is not needed.
       placeholder: 例如：希望能在设置里调大候选字，并立即看到调整效果。
     validations:
       required: false
   - type: textarea
     id: alternatives
     attributes:
-      label: 替代方案（可选） / Alternatives
+      label: 其他替代方案（可选） / Alternatives
       description: 你考虑过哪些其他做法？Any alternatives you considered?
-    validations:
-      required: false
-  - type: dropdown
-    id: priority
-    attributes:
-      label: 对你的重要程度 / Importance to you
-      options:
-        - 很重要 / Critical for my workflow
-        - 有帮助 / Nice to have
-        - 可有可无 / Low priority
     validations:
       required: false
   - type: textarea
@@ -72,10 +35,3 @@ body:
       description: 可附上参考输入法、截图、录屏或相关链接。
     validations:
       required: false
-  - type: checkboxes
-    id: checklist
-    attributes:
-      label: 提交前确认 / Checklist
-      options:
-        - label: 我已搜索过现有 Issue，确认这不是重复建议。I searched existing issues and this is not a duplicate.
-          required: true
