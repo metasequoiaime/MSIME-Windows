@@ -1,4 +1,5 @@
 name: Bug 反馈 / Bug Report
+description: 遇到出错、无法输入或显示异常？
 title: "[Bug] "
 labels: ["bug"]
 type: Bug
