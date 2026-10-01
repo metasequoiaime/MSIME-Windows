@@ -1,52 +1,22 @@
 name: Bug 反馈 / Bug Report
-description: 遇到出错、无法输入或显示异常？请描述现象，我们一起排查。Report something that is not working.
 title: "[Bug] "
 labels: ["bug"]
 type: Bug
 body:
-  - type: markdown
-    attributes:
-      value: |
-        感谢反馈！本仓库统一接收水杉输入法相关 Issue（TSF、Server、词典、设置、安装器等）。
-
-        Thanks for the report! Please file all Metasequoia IME issues here (TSF, Server, dictionary, settings, installer, etc.).
-
-        提问 / 讨论请优先使用 [Telegram](https://t.me/msimegroup) 或 QQ 群 `829919142`。
-  - type: dropdown
-    id: component
-    attributes:
-      label: 相关组件 / Component
-      description: 可选择多项。不知道属于哪个部分时，选“不确定”即可。Select all that apply; choose Not sure if unsure.
-      multiple: true
-      options:
-        - 候选窗 / Candidate window
-        - 悬浮工具栏 / Floating toolbar
-        - 词典 / Dictionary and Lexicon
-        - 辅助码 / Auxiliary code
-        - 设置 / Settings
-        - 安装器 / Installer
-        - 引擎服务 / Engine
-        - 文档 / Docs
-        - 不确定 / Not sure
-        - 其他 / Other
-    validations:
-      required: true
   - type: textarea
     id: description
     attributes:
       label: 问题与行为 / Problem & Actual behavior
-      description: 发生了什么？What happened?
       placeholder: |-
-        例如：打开记事本，切换到水杉输入法后，候选字显示成方框，无法辨认。其他软件中也会出现。
+        例如：打开记事本，切换输入法后，候选字显示成方框，无法辨认。其他软件中也会出现。
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
       label: 复现步骤 / Steps to Reproduce
-      description: 按顺序写下你做了什么。偶尔出现、无法稳定重现也可以反馈，请写出当时的操作。Describe what you did, even if the issue only happens sometimes.
       placeholder: |-
-        1. 打开一个文本编辑器，切换到水杉输入法
+        1. 打开文本编辑器，切换到水杉输入法
         2. 输入测试拼音 nihao
         3. 观察候选字是否正常显示
     validations:
@@ -55,24 +25,22 @@ body:
     id: expected
     attributes:
       label: 预期行为 / Expected Behavior
-      description: 正常情况下应该怎样？What should happen instead?
       placeholder: 例如：候选字应正常显示为汉字，按数字键可以选中。
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: 版本 / Version
-      description: 填写你安装的输入法版本号，可查看安装包文件名或下载记录。暂时找不到请填“不确定”。Use the installed version; enter Not sure if unavailable.
-      placeholder: 例如：安装包中的 vX.Y.Z；不知道请填“不确定”
+      label: 输入法版本 / IME Version
+      placeholder: 设置关于中的 vX.Y.Z
     validations:
       required: true
   - type: input
     id: os
     attributes:
-      label: 系统环境 / OS
-      description: Windows 版本与版本号。Windows edition and version. 知道多少写多少，不清楚的项目可写“不确定”。Include what you know; unknown details are OK.
-      placeholder: e.g. Windows 11 Pro 24H2 / Windows 10 Pro 22H2
+      label: 操作系统 / OS
+      description: Windows 版本与版本号 Windows edition and version.
+      placeholder: 例如 Windows 11 Pro 24H2 / Windows 10 Pro 22H2
     validations:
       required: true
   - type: dropdown
@@ -86,46 +54,12 @@ body:
         - 其他 / Other
         - 不适用 / N/A
         - 不确定 / Not sure
-      description: 选择当时使用的输入方式；不知道名称可以选“不确定”。Choose your input method, or Not sure.
     validations:
       required: true
-  - type: dropdown
-    id: architecture
-    attributes:
-      label: 应用架构 / App Architecture
-      description: 出问题的目标应用是 32 位还是 64 位？（若不确定可选「不确定」）
-      options:
-        - 64-bit
-        - 32-bit
-        - 两者都有 / Both
-        - 不确定 / Not sure
-    validations:
-      required: false
-  - type: textarea
-    id: logs
-    attributes:
-      label: 日志（可选）
-      description: |
-        可粘贴相关日志或附上截图。**不要粘贴真实输入内容、用户词库、API Key 或任何凭据。**
-        Paste relevant logs. Do not include real typed text, user dictionary contents, API keys or credentials.
-      render: shell
-    validations:
-      required: false
   - type: textarea
     id: additional
     attributes:
       label: 其他信息 / Additional Context
-      description: 例如应用名称、是否必现、是否仅特定软件出现等。
+      description: 例如日志、相关链接等
     validations:
       required: false
-  - type: checkboxes
-    id: checklist
-    attributes:
-      label: 提交前确认 / Checklist
-      options:
-        - label: 我已搜索过现有 Issue，确认这不是重复反馈。I searched existing issues and this is not a duplicate.
-          required: true
-        - label: 我已尽量提供可复现信息。I provided enough detail to reproduce the issue.
-          required: true
-        - label: 这不是安全漏洞。安全问题请按 SECURITY.md 私下上报。This is not a security vulnerability; those go through SECURITY.md.
-          required: true
