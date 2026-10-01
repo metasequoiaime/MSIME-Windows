@@ -33,7 +33,7 @@ body:
     id: version
     attributes:
       label: 输入法版本 / IME Version
-      placeholder: 设置关于中的 vX.Y.Z
+      placeholder: vX.Y.Z
     validations:
       required: true
   - type: input
