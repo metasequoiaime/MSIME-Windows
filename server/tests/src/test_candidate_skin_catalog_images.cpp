@@ -54,9 +54,9 @@ void RemoveSkin(const std::filesystem::path &root)
     std::filesystem::remove_all(root, ec);
 }
 
-bool LoadFails(const std::wstring &leaf, const std::string &candidateWindow)
+bool LoadFails(const std::wstring &leaf, const std::string &candidateWindow, const std::string &topLevel = {})
 {
-    const auto root = WriteSkin(leaf, candidateWindow);
+    const auto root = WriteSkin(leaf, candidateWindow, topLevel);
     std::string error;
     const bool failed = !CandidateSkinCatalog::Load(root, "art", &error).has_value() && !error.empty();
     RemoveSkin(root);
@@ -131,6 +131,11 @@ TEST_CASE(candidate_skin_catalog_rejects_incomplete_or_invalid_image_tables)
     REQUIRE(LoadFails(L"deco-missing", window + decoration + sized + "image = \"assets/missing.png\"\n"));
     REQUIRE(LoadFails(L"deco-escape", window + decoration + sized + "image = \"../x.png\"\n"));
     REQUIRE(LoadFails(L"deco-align", window + decoration + sized + character + "align = \"top\"\n"));
+    // A preview, like every other path, has to name something in the package, and a decoration image has to be an
+    // image.
+    REQUIRE(LoadFails(L"deco-missing-preview", window + decoration + sized, "preview = \"assets/missing.png\"\n"));
+    REQUIRE(LoadFails(L"deco-not-image", window + decoration + sized + "image = \"skin.toml\"\n"));
+    REQUIRE(LoadFails(L"bg-not-image", window + background + "image = \"skin.toml\"\n"));
 
     REQUIRE(LoadFails(L"radius", "[candidate_window]\ncorner_radius_dip = 40\n"));
     REQUIRE(LoadFails(L"radius-type", "[candidate_window]\ncorner_radius_dip = \"8px\"\n"));
@@ -172,8 +177,7 @@ TEST_CASE(candidate_skin_catalog_decoration_follows_the_client_rules)
 
     // Without an image or an image preview there is nothing to draw, so the band is dropped too.
     for (const auto &[leaf, head] : {std::pair<std::wstring, std::string>{L"deco-no-preview", ""},
-                                     {L"deco-css-preview", "preview = \"assets/paper.css\"\n"},
-                                     {L"deco-missing-preview", "preview = \"assets/missing.png\"\n"}})
+                                     {L"deco-manifest-preview", "preview = \"skin.toml\"\n"}})
     {
         const auto root = WriteSkin(leaf, window + decoration + sized, head);
         const auto package = CandidateSkinCatalog::Load(root, "art", &error);

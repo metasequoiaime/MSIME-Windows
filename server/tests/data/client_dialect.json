@@ -1,5 +1,5 @@
 {
- "_comment": "Client-dialect manifest cases shared by internal/skins/client_test.go and scripts/test_candidate_skins_seed.py. Ported from crates/client-core/src/skin/catalog/tests.rs in the client repository; reason strings are the client's. Templates substitute {id} with the case id (sample or bigfish by default); replace edits the first occurrence; pad_to appends a comment until the manifest is that many bytes; files are the package files beside skin.toml. base, when set on an accepted case, is the resolved base the package is served with (fluent in a manifest resolves to system).",
+ "_comment": "皮肤清单规则的共享用例表，规则以 msime 的 crates/client-core/src/skin/catalog.rs load() 为准，本文件 crates/client-core/src/skin/catalog/client_dialect.json 是唯一来源。各实现都按它校验并各存一份副本：client-core 的 catalog/tests.rs、msime-cloud 的 internal/skins/client_test.go 与 scripts/test_candidate_skins_seed.py、msime-windows 的 server/tests（它只核对接受与否，不核对原因）。改规则先改这里，再用各仓库的同步脚本刷新副本。reason 是客户端的拒绝原因，null 表示接受。模板中的 {id} 换成用例的 id（默认 sample 或 bigfish）；replace 只替换第一处；prepend、append 加在清单前后；pad_to 在末尾补注释直到清单达到该字节数；files 是 skin.toml 旁边的文件。接受的用例写了 base 时，是包解析后的 base：清单里的 fluent 和 msime-windows 的其他内置外观都解析为 system。",
  "templates": {
   "sample": {
    "id": "sample",
@@ -596,6 +596,24 @@
    "id": "willow_green"
   },
   {
+   "name": "reserved id autumn_osmanthus",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "autumn_osmanthus"
+  },
+  {
+   "name": "reserved id microsoft",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "microsoft"
+  },
+  {
+   "name": "reserved id default",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "default"
+  },
+  {
    "name": "unsafe id Bad",
    "reason": "invalid skin id",
    "template": "sample",
@@ -668,15 +686,16 @@
    "base": "system"
   },
   {
-   "name": "base wechat refused",
-   "reason": "base must be system or a built-in theme",
+   "name": "base wechat is a Windows look drawn over system",
+   "reason": null,
    "template": "sample",
    "replace": [
     [
      "base = 'night'",
      "base = 'wechat'"
     ]
-   ]
+   ],
+   "base": "system"
   },
   {
    "name": "base Fluent refused",
@@ -690,24 +709,72 @@
    ]
   },
   {
-   "name": "base graphite refused",
-   "reason": "base must be system or a built-in theme",
+   "name": "base graphite is a Windows look drawn over system",
+   "reason": null,
    "template": "sample",
    "replace": [
     [
      "base = 'night'",
      "base = 'graphite'"
     ]
-   ]
+   ],
+   "base": "system"
   },
   {
-   "name": "base willow_green refused",
-   "reason": "base must be system or a built-in theme",
+   "name": "base willow_green is a Windows look drawn over system",
+   "reason": null,
    "template": "sample",
    "replace": [
     [
      "base = 'night'",
      "base = 'willow_green'"
+    ]
+   ],
+   "base": "system"
+  },
+  {
+   "name": "base autumn_osmanthus is a Windows look drawn over system",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'autumn_osmanthus'"
+    ]
+   ],
+   "base": "system"
+  },
+  {
+   "name": "base microsoft is a Windows look drawn over system",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'microsoft'"
+    ]
+   ],
+   "base": "system"
+  },
+  {
+   "name": "base Wechat refused",
+   "reason": "base must be system or a built-in theme",
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'Wechat'"
+    ]
+   ]
+  },
+  {
+   "name": "base default refused",
+   "reason": "base must be system or a built-in theme",
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'default'"
     ]
    ]
   },
@@ -1613,6 +1680,364 @@
     "assets/character.png",
     "assets/background.gif"
    ]
+  },
+  {
+   "name": "border_width_dip at its upper bound",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nborder_width_dip = 4\n"
+    ]
+   ]
+  },
+  {
+   "name": "border_width_dip may be zero",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nborder_width_dip = 0\n"
+    ]
+   ]
+  },
+  {
+   "name": "border_width_dip above 4",
+   "reason": "invalid border_width_dip",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nborder_width_dip = 4.5\n"
+    ]
+   ]
+  },
+  {
+   "name": "border_width_dip negative",
+   "reason": "invalid border_width_dip",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nborder_width_dip = -1\n"
+    ]
+   ]
+  },
+  {
+   "name": "border_width_dip as a string",
+   "reason": "invalid border_width_dip",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nborder_width_dip = '2'\n"
+    ]
+   ]
+  },
+  {
+   "name": "item_corner_radius_dip at its upper bound",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nitem_corner_radius_dip = 16\n"
+    ]
+   ]
+  },
+  {
+   "name": "item_corner_radius_dip above 16",
+   "reason": "invalid item_corner_radius_dip",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nitem_corner_radius_dip = 17\n"
+    ]
+   ]
+  },
+  {
+   "name": "shadow none",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nshadow = 'none'\n"
+    ]
+   ]
+  },
+  {
+   "name": "shadow soft",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nshadow = 'soft'\n"
+    ]
+   ]
+  },
+  {
+   "name": "shadow strong",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nshadow = 'strong'\n"
+    ]
+   ]
+  },
+  {
+   "name": "shadow outside the enum",
+   "reason": "invalid shadow",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nshadow = 'heavy'\n"
+    ]
+   ]
+  },
+  {
+   "name": "shadow not a string",
+   "reason": "invalid shadow",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nshadow = 1\n"
+    ]
+   ]
+  },
+  {
+   "name": "font_family with a Chinese name",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nfont_family = '霞鹜文楷'\n"
+    ]
+   ]
+  },
+  {
+   "name": "font_family with a space",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nfont_family = 'Segoe UI'\n"
+    ]
+   ]
+  },
+  {
+   "name": "font_family of 64 bytes",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nfont_family = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'\n"
+    ]
+   ]
+  },
+  {
+   "name": "font_family empty",
+   "reason": "invalid font_family",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nfont_family = ''\n"
+    ]
+   ]
+  },
+  {
+   "name": "font_family of 65 bytes",
+   "reason": "invalid font_family",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nfont_family = 'fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'\n"
+    ]
+   ]
+  },
+  {
+   "name": "font_family with a comma",
+   "reason": "invalid font_family",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nfont_family = 'A, B'\n"
+    ]
+   ]
+  },
+  {
+   "name": "font_family with a semicolon",
+   "reason": "invalid font_family",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nfont_family = 'A;B'\n"
+    ]
+   ]
+  },
+  {
+   "name": "font_family with a quote",
+   "reason": "invalid font_family",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nfont_family = \"A'B\"\n"
+    ]
+   ]
+  },
+  {
+   "name": "font_family with a brace",
+   "reason": "invalid font_family",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nfont_family = 'A}B'\n"
+    ]
+   ]
+  },
+  {
+   "name": "font_family with a control character",
+   "reason": "invalid font_family",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nfont_family = \"A\\u0001B\"\n"
+    ]
+   ]
+  },
+  {
+   "name": "font_family not a string",
+   "reason": "invalid font_family",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nfont_family = 1\n"
+    ]
+   ]
+  },
+  {
+   "name": "page_arrows true",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\npage_arrows = true\n"
+    ]
+   ]
+  },
+  {
+   "name": "page_arrows false",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\npage_arrows = false\n"
+    ]
+   ]
+  },
+  {
+   "name": "page_arrows not a boolean",
+   "reason": "invalid page_arrows",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\npage_arrows = 'yes'\n"
+    ]
+   ]
+  },
+  {
+   "name": "Windows detail colours and menu",
+   "reason": null,
+   "template": "sample",
+   "append": "[candidate.dark]\ncandidate_text = '#111'\npreedit_text = '#222222'\npreedit_caret = 'rgb(1, 2, 3)'\nselected_text = '#fff'\nselected_number = '#ffffff80'\nselected_translation = 'rgba(1, 2, 3, 0.5)'\nselected_bar = '#07c160'\npreedit_background = 'transparent'\npreedit_divider = '#0000001f'\n[candidate.dark.menu]\nbackground = '#1f1f1f'\nborder = '#343434'\ntext = '#d0d0d0'\nhover = '#2a2a2a'\n"
+  },
+  {
+   "name": "colour with letters and spaces is unreadable but safe",
+   "reason": null,
+   "template": "sample",
+   "append": "[candidate.light]\naccent = 'not a colour'\n"
+  },
+  {
+   "name": "colour that could end a CSS declaration",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.dark]\naccent = 'red; } body { display: none'\n"
+  },
+  {
+   "name": "colour with a brace",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.light]\nsurface = '#fff}'\n"
+  },
+  {
+   "name": "Windows detail colour not a string",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.dark]\ncandidate_text = 7\n"
+  },
+  {
+   "name": "Windows detail colour that could end a CSS declaration",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.light]\npreedit_divider = '#000;'\n"
+  },
+  {
+   "name": "Windows detail colour of 81 bytes",
+   "reason": "candidate color exceeds 80 bytes",
+   "template": "sample",
+   "append": "[candidate.dark]\nselected_bar = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n"
+  },
+  {
+   "name": "menu not a table",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.dark]\nmenu = 'x'\n"
+  },
+  {
+   "name": "menu colour not a string",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.light.menu]\ntext = 1\n"
+  },
+  {
+   "name": "menu colour that could end a CSS declaration",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.dark.menu]\nhover = '#fff;'\n"
+  },
+  {
+   "name": "toolbar colour that could end a CSS declaration",
+   "reason": "invalid toolbar",
+   "template": "sample",
+   "append": "[toolbar.dark]\nicon = 'red;'\n"
+  },
+  {
+   "name": "toolbar colour with a brace",
+   "reason": "invalid toolbar",
+   "template": "sample",
+   "append": "[toolbar.light]\nhover = 'a}'\n"
   }
  ]
 }

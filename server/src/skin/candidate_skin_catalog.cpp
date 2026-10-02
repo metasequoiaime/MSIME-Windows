@@ -241,6 +241,12 @@ bool ReadOptionalBool(const toml::table &table, const char *key, std::optional<b
     return true;
 }
 
+// 可选的文本键：不写可以，写了就必须是 1 到 maximum 字节的字符串，与跨平台客户端的 optional_string 一致。
+bool ReadOptionalText(const toml::table &table, const char *key, std::string &out, size_t maximum)
+{
+    return !table.contains(key) || ReadString(table, key, out, maximum, true);
+}
+
 // Read via the wide path and parse the text. toml::parse_file(manifest.string()) would run the
 // path through the ANSI code page: skins live under the user profile, so a non-ASCII (e.g.
 // Chinese) user name corrupts it, and on a code page that cannot represent the characters
@@ -296,6 +302,19 @@ constexpr std::string_view kGlobalThemeSelectedAlpha = "24";
 constexpr std::string_view kGlobalThemeHoverAlpha = "0F";
 // 客户端的 system 画的是宿主自己的原生配色，在 Windows 上就是 fluent。
 constexpr std::string_view kGlobalThemeSystem = "system";
+
+// 全局主题 ID（加上 custom）在跨平台客户端里不能当皮肤 ID，这里同样保留，同一个皮肤文件夹在每个平台上才都能加载。
+bool IsGlobalThemeId(const std::string &id)
+{
+    for (std::string_view theme : {"system", "shuishan", "light", "paper", "night", "ink", "custom"})
+    {
+        if (theme == id)
+        {
+            return true;
+        }
+    }
+    return false;
+}
 
 const GlobalThemeBase *FindGlobalThemeBase(const std::string &id)
 {
@@ -532,13 +551,19 @@ bool Supports(const Package &package, const std::string &layout, const std::stri
 
 std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::string &id, std::string *error)
 {
-    if (!IsSafeId(id) || IsBuiltIn(id) || id == kDefaultSkinsFolder)
+    if (!IsSafeId(id) || IsBuiltIn(id) || id == kDefaultSkinsFolder || IsGlobalThemeId(id))
     {
         SetError(error, "目录名不是有效的外部皮肤 ID");
         return std::nullopt;
     }
     const std::filesystem::path directory = skinsRoot / std::filesystem::u8path(id);
     const std::filesystem::path manifest = directory / L"skin.toml";
+    std::error_code sizeEc;
+    if (const auto size = std::filesystem::file_size(manifest, sizeEc); !sizeEc && size > kMaxManifestBytes)
+    {
+        SetError(error, "skin.toml 超过 64 KiB");
+        return std::nullopt;
+    }
     try
     {
         const std::optional<toml::table> parsed = ParseManifest(manifest);
@@ -548,7 +573,8 @@ std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::s
             return std::nullopt;
         }
         const toml::table &root = *parsed;
-        if (root["schema_version"].value_or(0) != 1)
+        const toml::node *schemaVersion = root.get("schema_version");
+        if (!schemaVersion || !schemaVersion->as_integer() || schemaVersion->as_integer()->get() != 1)
         {
             SetError(error, "仅支持 schema_version 1");
             return std::nullopt;
@@ -557,8 +583,8 @@ std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::s
         if (!ReadString(root, "id", package.id, 64, true) || package.id != id ||
             !ReadString(root, "name", package.name, 80, true) ||
             !ReadString(root, "version", package.version, 32, true) ||
-            !ReadString(root, "author", package.author, 120, false) ||
-            !ReadString(root, "description", package.description, 500, false) ||
+            !ReadOptionalText(root, "author", package.author, 120) ||
+            !ReadOptionalText(root, "description", package.description, 500) ||
             !ReadString(root, "base", package.base, 32, true) ||
             !(IsBuiltIn(package.base) || package.base == kGlobalThemeSystem || FindGlobalThemeBase(package.base)))
         {
@@ -584,12 +610,23 @@ std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::s
             SetError(error, "candidate_window.min_width_dip 超出范围");
             return std::nullopt;
         }
+        // preview 是皮肤列表里的预览图，写了就必须指向包内已有的文件或目录，与跨平台客户端一致。
+        std::string preview;
+        std::error_code previewEc;
+        if (!ReadOptionalText(root, "preview", preview, 256) ||
+            (!preview.empty() && (!IsSafeRelativeResource(preview) ||
+                                  !std::filesystem::exists(directory / std::filesystem::u8path(preview), previewEc))))
+        {
+            SetError(error, "preview 无效");
+            return std::nullopt;
+        }
         // 装饰图是可选的，规则与跨平台客户端一致：没有这张表、或两个尺寸都是 0（不写算 0）就没有装饰；两个尺寸必须同为
-        // 0 或同大于 0。 有尺寸时 image 可以不写，改用 preview（是图片时）；两者都没有就不画装饰。
+        // 0 或同大于 0。有尺寸时 image 可以不写，改用 preview（是图片时）；两者都没有就不画装饰。
         if (const toml::node *decorationNode = window->get("decoration"))
         {
             const auto *decoration = decorationNode->as_table();
             if (!decoration || !ReadResource(*decoration, "image", package.decorationImage) ||
+                (!package.decorationImage.empty() && !IsClientImage(package.decorationImage)) ||
                 !ReadEnum(*decoration, "align", {"left", "center", "right"}, package.decorationAlign))
             {
                 SetError(error, "candidate_window.decoration 无效");
@@ -606,11 +643,7 @@ std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::s
             }
             if (package.decorationTopDip > 0.0 && package.decorationImage.empty())
             {
-                // preview 只在这里用作装饰图的回退；它写得不对时只是不回退，不让整个包失效，以前不读 preview
-                // 的包照旧加载。
-                std::string preview;
-                std::error_code previewEc;
-                if (ReadResource(root, "preview", preview) && !preview.empty() && IsClientImage(preview) &&
+                if (!preview.empty() && IsClientImage(preview) &&
                     std::filesystem::is_regular_file(directory / std::filesystem::u8path(preview), previewEc))
                 {
                     package.decorationImage = preview;
@@ -662,6 +695,7 @@ std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::s
             const auto *background = backgroundNode->as_table();
             if (!background || !background->contains("image") ||
                 !ReadResource(*background, "image", package.backgroundImage) ||
+                !IsClientImage(package.backgroundImage) ||
                 !ReadEnum(*background, "fit", {"cover", "contain", "stretch"}, package.backgroundFit))
             {
                 SetError(error, "candidate_window.background 无效");
@@ -677,12 +711,19 @@ std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::s
                 }
             }
         }
-        const auto *candidate = root["candidate"].as_table();
-        if (candidate && (!ReadColors((*candidate)["dark"].as_table(), package.dark) ||
-                          !ReadColors((*candidate)["light"].as_table(), package.light)))
+        // [candidate] 与其中的 dark、light 写了就必须是表，与跨平台客户端一致。
+        if (const toml::node *candidateNode = root.get("candidate"))
         {
-            SetError(error, "candidate 配色无效");
-            return std::nullopt;
+            const auto *candidate = candidateNode->as_table();
+            const toml::node *dark = candidate ? candidate->get("dark") : nullptr;
+            const toml::node *light = candidate ? candidate->get("light") : nullptr;
+            if (!candidate || (dark && !dark->is_table()) || (light && !light->is_table()) ||
+                !ReadColors(dark ? dark->as_table() : nullptr, package.dark) ||
+                !ReadColors(light ? light->as_table() : nullptr, package.light))
+            {
+                SetError(error, "candidate 配色无效");
+                return std::nullopt;
+            }
         }
         if (const toml::node *toolbarNode = root.get("toolbar"))
         {
@@ -703,6 +744,31 @@ std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::s
                 }
                 package.toolbarCornerRadiusDip = radius;
             }
+        }
+        // [license] 只是声明，Windows 不读它的内容，但按跨平台客户端的规则校验，同一个包在每个平台上的加载结果才一致。
+        if (const toml::node *licenseNode = root.get("license"))
+        {
+            const auto *license = licenseNode->as_table();
+            std::string text;
+            if (!license || !ReadOptionalText(*license, "code", text, 120) ||
+                !ReadOptionalText(*license, "assets", text, 120) || !ReadOptionalText(*license, "source", text, 500))
+            {
+                SetError(error, "license 无效");
+                return std::nullopt;
+            }
+        }
+        // toolbar_stylesheet 是跨平台客户端的工具栏样式表，Windows 不加载它，但同样要求它是包根目录里一个已有的 .css
+        // 文件。
+        std::string stylesheet;
+        std::error_code stylesheetEc;
+        if (!ReadOptionalText(root, "toolbar_stylesheet", stylesheet, 128) ||
+            (!stylesheet.empty() &&
+             (!IsSafeRelativeResource(stylesheet) || stylesheet.find('/') != std::string::npos ||
+              stylesheet.size() <= 4 || stylesheet.compare(stylesheet.size() - 4, 4, ".css") != 0 ||
+              !std::filesystem::is_regular_file(directory / std::filesystem::u8path(stylesheet), stylesheetEc))))
+        {
+            SetError(error, "toolbar_stylesheet 无效");
+            return std::nullopt;
         }
         // base 写的是跨平台全局主题时，换算成 fluent 再交给渲染端，渲染端只认内置皮肤 ID。
         if (package.base == kGlobalThemeSystem)

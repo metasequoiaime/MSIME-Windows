@@ -162,24 +162,22 @@ TEST_CASE(candidate_skin_catalog_rejects_unknown_and_custom_bases)
     REQUIRE(!LoadManifest(L"case", Manifest("Night", "[\"dark\"]")).has_value());
 }
 
-// Packages from the community library are validated by the cross-platform client's rules
-// (crates/client-core/src/skin/catalog.rs load() in metasequoiaime/msime). data/client_dialect.json is
-// msime-cloud's internal/skins/testdata/client_dialect.json, the case table both the client's Go port and its
-// seed script are pinned to; scripts/sync-client-dialect.py refreshes the copy. Every package the client accepts
-// must load here too, or a skin shared from another platform would silently vanish from the Windows list.
-// Windows stays free to accept more than the client does, so the rejected cases are not checked.
-TEST_CASE(candidate_skin_catalog_loads_every_package_the_client_accepts)
+// Every platform reads skin.toml with one set of rules, so a package loads everywhere or nowhere. The rules are the
+// cross-platform client's (crates/client-core/src/skin/catalog.rs load() in metasequoiaime/msime), and
+// data/client_dialect.json is a copy of that repository's crates/client-core/src/skin/catalog/client_dialect.json, the
+// case table the client, msime-cloud's Go port and its seed script are all held to; scripts/sync-client-dialect.py
+// refreshes the copy. Every case must load here exactly when the client loads it. The reason strings are the client's,
+// so only the outcome is compared.
+TEST_CASE(candidate_skin_catalog_loads_exactly_the_packages_the_client_accepts)
 {
     std::ifstream input(MSIME_CLIENT_DIALECT_FIXTURE_PATH, std::ios::binary);
     REQUIRE(input.is_open());
     const auto fixture = nlohmann::json::parse(std::string(std::istreambuf_iterator<char>(input), {}));
     size_t accepted = 0;
+    size_t rejected = 0;
     for (const auto &item : fixture.at("cases"))
     {
-        if (!item.at("reason").is_null())
-        {
-            continue;
-        }
+        const bool clientAccepts = item.at("reason").is_null();
         const std::string name = item.at("name").get<std::string>();
         const std::string templateName = item.at("template").get<std::string>();
         std::string id = "sample";
@@ -221,6 +219,16 @@ TEST_CASE(candidate_skin_catalog_loads_every_package_the_client_accepts)
         std::string error;
         const auto package = CandidateSkinCatalog::Load(root, id, &error);
         RemoveSkin(root);
+        if (!clientAccepts)
+        {
+            if (package)
+            {
+                throw std::runtime_error(
+                    name + ": loaded, but the client refuses it: " + item.at("reason").get<std::string>());
+            }
+            ++rejected;
+            continue;
+        }
         if (!package)
         {
             throw std::runtime_error(name + ": rejected: " + error);
@@ -232,5 +240,6 @@ TEST_CASE(candidate_skin_catalog_loads_every_package_the_client_accepts)
         ++accepted;
     }
     // Guards against a fixture that silently lost its cases or changed shape.
-    REQUIRE(accepted >= 30);
+    REQUIRE(accepted >= 45);
+    REQUIRE(rejected >= 150);
 }

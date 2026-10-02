@@ -1,16 +1,24 @@
 # 外部皮肤 manifest（TOML）
 
-每个皮肤目录需要 `skin.toml`，`id` 必须与文件夹名一致。`schema_version` 当前为 `1`。
+每个皮肤目录需要 `skin.toml`，`id` 必须与文件夹名一致。`schema_version` 当前为整数 `1`。
+
+Windows 与 macOS、Linux、iOS 等跨平台客户端读同一套规则：同一个皮肤包要么在每个平台上都能加载，要么都被拒绝，社区皮肤库也按这套规则校验。规则的权威实现和共享用例表在 [msime](https://github.com/metasequoiaime/msime) 的 `crates/client-core/src/skin/catalog.rs` 与 `catalog/client_dialect.json`。只有 Windows 会画的键（见下文 `border_width_dip`、`shadow`、`font_family`、`page_arrows`、细分配色和右键菜单配色）在其他平台上只校验、不生效。
+
+- `id` 不能是全局主题 ID（`system`、`shuishan`、`light`、`paper`、`night`、`ink`、`custom`）、内置皮肤 ID，也不能是 `default`。
+- `skin.toml` 最大 64 KiB。
+- 可选的文本键（`author`、`description`、`preview`、`toolbar_stylesheet` 和 `[license]` 里的键）写了就不能是空字符串。
 
 候选框和悬浮工具栏都由 `skin.toml` 声明，不要再提供 `cand.css` 或工具栏 CSS。所有图片路径都相对于皮肤目录，且不能指向目录之外。
 
 ## 顶层字段
 
-- 必填：`schema_version`、`id`、`name`、`version`、`base`（继承的内置皮肤：`fluent`、`wechat`、`graphite`、`willow_green`、`autumn_osmanthus`、`microsoft`）
+- 必填：`schema_version`、`id`、`name`、`version`、`base`（继承的内置皮肤：`fluent`、`wechat`、`graphite`、`willow_green`、`autumn_osmanthus`、`microsoft`）。在其他平台上，这些外观画在原生配色之上，包没写的颜色和圆角按该外观在 Windows 上的配色补齐，`fluent` 就是原生配色
 - `base` 也可以写跨平台客户端的全局主题：`system`、`shuishan`、`light`、`paper`、`night`、`ink`，社区皮肤库里的皮肤用的就是这一套。`system` 等同 `fluent`。其余五个主题各自固定一种明暗（`shuishan`、`night`、`ink` 为深色，`light`、`paper` 为浅色）：只取该明暗的 `[candidate.*]` 与 `[toolbar.*]` 配色，Windows 深浅两种模式都画它，没写的颜色按主题补齐，右键菜单与工具栏也跟着用这套配色；`supports.themes` 没有声明该明暗时皮肤不会生效。要在 Windows 上沿用其他内置皮肤的外观，仍写上面的内置皮肤 ID
-- 可选：`author`、`description`
+- 可选：`author`（最长 120 字节）、`description`（最长 500 字节）
+- 可选：`preview`，皮肤列表里的预览图，必须指向包内已有的文件
+- 可选：`toolbar_stylesheet`，跨平台客户端的工具栏样式表，Windows 不加载它；写了就必须是包根目录里一个已有的 `.css` 文件
 - `[supports]`：`layouts`（`horizontal` / `vertical`）、`themes`（`dark` / `light`）
-- `[license]`：`code`、`assets`
+- `[license]`：`code`、`assets`（各最长 120 字节）、`source`（最长 500 字节）
 
 ## `[candidate_window]`
 
@@ -26,7 +34,7 @@
 
 卡片上方的装饰图。`top_inset_dip` 与 `width_dip` 要么都大于 0，要么都为 0（不写算 0）；都为 0 时没有装饰，也不能写 `image`。有尺寸而不写 `image` 时改用顶层的 `preview`（须是图片），两者都没有就不画装饰。
 
-- `image`：图片路径
+- `image`：图片路径，扩展名须是 `png`、`jpg`、`jpeg`、`gif`、`webp`、`svg`、`ico`、`bmp` 或 `avif`
 - `top_inset_dip` / `width_dip`：装饰框的高和宽，框贴在卡片上方，不与卡片重叠；图片在框内等比缩放
 - `align`：`left` | `center` | `right`，相对卡片
 
@@ -34,7 +42,7 @@
 
 卡片背景图，画在底色之上、文字之下，按圆角裁剪，对深浅两套主题都生效。
 
-- `image`：图片路径
+- `image`：图片路径，扩展名规则同装饰图
 - `fit`：`cover`（铺满裁切）| `contain`（完整显示）| `stretch`（拉伸）
 - `opacity`：`0`–`1`
 
