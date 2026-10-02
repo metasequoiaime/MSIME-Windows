@@ -12,7 +12,7 @@ Only the project's own binaries, built from source in this repository:
 - the TSF text service DLLs (`MetasequoiaImeTsf.dll`, x64 and Win32);
 - the installer `MetasequoiaIME_Setup_v<version>.exe`.
 
-Third-party binaries are not signed with the project's certificate.
+Third-party binaries, such as the libraries vcpkg builds for the Server, are shipped as their upstream built them and are never submitted for signing. The exact list is in [`scripts/ci/signpath-files.ps1`](../scripts/ci/signpath-files.ps1), and the matching SignPath artifact configurations are in [`installer/signpath/`](../installer/signpath/).
 
 ## Source repository
 
@@ -36,7 +36,7 @@ This is the process every SignPath-signed release goes through.
 1. Every change lands in `develop` through a pull request. Direct pushes and force pushes to `develop` and `main` are blocked by a branch ruleset, and the pull request must pass the required CI checks (Windows x64 and Win32 builds, Server, GUI framework, settings page, product inputs, package contents, workflow validation and dependency review). Repository admins can bypass the ruleset only when merging a pull request, not by pushing directly. CodeQL scans the default branch daily.
 2. An approver promotes `develop` to `main`. Feature branches cannot target `main` directly.
 3. The [release workflow](../.github/workflows/release.yml) runs in GitHub Actions: release-please opens and tests the release pull request, merges it, creates a draft release, then builds every component from source at that commit.
-4. The workflow refuses to build a commit that is not in the history of `main`, submits the payload binaries and the installer for signing, attaches a [build provenance attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations) to the installer, and publishes the release with the installer's SHA256.
+4. The workflow refuses to build a commit that is not in the history of `main`, submits the payload binaries and then the installer to SignPath as two signing requests, each of which an approver must approve, attaches a [build provenance attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations) to the installer, and publishes the release with the installer's SHA256.
 
 Dictionaries are not built in CI. They are downloaded from the release pinned in [`product-lock.json`](../product-lock.json) and verified against the SHA256 recorded there. See [product-release.md](product-release.md) for the full release design.
 

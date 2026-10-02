@@ -388,7 +388,8 @@ jobs:
     # consequence of four other jobs' conditions that a later edit could quietly undo.
     if: ${{ needs.prepare.outputs.should_publish == 'true' }}
     runs-on: [self-hosted, Windows, X64, msime-windows]
-    timeout-minutes: 60
+    # A SignPath signing request waits for an approver, twice per release, so that path gets room for both approvals on top of the build.
+    timeout-minutes: ${{ vars.WINDOWS_SIGNING_PROVIDER == 'signpath' && 150 || 60 }}
     permissions:
       contents: write
       # Build provenance. Unlike Authenticode this costs nothing and needs no certificate, and the
@@ -492,6 +493,11 @@ jobs:
           CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
           CERTIFICATE_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_CERTIFICATE_THUMBPRINT }}
+          SIGNING_PROVIDER: ${{ vars.WINDOWS_SIGNING_PROVIDER }}
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
         run: ./scripts/ci/detect-release-signing.ps1
 
       # -IncludeSymbols is what makes the published installer carry the PDBs matching its binaries.
@@ -521,7 +527,7 @@ jobs:
       # Defender blocks the unsigned helper processes -- settings page, emoji panel, watchdog --
       # and the user sees an input method that installs and then cannot open its own panels.
       - name: Sign the payload binaries
-        if: ${{ steps.signing.outputs.signing_enabled == 'true' }}
+        if: ${{ steps.signing.outputs.signing_provider == 'certificate' }}
         shell: pwsh
         working-directory: installer
         env:
@@ -530,6 +536,42 @@ jobs:
           CERTIFICATE_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_CERTIFICATE_THUMBPRINT }}
           TIMESTAMP_URL: ${{ vars.WINDOWS_SIGNING_TIMESTAMP_URL || 'http://timestamp.digicert.com' }}
         run: ../scripts/ci/sign-binaries.ps1 -Recurse -Path 'server_exe', 'tsf_dll'
+
+      # The SignPath path signs the same files minus the third-party DLLs, which SignPath Foundation does not allow a project to sign. See scripts/ci/signpath-files.ps1 and installer/signpath/.
+      - name: Stage the payload binaries for SignPath
+        if: ${{ steps.signing.outputs.signing_provider == 'signpath' }}
+        shell: pwsh
+        working-directory: installer
+        run: ../scripts/ci/signpath-files.ps1 -Mode Stage -Set Payload -Directory "$env:RUNNER_TEMP/signpath-payload-unsigned"
+
+      - name: Upload the unsigned payload for SignPath
+        if: ${{ steps.signing.outputs.signing_provider == 'signpath' }}
+        id: signpath-payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signpath-payload-unsigned
+          path: ${{ runner.temp }}/signpath-payload-unsigned
+          if-no-files-found: error
+
+      - name: Sign the payload binaries with SignPath
+        if: ${{ steps.signing.outputs.signing_provider == 'signpath' }}
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: payload
+          github-artifact-id: ${{ steps.signpath-payload.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: ${{ runner.temp }}/signpath-payload-signed
+
+      - name: Put the signed payload binaries back
+        if: ${{ steps.signing.outputs.signing_provider == 'signpath' }}
+        shell: pwsh
+        working-directory: installer
+        run: ../scripts/ci/signpath-files.ps1 -Mode Restore -Set Payload -Directory "$env:RUNNER_TEMP/signpath-payload-signed"
 
       - name: Install the Chinese language file for Inno Setup
         shell: pwsh
@@ -541,7 +583,7 @@ jobs:
         run: pwsh -File ./Compile-Installer.ps1
 
       - name: Sign the installer
-        if: ${{ steps.signing.outputs.signing_enabled == 'true' }}
+        if: ${{ steps.signing.outputs.signing_provider == 'certificate' }}
         shell: pwsh
         working-directory: installer
         env:
@@ -551,6 +593,45 @@ jobs:
           TIMESTAMP_URL: ${{ vars.WINDOWS_SIGNING_TIMESTAMP_URL || 'http://timestamp.digicert.com' }}
           TARGET_VERSION: ${{ needs.prepare.outputs.version }}
         run: ../scripts/ci/sign-binaries.ps1 -Path "Output/MetasequoiaIME_Setup_v$env:TARGET_VERSION.exe"
+
+      - name: Stage the installer for SignPath
+        if: ${{ steps.signing.outputs.signing_provider == 'signpath' }}
+        shell: pwsh
+        working-directory: installer
+        env:
+          TARGET_VERSION: ${{ needs.prepare.outputs.version }}
+        run: ../scripts/ci/signpath-files.ps1 -Mode Stage -Set Installer -Version $env:TARGET_VERSION -Directory "$env:RUNNER_TEMP/signpath-installer-unsigned"
+
+      - name: Upload the unsigned installer for SignPath
+        if: ${{ steps.signing.outputs.signing_provider == 'signpath' }}
+        id: signpath-installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signpath-installer-unsigned
+          path: ${{ runner.temp }}/signpath-installer-unsigned
+          if-no-files-found: error
+
+      - name: Sign the installer with SignPath
+        if: ${{ steps.signing.outputs.signing_provider == 'signpath' }}
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.signpath-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: ${{ runner.temp }}/signpath-installer-signed
+
+      - name: Put the signed installer back
+        if: ${{ steps.signing.outputs.signing_provider == 'signpath' }}
+        shell: pwsh
+        working-directory: installer
+        env:
+          TARGET_VERSION: ${{ needs.prepare.outputs.version }}
+        run: ../scripts/ci/signpath-files.ps1 -Mode Restore -Set Installer -Version $env:TARGET_VERSION -Directory "$env:RUNNER_TEMP/signpath-installer-signed"
 
       - name: Name the asset and record its checksum
         id: asset

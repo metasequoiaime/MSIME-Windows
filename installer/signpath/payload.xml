@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration "payload". SignPath reads its artifact configurations from the project settings, not from this repository: this file is the reviewed copy, paste it into SignPath when it changes.
+  The artifact is staged by scripts/ci/signpath-files.ps1 -Set Payload, and the paths below are that script's list. The vcpkg runtime DLLs shipped beside these files are not in the artifact.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <directory path="server_exe">
+      <pe-file-set>
+        <include path="MetasequoiaImeServer.exe" />
+        <include path="MetasequoiaImeWatchdog.exe" />
+        <include path="MetasequoiaImeDictionaryReplay.exe" />
+        <include path="MetasequoiaImeEmojiPanel.exe" />
+        <include path="MetasequoiaImeKeyboardPanel.exe" />
+        <include path="MetasequoiaImeHandwritingPanel.exe" />
+        <include path="MetasequoiaImeSettings.exe" />
+        <for-each>
+          <authenticode-sign description="Metasequoia IME" description-url="https://github.com/metasequoiaime/MSIME-Windows" />
+        </for-each>
+      </pe-file-set>
+    </directory>
+    <directory path="tsf_dll">
+      <directory path="32">
+        <pe-file path="MetasequoiaImeTsf.dll">
+          <authenticode-sign description="Metasequoia IME" description-url="https://github.com/metasequoiaime/MSIME-Windows" />
+        </pe-file>
+      </directory>
+      <directory path="64">
+        <pe-file path="MetasequoiaImeTsf.dll">
+          <authenticode-sign description="Metasequoia IME" description-url="https://github.com/metasequoiaime/MSIME-Windows" />
+        </pe-file>
+      </directory>
+    </directory>
+  </zip-file>
+</artifact-configuration>
