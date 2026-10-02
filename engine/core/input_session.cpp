@@ -168,11 +168,7 @@ KeyResult InputSession::handle_character(char character, bool shift_only)
     const bool mid_sentence_marker = character == shuangpin::kMidSentenceHelpcodeMarker && has_composition() &&
                                      accepts_mid_sentence_helpcode_marker();
     // 句中辅助码：反引号后的第一码大小写都收，紧跟的大写字母是第二码，与辅助码开关无关。
-    const std::string &typed = get_pinyin_sequence_with_cases();
-    const bool mid_sentence_code = mid_sentence_helpcode_enabled_ && is_shuangpin() && character >= 'A' &&
-                                   character <= 'Z' && !typed.empty() &&
-                                   (typed.back() == shuangpin::kMidSentenceHelpcodeMarker ||
-                                    shuangpin::accepts_mid_sentence_second_code(typed, character));
+    const bool mid_sentence_code = accepts_mid_sentence_code_at(get_pinyin_sequence_with_cases().size(), character);
     const bool active_helpcode = character >= 'A' && character <= 'Z' && has_composition() &&
                                  ((scheme() == SchemeType::Quanpin && quanpin_helpcode_enabled_) ||
                                   (scheme() == SchemeType::Shuangpin && shuangpin_helpcode_enabled_));
@@ -396,12 +392,45 @@ void InputSession::set_mid_sentence_helpcode_enabled(bool enabled)
 
 bool InputSession::accepts_mid_sentence_helpcode_marker() const
 {
+    return accepts_mid_sentence_helpcode_marker_at(caret_position());
+}
+
+bool InputSession::accepts_mid_sentence_helpcode_marker_at(std::size_t caret) const
+{
     if (!mid_sentence_helpcode_enabled_ || !is_shuangpin() || dedicated_english_mode_ ||
-        local_input_mode_ != LocalInputMode::None || caret_position() < editing_text().size())
+        local_input_mode_ != LocalInputMode::None)
     {
         return false;
     }
-    return shuangpin::accepts_mid_sentence_helpcode_marker(get_pinyin_sequence_with_cases());
+    return shuangpin::accepts_mid_sentence_helpcode_marker_at(get_pinyin_sequence_with_cases(), caret);
+}
+
+bool InputSession::accepts_mid_sentence_code_at(std::size_t caret, char character) const
+{
+    const std::string &typed = get_pinyin_sequence_with_cases();
+    if (!mid_sentence_helpcode_enabled_ || !is_shuangpin() || character < 'A' || character > 'Z' || caret == 0 ||
+        caret > typed.size())
+    {
+        return false;
+    }
+    const std::string before = typed.substr(0, caret);
+    return before.back() == shuangpin::kMidSentenceHelpcodeMarker ||
+           shuangpin::accepts_mid_sentence_second_code(before, character);
+}
+
+bool InputSession::has_mid_sentence_helpcode() const
+{
+    return mid_sentence_helpcode_enabled_ && !dedicated_english_mode_ && local_input_mode_ == LocalInputMode::None &&
+           !request().syllable_helpcodes.empty();
+}
+
+std::vector<WordItem> InputSession::candidates_without_mid_sentence_helpcode()
+{
+    if (!has_mid_sentence_helpcode())
+    {
+        return engine_.get_candidates();
+    }
+    return engine_.query_without_syllable_helpcodes();
 }
 
 void InputSession::set_quanpin_helpcode_enabled(bool enabled)
@@ -1144,6 +1173,14 @@ std::optional<std::string> InputSession::learn_candidate(std::size_t index)
         }
         return std::nullopt;
     }
+    // 句中辅助码筛过的列表里排第一的词，不敲辅助码时未必排第一：排位参照换成不带约束的候选，
+    // 选的是第一个也照样调。
+    if (frequency_adjustment_.mode != FrequencyAdjustmentMode::Disabled && has_mid_sentence_helpcode() &&
+        (selected.source == CandidateSource::Database || selected.source == CandidateSource::UserDatabase))
+    {
+        return adjust_pinyin_candidate_frequency(selected, candidates_without_mid_sentence_helpcode(),
+                                                 frequency_adjustment_, false);
+    }
     if (frequency_adjustment_.mode == FrequencyAdjustmentMode::Disabled || index == 0)
     {
         return std::nullopt;
@@ -1203,6 +1240,14 @@ std::optional<std::string> InputSession::adjust_candidate_frequency(std::size_t 
         return adjusted ? std::nullopt
                         : std::optional<std::string>("English candidate frequency could not be persisted.");
     }
+    return adjust_pinyin_candidate_frequency(selected, candidates(), options, force_top);
+}
+
+std::optional<std::string> InputSession::adjust_pinyin_candidate_frequency(const WordItem &selected,
+                                                                           const std::vector<WordItem> &ranked,
+                                                                           FrequencyAdjustmentOptions options,
+                                                                           bool force_top)
+{
     const bool super_jianpin = local_input_mode_ == LocalInputMode::SuperJianpin;
     // A wubi code the table could not answer carries quanpin words, so it is ranked, keyed and
     // stored as pinyin; only a code the wubi table answered is ranked under the code itself. The
@@ -1226,7 +1271,7 @@ std::optional<std::string> InputSession::adjust_candidate_frequency(std::size_t 
     bool ranking_changed = false;
     const bool adjusted = user_dictionary::adjust_candidate_ranking(
         path_to_utf8(paths_.dictionary(assets::main_dictionary)), path_to_utf8(paths_.user(assets::user_journal)),
-        context_key, candidates(), entry_key, selected.word, frequency_mode_name(options.mode), options.linear_step,
+        context_key, ranked, entry_key, selected.word, frequency_mode_name(options.mode), options.linear_step,
         options.trigger_count, force_top, &ranking_changed,
         (wubi && !super_jianpin) ? user_dictionary::DictionaryKind::Wubi : user_dictionary::DictionaryKind::Pinyin);
     if (!adjusted)

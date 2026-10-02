@@ -1431,14 +1431,29 @@ TEST_CASE(EngineShuangpinMidSentenceHelpcodeConstrainsSentenceSources)
         session.recompute_candidates();
     };
     apply("ni");
-    REQUIRE(session.accepts_mid_sentence_helpcode_marker());
+    REQUIRE(session.accepts_mid_sentence_helpcode_marker(2));
     apply("n");
-    REQUIRE(!session.accepts_mid_sentence_helpcode_marker());
+    REQUIRE(!session.accepts_mid_sentence_helpcode_marker(1));
+    // 光标移回句中：只看光标前的部分，落在音节中间不收。
+    apply("nihc");
+    REQUIRE(session.accepts_mid_sentence_helpcode_marker(2));
+    REQUIRE(!session.accepts_mid_sentence_helpcode_marker(3));
+    REQUIRE(session.accepts_mid_sentence_helpcode_marker(4));
+    REQUIRE(!session.has_mid_sentence_helpcode());
 
     const std::string raw = std::string("ni`") + code + "hc";
     apply(raw);
     REQUIRE_EQ(session.get_pinyin_sequence_with_cases(), raw);
     REQUIRE(!session.get_candidates().empty());
+    REQUIRE(session.has_mid_sentence_helpcode());
+    REQUIRE(!session.accepts_mid_sentence_helpcode_marker(2));
+    // 调频的参照是去掉约束后的候选：里面要有首字不满足这一码的词，且组合本身不动。
+    const auto unconstrained = session.candidates_without_mid_sentence_helpcode();
+    REQUIRE(std::any_of(unconstrained.begin(), unconstrained.end(), [&](const auto &item) {
+        return item.source == CandidateSource::Database && HelpcodeUtils::count_han_chars(item.word) > 0 &&
+               first_code(HelpcodeUtils::get_first_han_char(item.word)) != code;
+    }));
+    REQUIRE_EQ(session.get_pinyin_sequence_with_cases(), raw);
     bool has_sentence = false;
     for (const auto &item : session.get_candidates())
     {

@@ -58,6 +58,8 @@ class ImeSession
     // driven prefix decoding in InputSession uses this to decode a prefix while the composition
     // still owns the full raw string.
     std::vector<WordItem> query_raw_candidates(const std::string &raw_input, const std::string &raw_input_with_cases);
+    // 当前请求去掉句中辅助码约束再查一次，组合本身不动。请求里没有约束时直接返回当前候选。
+    std::vector<WordItem> query_without_syllable_helpcodes();
     void reset();
     void reset_cache();
     // 只清整句排序所在的缓存层，不重算候选：调用方随后自己 refresh，免得像 reset_cache

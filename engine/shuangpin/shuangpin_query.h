@@ -64,6 +64,8 @@ std::string decorate_mid_sentence_segmentation(const std::string &segmentation, 
                                                const ShuangpinProfile &profile = GetXiaoheShuangpinProfile());
 // 输入串末尾能否接一个反引号，即 FanyImeMidSentenceHelpcode::AcceptsMarker。
 bool accepts_mid_sentence_helpcode_marker(const std::string &raw_input);
+// 光标停在 raw_input[caret] 时能否插入一个反引号，即 FanyImeMidSentenceHelpcode::AcceptsMarkerAt。
+bool accepts_mid_sentence_helpcode_marker_at(const std::string &raw_input, std::size_t caret);
 // 输入串末尾能否接 ch 作为第二码：紧跟在「反引号 + 第一码」之后的大写字母。
 bool accepts_mid_sentence_second_code(const std::string &raw_input, char ch);
 

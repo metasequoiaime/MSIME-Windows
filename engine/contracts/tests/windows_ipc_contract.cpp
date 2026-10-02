@@ -145,6 +145,13 @@ int main()
     CHECK(accepts(L"ulpb`xih") && !accepts(L"ulpb`xihf") && accepts(L"ulpb`xYih") && accepts(L"ulpb`xihfa"));
     CHECK(FanyImeMidSentenceHelpcode::AcceptsMarker("ni'hc", 5) &&
           !FanyImeMidSentenceHelpcode::AcceptsMarker("ni'h", 4));
+    // 光标移回句中：只看光标前的部分，光标后已是这个音节的段时不收。
+    const auto accepts_at = [](const std::wstring &text, std::size_t caret) {
+        return FanyImeMidSentenceHelpcode::AcceptsMarkerAt(text.data(), text.size(), caret);
+    };
+    CHECK(accepts_at(L"ulpbih", 2) && accepts_at(L"ulpbih", 4) && accepts_at(L"ulpbih", 6));
+    CHECK(!accepts_at(L"ulpbih", 0) && !accepts_at(L"ulpbih", 3) && !accepts_at(L"ulpbih", 7));
+    CHECK(!accepts_at(L"ul`xpb", 2) && accepts_at(L"ul`xpb", 6) && !accepts_at(L"ul`xpb", 3));
     const std::wstring voice(1000, L'x');
     const auto frames = FanyImeVoiceCompositionPipe::EncodeSnapshot(voice, 7);
     CHECK(FanyImeVoiceCompositionPipe::AssembleFrames(frames) == voice);

@@ -926,7 +926,7 @@ SerialTaskRunner &DictionaryWriter()
 // worker thread only, which is also what serializes the replay guard.
 void EnqueueAdjustCandidateRankingTask(bool english, bool wubi, const std::string &context_key,
                                        const std::string &entry_key, const std::string &word, uint64_t client_id,
-                                       uint64_t activation_epoch)
+                                       uint64_t activation_epoch, const std::vector<WordItem> *ranking_candidates)
 {
     static FanyImeIpc::SelectionRankingReplayGuard replay_guard;
     const std::string replay_key =
@@ -937,8 +937,9 @@ void EnqueueAdjustCandidateRankingTask(bool english, bool wubi, const std::strin
         return;
     }
     const auto &frequency = GetConfiguredFrequencyAdjustment();
-    DictionaryWriter().Post([english, wubi, context_key, candidates = Global::candidate_ui.items, entry_key, word,
-                             mode = frequency.mode, linear_step = frequency.linear_step,
+    DictionaryWriter().Post([english, wubi, context_key,
+                             candidates = ranking_candidates ? *ranking_candidates : Global::candidate_ui.items,
+                             entry_key, word, mode = frequency.mode, linear_step = frequency.linear_step,
                              trigger_count = frequency.trigger_count] {
         if (english)
         {

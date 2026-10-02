@@ -24,13 +24,15 @@
 
 namespace
 {
-// 双拼句中辅助码的反引号：开关开着、光标在串尾，且光标前是一节完整的两键音节时是编码键，
-// 否则仍按标点处理。Server 用同一条形状规则决定收不收（engine/contracts/mid_sentence_helpcode.h）。
+// 双拼句中辅助码的反引号：开关开着，且光标前是一节完整的两键音节时是编码键，否则仍按标点处理。
+// 光标可以在句中（用箭头移回去补辅助码），只看光标前的部分。Server 用同一条形状规则决定收不收
+// （engine/contracts/mid_sentence_helpcode.h）。
 bool IsMidSentenceHelpcodeMarkerKey(UINT uCode, WCHAR wch, const WCHAR *buffer, DWORD_PTR length, DWORD_PTR caret)
 {
     return Global::MidSentenceHelpcodeEnabled.load(std::memory_order_relaxed) && uCode == VK_OEM_3 && wch == L'`' &&
-           buffer != nullptr && length > 0 && caret >= length &&
-           FanyImeMidSentenceHelpcode::AcceptsMarker(buffer, static_cast<std::size_t>(length));
+           buffer != nullptr && length > 0 &&
+           FanyImeMidSentenceHelpcode::AcceptsMarkerAt(buffer, static_cast<std::size_t>(length),
+                                                       static_cast<std::size_t>(min(caret, length)));
 }
 
 // 日语模式禁用 -/= 翻页：'-' 是长音符（ー）的输入键。空编码时也要起头组合，

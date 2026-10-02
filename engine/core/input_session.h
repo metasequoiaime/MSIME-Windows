@@ -57,9 +57,17 @@ class InputSession
     void set_shuangpin_helpcode_enabled(bool enabled);
     // 句中辅助码（双拼），见 core/syllable_helpcode.h。默认关闭。
     void set_mid_sentence_helpcode_enabled(bool enabled);
-    // 宿主在决定是否把反引号当作编码键之前问这一句：开关开着、双拼、光标在串尾，且当前这一节
-    // 能接一段句中辅助码。不满足时反引号仍按标点处理。
+    // 宿主在决定是否把反引号当作编码键之前问这一句：开关开着、双拼，且光标前这一节能接一段句中
+    // 辅助码（光标可以在句中，见 FanyImeMidSentenceHelpcode::AcceptsMarkerAt）。不满足时反引号
+    // 仍按标点处理。不带参数的版本按会话自己的光标；光标由宿主维护时传宿主的光标。
     bool accepts_mid_sentence_helpcode_marker() const;
+    bool accepts_mid_sentence_helpcode_marker_at(std::size_t caret) const;
+    // 当前输入带着生效的句中辅助码约束：候选是筛过的，排位不能当调频的参照。
+    bool has_mid_sentence_helpcode() const;
+    // 同一输入去掉句中辅助码约束后的引擎候选。用户下次不敲辅助码时看到的就是这份排序，
+    // 调频要在这份里给选中的词挪位置；在筛过的列表里它往往已经排第一，调了等于没调。
+    // 没有约束时就是当前引擎候选。
+    std::vector<WordItem> candidates_without_mid_sentence_helpcode();
     void set_quanpin_helpcode_enabled(bool enabled);
     static bool is_supported_helpcode_schema(const std::string &schema);
     bool set_helpcode_schema(const std::string &schema);
@@ -263,6 +271,9 @@ class InputSession
     KeyResult commit(std::size_t index);
     KeyResult handle_local_character(char character);
     KeyResult insert_at_caret(char character);
+    // 光标停在 caret 处时大写字母 character 能否作为句中辅助码收下：紧跟在反引号之后（第一码），
+    // 或紧跟在「反引号 + 第一码」之后（第二码）。
+    bool accepts_mid_sentence_code_at(std::size_t caret, char character) const;
     KeyResult edit_at_caret(Command command);
     KeyResult replace_editing_text(std::string text, std::size_t caret);
     std::optional<std::size_t> caret_;
@@ -298,6 +309,10 @@ class InputSession
     std::optional<std::string> learn_sentence_candidate(const WordItem &selected);
     std::optional<std::string> adjust_candidate_frequency(std::size_t index, FrequencyAdjustmentOptions options,
                                                           bool force_top);
+    // 拼音候选的调频，排位参照 ranked 而不是当前列表；句中辅助码组合用不带约束的候选作参照。
+    std::optional<std::string> adjust_pinyin_candidate_frequency(const WordItem &selected,
+                                                                 const std::vector<WordItem> &ranked,
+                                                                 FrequencyAdjustmentOptions options, bool force_top);
 
     CreatingWordProgress immediate_phrase_progress_;
     bool shuangpin_preedit_uses_raw_ = true;

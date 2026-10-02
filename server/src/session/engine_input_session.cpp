@@ -170,11 +170,22 @@ bool EngineInputSession::has_active_helpcode() const
     return session_.has_active_helpcode();
 }
 
-bool EngineInputSession::accepts_mid_sentence_helpcode_marker() const
+bool EngineInputSession::accepts_mid_sentence_helpcode_marker(std::size_t caret) const
 {
     // 开关在 ApplyConfiguration 里随每键重读；这里在吃键之前被问到，那一刻配置可能刚改过，
     // 所以直接按当前配置判断，不等下一次重读。
-    return GetConfiguredShuangpinMidSentenceHelpcodeEnabled() && session_.accepts_mid_sentence_helpcode_marker();
+    return GetConfiguredShuangpinMidSentenceHelpcodeEnabled() &&
+           session_.accepts_mid_sentence_helpcode_marker_at(caret);
+}
+
+bool EngineInputSession::has_mid_sentence_helpcode() const
+{
+    return session_.has_mid_sentence_helpcode();
+}
+
+std::vector<IInputSession::WordItem> EngineInputSession::candidates_without_mid_sentence_helpcode()
+{
+    return session_.candidates_without_mid_sentence_helpcode();
 }
 
 void EngineInputSession::set_rescoring_context(std::string context)

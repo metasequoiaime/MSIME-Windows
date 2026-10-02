@@ -528,10 +528,10 @@ bool CMetasequoiaIME::_ClassifyDeferredKeyDown(_In_ ITfContext *pContext, WPARAM
         }
         // 与 CompositionProcessorEngine_KeyClassify.cpp 的句中辅助码判断一致，按影子状态算。
         if (!isInputKey && Global::MidSentenceHelpcodeEnabled.load(std::memory_order_relaxed) &&
-            *classifiedCode == VK_OEM_3 && *classifiedWch == L'`' && !shadow.rawInput.empty() &&
-            shadow.caret >= shadow.rawInput.size())
+            *classifiedCode == VK_OEM_3 && *classifiedWch == L'`' && !shadow.rawInput.empty())
         {
-            isInputKey = FanyImeMidSentenceHelpcode::AcceptsMarker(shadow.rawInput.data(), shadow.rawInput.size());
+            isInputKey = FanyImeMidSentenceHelpcode::AcceptsMarkerAt(shadow.rawInput.data(), shadow.rawInput.size(),
+                                                                     min(shadow.caret, shadow.rawInput.size()));
         }
         if (shadow.inputLength == 0 && (GetKeyState(VK_CAPITAL) & 0x0001) != 0 && *classifiedWch >= L'A' &&
             *classifiedWch <= L'Z' && *classifiedCode >= L'A' && *classifiedCode <= L'Z')

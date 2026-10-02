@@ -169,9 +169,11 @@ std::pair<std::string, std::string> RankingKeysForCandidate(const WordItem &item
 void NoteTopCommitPushed(uint64_t client_id, uint64_t activation_epoch);
 void EnqueueTask(TaskType type, const FanyImeNamedpipeData &pipeData, uint64_t activation_epoch);
 // wubi 指明目标候选来自五笔码表；混输组合里拼音候选写拼音词典、五笔候选写码表，不能按会话方案判断。
+// ranking_candidates 为空时按当前候选页排位；句中辅助码组合传去掉约束后的候选。
 void EnqueueAdjustCandidateRankingTask(bool english, bool wubi, const std::string &context_key,
                                        const std::string &entry_key, const std::string &word, uint64_t client_id,
-                                       uint64_t activation_epoch);
+                                       uint64_t activation_epoch,
+                                       const std::vector<WordItem> *ranking_candidates = nullptr);
 void EnqueueLearnEnteredEnglishWordTask(const std::string &word);
 // 快捷短语组的调频。word 非空：选中了组里的这一条，first_in_group 表示它本来就排在组首；
 // word 为空：越过整组选了普通候选，ordinary_rank 是它在普通候选里的名次。

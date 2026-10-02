@@ -209,6 +209,19 @@ std::vector<WordItem> ImeSession::query_raw_candidates(const std::string &raw_in
     return provider_registry_.resolve(request.scheme).query(request);
 }
 
+std::vector<WordItem> ImeSession::query_without_syllable_helpcodes()
+{
+    if (!state_.request.valid || state_.request.syllable_helpcodes.empty() ||
+        !state_.request.enable_mid_sentence_helpcode)
+    {
+        return state_.candidates;
+    }
+    // 反引号段在请求里已换成分隔符，切分与不敲辅助码时一致；关掉开关，词典层就不再按约束筛。
+    QueryRequest request = state_.request;
+    request.enable_mid_sentence_helpcode = false;
+    return provider_registry_.resolve(request.scheme).query(request);
+}
+
 void ImeSession::replace_japanese_raw_input(const std::string &raw_input, const std::string &raw_input_with_cases)
 {
     if (scheme_->type() != SchemeType::JapaneseRomaji)

@@ -130,13 +130,20 @@ bool IsMicrosoftShuangpinIngKey(UINT keycode, WCHAR wch, const std::string &raw_
     return (caret - chunk_start) % 2 == 1;
 }
 
-// 句中辅助码的反引号：开关开着、双拼、光标在串尾，且当前这一节能接一段时，它是编码键而不是
-// 标点。TSF 端按同一条形状规则（引擎 shuangpin::accepts_mid_sentence_helpcode_marker）预判吃键。
+// 句中辅助码的反引号：开关开着、双拼，且光标前这一节能接一段时，它是编码键而不是标点。光标可以
+// 在句中（用箭头移回去补辅助码）。TSF 端按同一条形状规则（FanyImeMidSentenceHelpcode::AcceptsMarkerAt）
+// 预判吃键，光标也按 ApplyCompositionEditKey 插字时的同一个位置算。
 bool IsMidSentenceHelpcodeMarkerKey(UINT keycode, WCHAR wch, const std::string &raw_input)
 {
-    return keycode == VK_OEM_3 && wch == L'`' && !g_english_input_mode && g_inputSession != nullptr &&
-           GlobalIme::composition.caret_position >= raw_input.size() &&
-           g_inputSession->accepts_mid_sentence_helpcode_marker();
+    if (keycode != VK_OEM_3 || wch != L'`' || g_english_input_mode || g_inputSession == nullptr)
+    {
+        return false;
+    }
+    const auto &composition = GlobalIme::composition;
+    const size_t caret = composition.raw_input_with_cases != raw_input && composition.caret_position == 0
+                             ? raw_input.size()
+                             : (std::min)(composition.caret_position, raw_input.size());
+    return g_inputSession->accepts_mid_sentence_helpcode_marker(caret);
 }
 
 bool IsSelectionKey(UINT keycode)

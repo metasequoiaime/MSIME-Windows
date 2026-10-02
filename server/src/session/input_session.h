@@ -56,10 +56,21 @@ class IInputSession
     // uniqueness required. The Server commits the first candidate when the user types past it.
     virtual bool wubi_four_code_is_complete() const = 0;
     virtual bool has_active_helpcode() const = 0;
-    // 反引号此刻能否作为句中辅助码接进编码串，语义见 engine 同名方法。默认不能。
-    virtual bool accepts_mid_sentence_helpcode_marker() const
+    // 光标停在 caret 处时反引号能否作为句中辅助码插进编码串，语义见 engine
+    // accepts_mid_sentence_helpcode_marker_at。默认不能。
+    virtual bool accepts_mid_sentence_helpcode_marker(std::size_t) const
     {
         return false;
+    }
+    // 当前输入带着生效的句中辅助码约束（候选是筛过的）。默认没有。
+    virtual bool has_mid_sentence_helpcode() const
+    {
+        return false;
+    }
+    // 去掉句中辅助码约束后的候选，调频拿它当排位参照，语义见 engine 同名方法。默认空。
+    virtual std::vector<WordItem> candidates_without_mid_sentence_helpcode()
+    {
+        return {};
     }
 
     // 本会话最近上屏的文本，给神经整句重排当前文。空实现：除引擎会话外没人需要前文。

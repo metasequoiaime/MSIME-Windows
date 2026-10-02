@@ -62,4 +62,12 @@ template <typename Char> constexpr bool AcceptsMarker(const Char *text, std::siz
     const std::size_t chunk_length = size - chunk_start;
     return chunk_length >= 2 && chunk_length % 2 == 0;
 }
+
+// 光标停在 text[caret] 时能否插入一个反引号：光标前按 AcceptsMarker 判断，后面的部分不看——
+// 光标移回句中补辅助码时，它后面还有没敲完的音节。光标后紧跟的已经是这个音节的段时不收，
+// 一个音节上叠两段只会让后一段把前一段盖掉。
+template <typename Char> constexpr bool AcceptsMarkerAt(const Char *text, std::size_t size, std::size_t caret)
+{
+    return caret <= size && AcceptsMarker(text, caret) && (caret == size || text[caret] != Char(kMarker));
+}
 } // namespace FanyImeMidSentenceHelpcode

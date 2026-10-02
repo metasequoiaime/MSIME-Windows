@@ -203,6 +203,11 @@ KeyResult InputSession::insert_at_caret(char character)
             }
             if (character == '\'' && scheme() != SchemeType::Wubi)
                 accepted = caret > 0;
+            // 光标移回句中补句中辅助码：反引号和它后面的码按光标前的部分判断。
+            if (character == shuangpin::kMidSentenceHelpcodeMarker)
+                accepted = accepts_mid_sentence_helpcode_marker_at(caret);
+            else if (upper && !accepted)
+                accepted = accepts_mid_sentence_code_at(caret, character);
             break;
         case LocalInputMode::Emoji:
         case LocalInputMode::Kaomoji:

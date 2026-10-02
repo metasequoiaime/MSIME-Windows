@@ -234,7 +234,17 @@ void ProcessSelectionKey(UINT keycode, uint64_t client_id, uint64_t activation_e
         // First-page first slot is already the default commit; space/mouse/digit
         // should only learn when the user picked something else.
         const bool is_first_page_first = Global::candidate_ui.page_index == 0 && index == 0;
-        isNeedUpdateWeight = !is_first_page_first;
+        // 句中辅助码筛过的候选页不能当调频的参照：选中的词在这一页里往往已经排第一，而用户下次
+        // 不敲辅助码时看到的是没筛过的那份排序。改用去掉约束后的候选给它挪位置，所以选的是第一个
+        // 也照样调（空格、数字键、鼠标点选都走这里）。要在推进组合之前取，推进后输入串就短了。
+        std::vector<WordItem> mid_sentence_ranking_candidates;
+        if ((curWordItem.source == CandidateSource::Database || curWordItem.source == CandidateSource::UserDatabase) &&
+            g_inputSession->has_mid_sentence_helpcode())
+        {
+            mid_sentence_ranking_candidates = g_inputSession->candidates_without_mid_sentence_helpcode();
+        }
+        const bool mid_sentence_ranking = !mid_sentence_ranking_candidates.empty();
+        isNeedUpdateWeight = mid_sentence_ranking || !is_first_page_first;
         const size_t absolute_index =
             static_cast<size_t>(Global::candidate_ui.page_index) * static_cast<size_t>(Global::candidate_ui.page_size) +
             static_cast<size_t>(index);
@@ -495,7 +505,8 @@ void ProcessSelectionKey(UINT keycode, uint64_t client_id, uint64_t activation_e
             // one.
             EnqueueAdjustCandidateRankingTask(/*english=*/false, /*wubi=*/curWordItem.scheme == SchemeType::Wubi,
                                               ranking_context_key, ranking_entry_key, curWord, client_id,
-                                              activation_epoch);
+                                              activation_epoch,
+                                              mid_sentence_ranking ? &mid_sentence_ranking_candidates : nullptr);
         }
     }
     else

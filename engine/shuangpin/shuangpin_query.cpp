@@ -415,6 +415,11 @@ bool accepts_mid_sentence_helpcode_marker(const std::string &raw_input)
     return FanyImeMidSentenceHelpcode::AcceptsMarker(raw_input.data(), raw_input.size());
 }
 
+bool accepts_mid_sentence_helpcode_marker_at(const std::string &raw_input, std::size_t caret)
+{
+    return FanyImeMidSentenceHelpcode::AcceptsMarkerAt(raw_input.data(), raw_input.size(), caret);
+}
+
 bool accepts_mid_sentence_second_code(const std::string &raw_input, char ch)
 {
     const std::size_t size = raw_input.size();

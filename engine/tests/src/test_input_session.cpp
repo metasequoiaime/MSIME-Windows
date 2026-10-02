@@ -1203,6 +1203,30 @@ int run_test()
                     "Backspace did not remove the helpcode letter.");
             require(has_word(carried, "不好") && has_word(carried, "补好"),
                     "A bare backquote still filtered candidates.");
+
+            // 光标移回句中补辅助码：反引号和它后面的码按光标前的部分判断，插在光标处。
+            auto caret_session = enabled_session();
+            auto &caret = *caret_session;
+            type(caret, "nihc");
+            require(caret.handle_command(metasequoia::Command::MoveLeft).handled && caret.caret_position() == 3,
+                    "The caret did not move into the composition.");
+            require(!caret.handle_character('`').handled && caret.preedit() == "nihc",
+                    "A backquote was accepted in the middle of a shuangpin syllable.");
+            require(caret.handle_command(metasequoia::Command::MoveLeft).handled && caret.caret_position() == 2,
+                    "The caret did not move back to the syllable boundary.");
+            require(caret.handle_character('`').handled && caret.preedit() == "ni`hc" && caret.caret_position() == 3,
+                    "A backquote at a mid-composition syllable boundary was not inserted at the caret.");
+            require(!caret.handle_character('`').handled && caret.preedit() == "ni`hc",
+                    "A second backquote was accepted right after a mid-composition marker.");
+            type(caret, "cD");
+            require(caret.preedit() == "ni`cDhc" && caret.caret_position() == 5,
+                    "The mid-composition helpcode letters were not inserted at the caret.");
+            require(has_word(caret, "拟好") && !has_word(caret, "你好"),
+                    "A helpcode inserted in the middle did not filter its syllable.");
+            for (int step = 0; step < 3; ++step)
+                require(caret.handle_command(metasequoia::Command::MoveLeft).handled, "The caret did not move left.");
+            require(caret.caret_position() == 2 && !caret.handle_character('`').handled && caret.preedit() == "ni`cDhc",
+                    "A backquote was accepted in front of an existing helpcode block.");
         }
 
         require(!session.handle_character('1').handled, "A digit was swallowed instead of passed through.");
@@ -1304,6 +1328,31 @@ int run_test()
     type(reopened_shuangpin, "nihc");
     require(!reopened_shuangpin.candidates().empty() && reopened_shuangpin.candidates().front().word == "拟好",
             "Shuangpin frequency learning did not persist through the canonical pinyin key.");
+
+    // 句中辅助码筛过的列表里，要的词排第一；直接上屏也要按不带约束的排序调频，下次不敲辅助码
+    // 它就排在前面（lantian 夹具：你=ab、拟=cd）。
+    user_dictionary::close_default_user_database();
+    const std::filesystem::path mid_sentence_directory = data_directory / "frequency-shuangpin-mid-sentence";
+    prepare_shuangpin_frequency_fixture(mid_sentence_directory);
+    write_file(mid_sentence_directory / "helpcodes" / "helpcode.txt", "你=ab\n拟=cd\n好=ef\n");
+    set_data_directory(mid_sentence_directory);
+    {
+        metasequoia::InputSession mid_sentence_learning(SchemeType::Shuangpin);
+        mid_sentence_learning.set_mid_sentence_helpcode_enabled(true);
+        require(mid_sentence_learning.set_helpcode_schema("lantian") &&
+                    mid_sentence_learning.set_frequency_adjustment({metasequoia::FrequencyAdjustmentMode::Pin, 1, 1}),
+                "The mid-sentence frequency fixture could not be configured.");
+        type(mid_sentence_learning, "ni`chc");
+        require(candidate_index(mid_sentence_learning, "拟好") == 0,
+                "The mid-sentence helpcode did not put the constrained phrase first.");
+        const auto learned = mid_sentence_learning.select_candidate(static_cast<std::size_t>(0));
+        require(learned.commit == "拟好" && !learned.diagnostic.has_value(),
+                "Committing a mid-sentence helpcode phrase failed.");
+    }
+    metasequoia::InputSession reopened_mid_sentence(SchemeType::Shuangpin);
+    type(reopened_mid_sentence, "nihc");
+    require(candidate_index(reopened_mid_sentence, "拟好") == 0,
+            "A phrase committed with a mid-sentence helpcode was not promoted for the plain spelling.");
 
     user_dictionary::close_default_user_database();
     const std::filesystem::path wubi_directory = data_directory / "frequency-wubi";
