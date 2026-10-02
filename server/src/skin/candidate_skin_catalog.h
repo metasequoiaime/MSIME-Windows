@@ -56,6 +56,8 @@ struct Package
     std::string version;
     std::string author;
     std::string description;
+    // 总是内置皮肤 ID。清单的 base 也可以写跨平台客户端的全局主题（system、shuishan、light、paper、night、ink），Load
+    // 会把它换算成 fluent，并按主题补齐配色。
     std::string base = "fluent";
     std::vector<std::string> layouts;
     std::vector<std::string> themes;

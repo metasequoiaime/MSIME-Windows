@@ -1,0 +1,1618 @@
+{
+ "_comment": "Client-dialect manifest cases shared by internal/skins/client_test.go and scripts/test_candidate_skins_seed.py. Ported from crates/client-core/src/skin/catalog/tests.rs in the client repository; reason strings are the client's. Templates substitute {id} with the case id (sample or bigfish by default); replace edits the first occurrence; pad_to appends a comment until the manifest is that many bytes; files are the package files beside skin.toml. base, when set on an accepted case, is the resolved base the package is served with (fluent in a manifest resolves to system).",
+ "templates": {
+  "sample": {
+   "id": "sample",
+   "manifest": "schema_version = 1\nid = '{id}'\nname = 'Sample'\nversion = '1.0'\nbase = 'night'\n[supports]\nlayouts = ['vertical']\nthemes = ['light']\n[candidate_window]\nmin_width_dip = 10\n[candidate_window.decoration]\ntop_inset_dip = 0\nwidth_dip = 0\n",
+   "files": []
+  },
+  "styled": {
+   "id": "bigfish",
+   "manifest": "schema_version = 1\nid = '{id}'\nname = '蓝色大肥鱼'\nversion = '1.0.0'\nbase = 'system'\n[supports]\nlayouts = ['horizontal', 'vertical']\nthemes = ['dark', 'light']\n[candidate_window]\nmin_width_dip = 176\ncorner_radius_dip = 12\n[candidate_window.decoration]\nimage = 'assets/character.png'\ntop_inset_dip = 104\nwidth_dip = 96\nalign = 'left'\n[candidate_window.background]\nimage = 'assets/background.png'\nfit = 'contain'\nopacity = 0.35\n[candidate.dark]\nnumber = '#E0C07A'\ntranslation = '#9FB4E0'\n[candidate.light]\ntranslation = 'rgba(90, 106, 150, .5)'\n[toolbar]\ncorner_radius_dip = 8\n[toolbar.dark]\nbackground = '#141B33'\nborder = 'rgba(91, 155, 255, 0.38)'\nhandle = '#5B9BFF'\ndivider = 'rgba(91, 155, 255, 0.28)'\nicon = '#E3EAFF'\nhover = 'not a colour'\n[toolbar.light]\nbackground = '#f4f8ff'\n[license]\ncode = 'MIT'\nassets = 'CC-BY-4.0'\nsource = 'synthetic'\n",
+   "files": [
+    "assets/character.png",
+    "assets/background.png"
+   ]
+  }
+ },
+ "cases": [
+  {
+   "name": "sample loads",
+   "reason": null,
+   "template": "sample",
+   "base": "night"
+  },
+  {
+   "name": "dimensions default to zero",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     ""
+    ],
+    [
+     "top_inset_dip = 0\n",
+     ""
+    ],
+    [
+     "width_dip = 0\n",
+     ""
+    ]
+   ]
+  },
+  {
+   "name": "decoration table may be left out",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "[candidate_window.decoration]\ntop_inset_dip = 0\nwidth_dip = 0\n",
+     ""
+    ]
+   ]
+  },
+  {
+   "name": "background defaults to cover at full strength",
+   "reason": null,
+   "template": "sample",
+   "append": "[candidate_window.background]\nimage = 'bg.webp'\n",
+   "files": [
+    "bg.webp"
+   ]
+  },
+  {
+   "name": "styled package loads every drawn key",
+   "reason": null,
+   "template": "styled"
+  },
+  {
+   "name": "styled package with the Windows base fluent",
+   "reason": null,
+   "template": "styled",
+   "replace": [
+    [
+     "base = 'system'",
+     "base = 'fluent'"
+    ]
+   ],
+   "base": "system"
+  },
+  {
+   "name": "both palettes carry every colour",
+   "reason": null,
+   "template": "sample",
+   "append": "[candidate.dark]\naccent = '#123456'\nselected = '#234567'\nhover = '#345678'\nsurface = '#456789'\nborder = '#56789a'\ntext = '#6789ab'\nnumber = '#789abc'\ntranslation = '#89abcd'\nshow_selected_bar = false\n[candidate.light]\ntext = '#123'\nshow_selected_bar = true\n"
+  },
+  {
+   "name": "dark.accent may be empty",
+   "reason": null,
+   "template": "sample",
+   "append": "[candidate.dark]\naccent = ''\n"
+  },
+  {
+   "name": "dark.accent may be 80 bytes",
+   "reason": null,
+   "template": "sample",
+   "append": "[candidate.dark]\naccent = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n"
+  },
+  {
+   "name": "dark.accent = false",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.dark]\naccent = false\n"
+  },
+  {
+   "name": "dark.accent = 7",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.dark]\naccent = 7\n"
+  },
+  {
+   "name": "dark.accent = []",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.dark]\naccent = []\n"
+  },
+  {
+   "name": "dark.accent = {}",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.dark]\naccent = {}\n"
+  },
+  {
+   "name": "dark.accent of 81 ASCII bytes",
+   "reason": "candidate color exceeds 80 bytes",
+   "template": "sample",
+   "append": "[candidate.dark]\naccent = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n"
+  },
+  {
+   "name": "dark.accent of 81 UTF-8 bytes",
+   "reason": "candidate color exceeds 80 bytes",
+   "template": "sample",
+   "append": "[candidate.dark]\naccent = '色色色色色色色色色色色色色色色色色色色色色色色色色色色'\n"
+  },
+  {
+   "name": "dark.translation may be empty",
+   "reason": null,
+   "template": "sample",
+   "append": "[candidate.dark]\ntranslation = ''\n"
+  },
+  {
+   "name": "dark.translation may be 80 bytes",
+   "reason": null,
+   "template": "sample",
+   "append": "[candidate.dark]\ntranslation = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n"
+  },
+  {
+   "name": "dark.translation = false",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.dark]\ntranslation = false\n"
+  },
+  {
+   "name": "dark.translation = 7",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.dark]\ntranslation = 7\n"
+  },
+  {
+   "name": "dark.translation = []",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.dark]\ntranslation = []\n"
+  },
+  {
+   "name": "dark.translation = {}",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.dark]\ntranslation = {}\n"
+  },
+  {
+   "name": "dark.translation of 81 ASCII bytes",
+   "reason": "candidate color exceeds 80 bytes",
+   "template": "sample",
+   "append": "[candidate.dark]\ntranslation = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n"
+  },
+  {
+   "name": "dark.translation of 81 UTF-8 bytes",
+   "reason": "candidate color exceeds 80 bytes",
+   "template": "sample",
+   "append": "[candidate.dark]\ntranslation = '色色色色色色色色色色色色色色色色色色色色色色色色色色色'\n"
+  },
+  {
+   "name": "light.accent may be empty",
+   "reason": null,
+   "template": "sample",
+   "append": "[candidate.light]\naccent = ''\n"
+  },
+  {
+   "name": "light.accent may be 80 bytes",
+   "reason": null,
+   "template": "sample",
+   "append": "[candidate.light]\naccent = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n"
+  },
+  {
+   "name": "light.accent = false",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.light]\naccent = false\n"
+  },
+  {
+   "name": "light.accent = 7",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.light]\naccent = 7\n"
+  },
+  {
+   "name": "light.accent = []",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.light]\naccent = []\n"
+  },
+  {
+   "name": "light.accent = {}",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.light]\naccent = {}\n"
+  },
+  {
+   "name": "light.accent of 81 ASCII bytes",
+   "reason": "candidate color exceeds 80 bytes",
+   "template": "sample",
+   "append": "[candidate.light]\naccent = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n"
+  },
+  {
+   "name": "light.accent of 81 UTF-8 bytes",
+   "reason": "candidate color exceeds 80 bytes",
+   "template": "sample",
+   "append": "[candidate.light]\naccent = '色色色色色色色色色色色色色色色色色色色色色色色色色色色'\n"
+  },
+  {
+   "name": "light.translation may be empty",
+   "reason": null,
+   "template": "sample",
+   "append": "[candidate.light]\ntranslation = ''\n"
+  },
+  {
+   "name": "light.translation may be 80 bytes",
+   "reason": null,
+   "template": "sample",
+   "append": "[candidate.light]\ntranslation = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n"
+  },
+  {
+   "name": "light.translation = false",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.light]\ntranslation = false\n"
+  },
+  {
+   "name": "light.translation = 7",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.light]\ntranslation = 7\n"
+  },
+  {
+   "name": "light.translation = []",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.light]\ntranslation = []\n"
+  },
+  {
+   "name": "light.translation = {}",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.light]\ntranslation = {}\n"
+  },
+  {
+   "name": "light.translation of 81 ASCII bytes",
+   "reason": "candidate color exceeds 80 bytes",
+   "template": "sample",
+   "append": "[candidate.light]\ntranslation = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n"
+  },
+  {
+   "name": "light.translation of 81 UTF-8 bytes",
+   "reason": "candidate color exceeds 80 bytes",
+   "template": "sample",
+   "append": "[candidate.light]\ntranslation = '色色色色色色色色色色色色色色色色色色色色色色色色色色色'\n"
+  },
+  {
+   "name": "unknown palette keys are ignored",
+   "reason": null,
+   "template": "sample",
+   "append": "[candidate.dark]\nshadow = 5\n[candidate.other]\naccent = 1\n"
+  },
+  {
+   "name": "base system",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'system'"
+    ]
+   ],
+   "base": "system"
+  },
+  {
+   "name": "base shuishan",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'shuishan'"
+    ]
+   ],
+   "base": "shuishan"
+  },
+  {
+   "name": "base light",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'light'"
+    ]
+   ],
+   "base": "light"
+  },
+  {
+   "name": "base paper",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'paper'"
+    ]
+   ],
+   "base": "paper"
+  },
+  {
+   "name": "base night",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'night'"
+    ]
+   ],
+   "base": "night"
+  },
+  {
+   "name": "base ink",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'ink'"
+    ]
+   ],
+   "base": "ink"
+  },
+  {
+   "name": "system base with author and empty tables",
+   "reason": null,
+   "template": "raw",
+   "id": "sample_skin",
+   "manifest": "schema_version = 1\nid = 'sample_skin'\nname = 'Sample'\nversion = '1.0'\nbase = 'system'\nauthor = 'Test'\ndescription = 'Demo'\n[supports]\nlayouts = ['vertical']\nthemes = ['light']\n[candidate_window]\n[candidate_window.decoration]\n"
+  },
+  {
+   "name": "toolbar stylesheet and preview",
+   "reason": null,
+   "template": "sample",
+   "prepend": "toolbar_stylesheet = 'toolbar.css'\npreview = 'images/preview.svg'\n",
+   "files": [
+    "toolbar.css",
+    "images/preview.svg"
+   ],
+   "replace": [
+    [
+     "['vertical']",
+     "['vertical', 'horizontal']"
+    ],
+    [
+     "min_width_dip = 10",
+     "min_width_dip = 320.5"
+    ],
+    [
+     "top_inset_dip = 0",
+     "top_inset_dip = 24.5"
+    ],
+    [
+     "width_dip = 0",
+     "width_dip = 180"
+    ]
+   ]
+  },
+  {
+   "name": "decoration image of its own",
+   "reason": null,
+   "template": "sample",
+   "prepend": "preview = 'preview.png'\n",
+   "files": [
+    "preview.png",
+    "ears.png"
+   ],
+   "replace": [
+    [
+     "top_inset_dip = 0",
+     "image = 'ears.png'\ntop_inset_dip = 20"
+    ],
+    [
+     "width_dip = 0",
+     "width_dip = 40"
+    ]
+   ]
+  },
+  {
+   "name": "decoration falls back to the preview",
+   "reason": null,
+   "template": "sample",
+   "prepend": "preview = 'preview.png'\n",
+   "files": [
+    "preview.png"
+   ],
+   "replace": [
+    [
+     "top_inset_dip = 0",
+     "top_inset_dip = 20"
+    ],
+    [
+     "width_dip = 0",
+     "width_dip = 40"
+    ]
+   ]
+  },
+  {
+   "name": "preview may name skin.toml",
+   "reason": null,
+   "template": "sample",
+   "prepend": "preview = 'skin.toml'\n"
+  },
+  {
+   "name": "preview may name a directory",
+   "reason": null,
+   "template": "sample",
+   "prepend": "preview = 'assets'\n",
+   "files": [
+    "assets/a.png"
+   ]
+  },
+  {
+   "name": "unknown keys are ignored",
+   "reason": null,
+   "template": "sample",
+   "prepend": "homepage = 'https://example.test'\n",
+   "append": "[extra]\nvalue = 1\n"
+  },
+  {
+   "name": "broken TOML",
+   "reason": "invalid TOML",
+   "template": "raw",
+   "manifest": "broken="
+  },
+  {
+   "name": "duplicate table",
+   "reason": "invalid TOML",
+   "template": "sample",
+   "append": "[candidate_window]\nmin_width_dip = 1\n"
+  },
+  {
+   "name": "oversized manifest",
+   "reason": "skin.toml is too large",
+   "template": "sample",
+   "pad_to": 65537
+  },
+  {
+   "name": "manifest at the size limit",
+   "reason": null,
+   "template": "sample",
+   "pad_to": 65536
+  },
+  {
+   "name": "schema_version = 2",
+   "reason": "unsupported schema_version",
+   "template": "sample",
+   "replace": [
+    [
+     "schema_version = 1",
+     "schema_version = 2"
+    ]
+   ]
+  },
+  {
+   "name": "schema_version = 1.0",
+   "reason": "unsupported schema_version",
+   "template": "sample",
+   "replace": [
+    [
+     "schema_version = 1",
+     "schema_version = 1.0"
+    ]
+   ]
+  },
+  {
+   "name": "schema_version = '1'",
+   "reason": "unsupported schema_version",
+   "template": "sample",
+   "replace": [
+    [
+     "schema_version = 1",
+     "schema_version = '1'"
+    ]
+   ]
+  },
+  {
+   "name": "schema_version = true",
+   "reason": "unsupported schema_version",
+   "template": "sample",
+   "replace": [
+    [
+     "schema_version = 1",
+     "schema_version = true"
+    ]
+   ]
+  },
+  {
+   "name": "schema_version missing",
+   "reason": "unsupported schema_version",
+   "template": "sample",
+   "replace": [
+    [
+     "schema_version = 1\n",
+     ""
+    ]
+   ]
+  },
+  {
+   "name": "reserved id system",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "system"
+  },
+  {
+   "name": "reserved id shuishan",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "shuishan"
+  },
+  {
+   "name": "reserved id light",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "light"
+  },
+  {
+   "name": "reserved id paper",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "paper"
+  },
+  {
+   "name": "reserved id night",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "night"
+  },
+  {
+   "name": "reserved id ink",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "ink"
+  },
+  {
+   "name": "reserved id custom",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "custom"
+  },
+  {
+   "name": "reserved id fluent",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "fluent"
+  },
+  {
+   "name": "reserved id wechat",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "wechat"
+  },
+  {
+   "name": "reserved id graphite",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "graphite"
+  },
+  {
+   "name": "reserved id willow_green",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "willow_green"
+  },
+  {
+   "name": "unsafe id Bad",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "Bad"
+  },
+  {
+   "name": "unsafe id -lead",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "-lead"
+  },
+  {
+   "name": "unsafe id aaaaaaaaaaaa",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+   "name": "unsafe id has space",
+   "reason": "invalid skin id",
+   "template": "sample",
+   "id": "has space"
+  },
+  {
+   "name": "id mismatch",
+   "reason": "manifest id does not match folder",
+   "template": "raw",
+   "id": "mismatch",
+   "manifest": "schema_version = 1\nid = 'other'\nname = 'X'\nversion = '1'\nbase = 'night'"
+  },
+  {
+   "name": "id not a string",
+   "reason": "id must be a string",
+   "template": "sample",
+   "replace": [
+    [
+     "id = 'sample'",
+     "id = 5"
+    ]
+   ]
+  },
+  {
+   "name": "baseless",
+   "reason": "base must be a string",
+   "template": "raw",
+   "id": "baseless",
+   "manifest": "schema_version = 1\nid = 'baseless'\nname = 'X'\nversion = '1'\n[supports]\nlayouts = ['vertical']\nthemes = ['light']\n[candidate_window]\n[candidate_window.decoration]\n"
+  },
+  {
+   "name": "base custom refused",
+   "reason": "base must be system or a built-in theme",
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'custom'"
+    ]
+   ]
+  },
+  {
+   "name": "base fluent is a manifest alias of system",
+   "reason": null,
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'fluent'"
+    ]
+   ],
+   "base": "system"
+  },
+  {
+   "name": "base wechat refused",
+   "reason": "base must be system or a built-in theme",
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'wechat'"
+    ]
+   ]
+  },
+  {
+   "name": "base Fluent refused",
+   "reason": "base must be system or a built-in theme",
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'Fluent'"
+    ]
+   ]
+  },
+  {
+   "name": "base graphite refused",
+   "reason": "base must be system or a built-in theme",
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'graphite'"
+    ]
+   ]
+  },
+  {
+   "name": "base willow_green refused",
+   "reason": "base must be system or a built-in theme",
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'willow_green'"
+    ]
+   ]
+  },
+  {
+   "name": "base Night refused",
+   "reason": "base must be system or a built-in theme",
+   "template": "sample",
+   "replace": [
+    [
+     "base = 'night'",
+     "base = 'Night'"
+    ]
+   ]
+  },
+  {
+   "name": "empty name",
+   "reason": "name has invalid length",
+   "template": "sample",
+   "replace": [
+    [
+     "name = 'Sample'",
+     "name = ''"
+    ]
+   ]
+  },
+  {
+   "name": "name of 81 bytes",
+   "reason": "name has invalid length",
+   "template": "sample",
+   "replace": [
+    [
+     "name = 'Sample'",
+     "name = 'nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn'"
+    ]
+   ]
+  },
+  {
+   "name": "version of 33 bytes",
+   "reason": "version has invalid length",
+   "template": "sample",
+   "replace": [
+    [
+     "version = '1.0'",
+     "version = '111111111111111111111111111111111'"
+    ]
+   ]
+  },
+  {
+   "name": "empty author",
+   "reason": "author has invalid length",
+   "template": "sample",
+   "prepend": "author = ''\n"
+  },
+  {
+   "name": "author not a string",
+   "reason": "author must be a string",
+   "template": "sample",
+   "prepend": "author = 1\n"
+  },
+  {
+   "name": "description of 501 bytes",
+   "reason": "description has invalid length",
+   "template": "sample",
+   "prepend": "description = 'ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'\n"
+  },
+  {
+   "name": "supports not a table",
+   "reason": "missing supports",
+   "template": "sample",
+   "prepend": "supports = 1\n",
+   "replace": [
+    [
+     "[supports]\nlayouts = ['vertical']\nthemes = ['light']\n",
+     ""
+    ]
+   ]
+  },
+  {
+   "name": "supports missing",
+   "reason": "missing supports",
+   "template": "sample",
+   "replace": [
+    [
+     "[supports]\nlayouts = ['vertical']\nthemes = ['light']\n",
+     ""
+    ]
+   ]
+  },
+  {
+   "name": "supports ['vertical', 'vertical']",
+   "reason": "invalid supports",
+   "template": "sample",
+   "replace": [
+    [
+     "['vertical']",
+     "['vertical', 'vertical']"
+    ]
+   ]
+  },
+  {
+   "name": "supports ['light', 'light']",
+   "reason": "invalid supports",
+   "template": "sample",
+   "replace": [
+    [
+     "['light']",
+     "['light', 'light']"
+    ]
+   ]
+  },
+  {
+   "name": "supports []",
+   "reason": "invalid supports",
+   "template": "sample",
+   "replace": [
+    [
+     "['vertical']",
+     "[]"
+    ]
+   ]
+  },
+  {
+   "name": "supports ['anything']",
+   "reason": "invalid supports",
+   "template": "sample",
+   "replace": [
+    [
+     "['light']",
+     "['anything']"
+    ]
+   ]
+  },
+  {
+   "name": "supports 'vertical'",
+   "reason": "invalid supports",
+   "template": "sample",
+   "replace": [
+    [
+     "['vertical']",
+     "'vertical'"
+    ]
+   ]
+  },
+  {
+   "name": "supports [1]",
+   "reason": "invalid supports",
+   "template": "sample",
+   "replace": [
+    [
+     "['light']",
+     "[1]"
+    ]
+   ]
+  },
+  {
+   "name": "candidate_window missing",
+   "reason": "missing candidate_window",
+   "template": "raw",
+   "manifest": "schema_version = 1\nid = 'sample'\nname = 'Sample'\nversion = '1.0'\nbase = 'night'\n[supports]\nlayouts = ['vertical']\nthemes = ['light']\n"
+  },
+  {
+   "name": "min_width_dip = '10'",
+   "reason": "invalid min_width_dip",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10",
+     "min_width_dip = '10'"
+    ]
+   ]
+  },
+  {
+   "name": "min_width_dip = false",
+   "reason": "invalid min_width_dip",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10",
+     "min_width_dip = false"
+    ]
+   ]
+  },
+  {
+   "name": "min_width_dip = []",
+   "reason": "invalid min_width_dip",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10",
+     "min_width_dip = []"
+    ]
+   ]
+  },
+  {
+   "name": "min_width_dip = {}",
+   "reason": "invalid min_width_dip",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10",
+     "min_width_dip = {}"
+    ]
+   ]
+  },
+  {
+   "name": "min_width_dip = nan",
+   "reason": "invalid min_width_dip",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10",
+     "min_width_dip = nan"
+    ]
+   ]
+  },
+  {
+   "name": "min_width_dip = inf",
+   "reason": "invalid min_width_dip",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10",
+     "min_width_dip = inf"
+    ]
+   ]
+  },
+  {
+   "name": "min_width_dip = -1",
+   "reason": "invalid min_width_dip",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10",
+     "min_width_dip = -1"
+    ]
+   ]
+  },
+  {
+   "name": "min_width_dip = 1001",
+   "reason": "invalid min_width_dip",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10",
+     "min_width_dip = 1001"
+    ]
+   ]
+  },
+  {
+   "name": "top_inset_dip = '10'",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "top_inset_dip = 0",
+     "top_inset_dip = '10'"
+    ]
+   ]
+  },
+  {
+   "name": "top_inset_dip = false",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "top_inset_dip = 0",
+     "top_inset_dip = false"
+    ]
+   ]
+  },
+  {
+   "name": "top_inset_dip = []",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "top_inset_dip = 0",
+     "top_inset_dip = []"
+    ]
+   ]
+  },
+  {
+   "name": "top_inset_dip = {}",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "top_inset_dip = 0",
+     "top_inset_dip = {}"
+    ]
+   ]
+  },
+  {
+   "name": "top_inset_dip = nan",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "top_inset_dip = 0",
+     "top_inset_dip = nan"
+    ]
+   ]
+  },
+  {
+   "name": "top_inset_dip = inf",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "top_inset_dip = 0",
+     "top_inset_dip = inf"
+    ]
+   ]
+  },
+  {
+   "name": "top_inset_dip = -1",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "top_inset_dip = 0",
+     "top_inset_dip = -1"
+    ]
+   ]
+  },
+  {
+   "name": "top_inset_dip = 1001",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "top_inset_dip = 0",
+     "top_inset_dip = 1001"
+    ]
+   ]
+  },
+  {
+   "name": "width_dip = '10'",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "width_dip = 0",
+     "width_dip = '10'"
+    ]
+   ]
+  },
+  {
+   "name": "width_dip = false",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "width_dip = 0",
+     "width_dip = false"
+    ]
+   ]
+  },
+  {
+   "name": "width_dip = []",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "width_dip = 0",
+     "width_dip = []"
+    ]
+   ]
+  },
+  {
+   "name": "width_dip = {}",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "width_dip = 0",
+     "width_dip = {}"
+    ]
+   ]
+  },
+  {
+   "name": "width_dip = nan",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "width_dip = 0",
+     "width_dip = nan"
+    ]
+   ]
+  },
+  {
+   "name": "width_dip = inf",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "width_dip = 0",
+     "width_dip = inf"
+    ]
+   ]
+  },
+  {
+   "name": "width_dip = -1",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "width_dip = 0",
+     "width_dip = -1"
+    ]
+   ]
+  },
+  {
+   "name": "width_dip = 1001",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "width_dip = 0",
+     "width_dip = 1001"
+    ]
+   ]
+  },
+  {
+   "name": "decoration band needs both sizes",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "top_inset_dip = 0",
+     "top_inset_dip = 20"
+    ]
+   ]
+  },
+  {
+   "name": "decoration top above 500",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "top_inset_dip = 0",
+     "top_inset_dip = 501"
+    ],
+    [
+     "width_dip = 0",
+     "width_dip = 40"
+    ]
+   ]
+  },
+  {
+   "name": "decoration not a table",
+   "reason": "invalid decoration",
+   "template": "sample",
+   "replace": [
+    [
+     "[candidate_window.decoration]\ntop_inset_dip = 0\nwidth_dip = 0\n",
+     ""
+    ],
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\ndecoration = 1\n"
+    ]
+   ]
+  },
+  {
+   "name": "background not a table",
+   "reason": "invalid background",
+   "template": "sample",
+   "replace": [
+    [
+     "min_width_dip = 10\n",
+     "min_width_dip = 10\nbackground = 1\n"
+    ]
+   ]
+  },
+  {
+   "name": "background without image",
+   "reason": "invalid background",
+   "template": "sample",
+   "append": "[candidate_window.background]\nfit = 'cover'\n"
+  },
+  {
+   "name": "toolbar not a table",
+   "reason": "invalid toolbar",
+   "template": "sample",
+   "prepend": "toolbar = 1\n"
+  },
+  {
+   "name": "toolbar palette not a table",
+   "reason": "invalid toolbar",
+   "template": "sample",
+   "append": "[toolbar]\nlight = 1\n"
+  },
+  {
+   "name": "license not a table",
+   "reason": "invalid license",
+   "template": "sample",
+   "prepend": "license = 1\n"
+  },
+  {
+   "name": "license assets of 121 bytes",
+   "reason": "assets has invalid length",
+   "template": "sample",
+   "append": "[license]\nassets = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n"
+  },
+  {
+   "name": "license source of 501 bytes",
+   "reason": "source has invalid length",
+   "template": "sample",
+   "append": "[license]\nsource = 'sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss'\n"
+  },
+  {
+   "name": "toolbar_stylesheet toolbar.css with ['toolbar.css']",
+   "reason": null,
+   "template": "sample",
+   "prepend": "toolbar_stylesheet = 'toolbar.css'\n",
+   "files": [
+    "toolbar.css"
+   ]
+  },
+  {
+   "name": "toolbar_stylesheet toolbar.css with ['toolbar.css/inner.css']",
+   "reason": "invalid toolbar_stylesheet",
+   "template": "sample",
+   "prepend": "toolbar_stylesheet = 'toolbar.css'\n",
+   "files": [
+    "toolbar.css/inner.css"
+   ]
+  },
+  {
+   "name": "toolbar_stylesheet toolbar.css with []",
+   "reason": "invalid toolbar_stylesheet",
+   "template": "sample",
+   "prepend": "toolbar_stylesheet = 'toolbar.css'\n",
+   "files": []
+  },
+  {
+   "name": "toolbar_stylesheet nested/toolbar.css with ['nested/toolbar.css']",
+   "reason": "invalid toolbar_stylesheet",
+   "template": "sample",
+   "prepend": "toolbar_stylesheet = 'nested/toolbar.css'\n",
+   "files": [
+    "nested/toolbar.css"
+   ]
+  },
+  {
+   "name": "toolbar_stylesheet .css with ['.css']",
+   "reason": "invalid toolbar_stylesheet",
+   "template": "sample",
+   "prepend": "toolbar_stylesheet = '.css'\n",
+   "files": [
+    ".css"
+   ]
+  },
+  {
+   "name": "toolbar_stylesheet toolbar.txt with []",
+   "reason": "invalid toolbar_stylesheet",
+   "template": "sample",
+   "prepend": "toolbar_stylesheet = 'toolbar.txt'\n",
+   "files": []
+  },
+  {
+   "name": "toolbar_stylesheet not a string",
+   "reason": "toolbar_stylesheet must be a string",
+   "template": "sample",
+   "prepend": "toolbar_stylesheet = true\n"
+  },
+  {
+   "name": "preview 'missing.png'",
+   "reason": "invalid preview",
+   "template": "sample",
+   "prepend": "preview = 'missing.png'\n",
+   "files": [
+    "images/preview.png"
+   ]
+  },
+  {
+   "name": "preview '../private.png'",
+   "reason": "invalid preview",
+   "template": "sample",
+   "prepend": "preview = '../private.png'\n",
+   "files": [
+    "images/preview.png"
+   ]
+  },
+  {
+   "name": "preview '/etc/passwd.png'",
+   "reason": "invalid preview",
+   "template": "sample",
+   "prepend": "preview = '/etc/passwd.png'\n",
+   "files": [
+    "images/preview.png"
+   ]
+  },
+  {
+   "name": "preview 'images\\\\\\\\preview.png'",
+   "reason": "invalid preview",
+   "template": "sample",
+   "prepend": "preview = \"images\\\\preview.png\"\n",
+   "files": [
+    "images/preview.png"
+   ]
+  },
+  {
+   "name": "preview ''",
+   "reason": "preview has invalid length",
+   "template": "sample",
+   "prepend": "preview = ''\n",
+   "files": [
+    "images/preview.png"
+   ]
+  },
+  {
+   "name": "candidate not a table",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "prepend": "candidate = false\n"
+  },
+  {
+   "name": "candidate dark = false",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate]\ndark = false\n"
+  },
+  {
+   "name": "candidate light = []",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate]\nlight = []\n"
+  },
+  {
+   "name": "candidate show_selected_bar = 'false'",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.dark]\nshow_selected_bar = 'false'\n"
+  },
+  {
+   "name": "candidate show_selected_bar = 1",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.light]\nshow_selected_bar = 1\n"
+  },
+  {
+   "name": "type error in light wins over long dark colour",
+   "reason": "invalid candidate colors",
+   "template": "sample",
+   "append": "[candidate.dark]\naccent = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'\n[candidate.light]\naccent = 1\n"
+  },
+  {
+   "name": "styled corner_radius_dip = 33",
+   "reason": "invalid corner_radius_dip",
+   "template": "styled",
+   "replace": [
+    [
+     "corner_radius_dip = 12",
+     "corner_radius_dip = 33"
+    ]
+   ]
+  },
+  {
+   "name": "styled corner_radius_dip = -1",
+   "reason": "invalid corner_radius_dip",
+   "template": "styled",
+   "replace": [
+    [
+     "corner_radius_dip = 12",
+     "corner_radius_dip = -1"
+    ]
+   ]
+  },
+  {
+   "name": "styled corner_radius_dip = '12'",
+   "reason": "invalid corner_radius_dip",
+   "template": "styled",
+   "replace": [
+    [
+     "corner_radius_dip = 12",
+     "corner_radius_dip = '12'"
+    ]
+   ]
+  },
+  {
+   "name": "styled align = 'top'",
+   "reason": "invalid decoration",
+   "template": "styled",
+   "replace": [
+    [
+     "align = 'left'",
+     "align = 'top'"
+    ]
+   ]
+  },
+  {
+   "name": "styled align = 3",
+   "reason": "align must be a string",
+   "template": "styled",
+   "replace": [
+    [
+     "align = 'left'",
+     "align = 3"
+    ]
+   ]
+  },
+  {
+   "name": "styled image = 'assets/missing.png'",
+   "reason": "invalid decoration",
+   "template": "styled",
+   "replace": [
+    [
+     "image = 'assets/character.png'",
+     "image = 'assets/missing.png'"
+    ]
+   ]
+  },
+  {
+   "name": "styled image = '../outside.png'",
+   "reason": "invalid decoration",
+   "template": "styled",
+   "replace": [
+    [
+     "image = 'assets/character.png'",
+     "image = '../outside.png'"
+    ]
+   ]
+  },
+  {
+   "name": "styled image = 'skin.toml'",
+   "reason": "invalid decoration",
+   "template": "styled",
+   "replace": [
+    [
+     "image = 'assets/character.png'",
+     "image = 'skin.toml'"
+    ]
+   ]
+  },
+  {
+   "name": "styled fit = 'tile'",
+   "reason": "invalid background",
+   "template": "styled",
+   "replace": [
+    [
+     "fit = 'contain'",
+     "fit = 'tile'"
+    ]
+   ]
+  },
+  {
+   "name": "styled fit = 1",
+   "reason": "invalid background",
+   "template": "styled",
+   "replace": [
+    [
+     "fit = 'contain'",
+     "fit = 1"
+    ]
+   ]
+  },
+  {
+   "name": "styled opacity = 1.5",
+   "reason": "invalid background",
+   "template": "styled",
+   "replace": [
+    [
+     "opacity = 0.35",
+     "opacity = 1.5"
+    ]
+   ]
+  },
+  {
+   "name": "styled opacity = -0.1",
+   "reason": "invalid background",
+   "template": "styled",
+   "replace": [
+    [
+     "opacity = 0.35",
+     "opacity = -0.1"
+    ]
+   ]
+  },
+  {
+   "name": "styled opacity = '1'",
+   "reason": "invalid background",
+   "template": "styled",
+   "replace": [
+    [
+     "opacity = 0.35",
+     "opacity = '1'"
+    ]
+   ]
+  },
+  {
+   "name": "styled image = 'assets/background.txt'",
+   "reason": "invalid background",
+   "template": "styled",
+   "replace": [
+    [
+     "image = 'assets/background.png'",
+     "image = 'assets/background.txt'"
+    ]
+   ]
+  },
+  {
+   "name": "styled image = '/etc/passwd.png'",
+   "reason": "invalid background",
+   "template": "styled",
+   "replace": [
+    [
+     "image = 'assets/background.png'",
+     "image = '/etc/passwd.png'"
+    ]
+   ]
+  },
+  {
+   "name": "styled [toolbar]\ncorner_radius_dip = 40",
+   "reason": "invalid toolbar",
+   "template": "styled",
+   "replace": [
+    [
+     "[toolbar]\ncorner_radius_dip = 8",
+     "[toolbar]\ncorner_radius_dip = 40"
+    ]
+   ]
+  },
+  {
+   "name": "styled background = 5",
+   "reason": "invalid toolbar",
+   "template": "styled",
+   "replace": [
+    [
+     "background = '#141B33'",
+     "background = 5"
+    ]
+   ]
+  },
+  {
+   "name": "styled background = 'aaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "reason": "toolbar color exceeds 80 bytes",
+   "template": "styled",
+   "replace": [
+    [
+     "background = '#141B33'",
+     "background = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"
+    ]
+   ]
+  },
+  {
+   "name": "styled hover = 1",
+   "reason": "invalid toolbar",
+   "template": "styled",
+   "replace": [
+    [
+     "hover = 'not a colour'",
+     "hover = 1"
+    ]
+   ]
+  },
+  {
+   "name": "styled translation = 7",
+   "reason": "invalid candidate colors",
+   "template": "styled",
+   "replace": [
+    [
+     "translation = '#9FB4E0'",
+     "translation = 7"
+    ]
+   ]
+  },
+  {
+   "name": "styled code = ''",
+   "reason": "code has invalid length",
+   "template": "styled",
+   "replace": [
+    [
+     "code = 'MIT'",
+     "code = ''"
+    ]
+   ]
+  },
+  {
+   "name": "styled decoration image without a band",
+   "reason": "invalid decoration",
+   "template": "styled",
+   "replace": [
+    [
+     "top_inset_dip = 104\nwidth_dip = 96\n",
+     ""
+    ]
+   ]
+  },
+  {
+   "name": "styled background as gif",
+   "reason": null,
+   "template": "styled",
+   "replace": [
+    [
+     "image = 'assets/background.png'",
+     "image = 'assets/background.gif'"
+    ]
+   ],
+   "files": [
+    "assets/character.png",
+    "assets/background.gif"
+   ]
+  }
+ ]
+}

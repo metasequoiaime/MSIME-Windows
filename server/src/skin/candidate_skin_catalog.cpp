@@ -4,7 +4,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <string_view>
@@ -265,6 +267,226 @@ bool ReadToolbarColors(const toml::node *node, ToolbarColors &out)
            ReadCssColor(*table, "handle", out.handle) && ReadCssColor(*table, "divider", out.divider) &&
            ReadCssColor(*table, "icon", out.icon) && ReadCssColor(*table, "hover", out.hover);
 }
+
+// 跨平台客户端的全局主题：metasequoiaime/msime 的 crates/client-core/src/skin/theme.rs 里的
+// BUILTIN_THEMES。社区皮肤包按客户端的规则校验，base 写的是这五个主题之一或
+// system，所以这里逐字照抄那张表，改配色要两边一起改。
+struct GlobalThemeBase
+{
+    std::string_view id;
+    // 内置主题固定明暗：shuishan、night、ink 只有深色，light、paper 只有浅色。
+    bool dark;
+    std::string_view panel;
+    std::string_view accent;
+    std::string_view text;
+    // 表里的 kb.sub：序号与翻译等次要文字。
+    std::string_view secondary;
+};
+
+constexpr GlobalThemeBase kGlobalThemeBases[] = {
+    {"shuishan", true, "#2A2B27", "#7FE08E", "#FFFFFF", "#9FB5A3"},
+    {"light", false, "#FFFFFF", "#005FB8", "#1A1A1A", "#6A6F76"},
+    {"paper", false, "#F7F5F0", "#2C7A4B", "#1A1E1B", "#6E6A5E"},
+    {"night", true, "#16262F", "#4FD1C5", "#E6F1F4", "#86A6B0"},
+    {"ink", true, "#1A1A1A", "#FFFFFF", "#9A9A9A", "#9A9A9A"},
+};
+// BUILTIN_CANDIDATE_BORDER、SELECTED_ALPHA、HOVER_ALPHA：内置主题的边框色，以及选中行、悬停行在强调色、文字色上叠的不透明度。
+constexpr std::string_view kGlobalThemeBorder = "#0000001F";
+constexpr std::string_view kGlobalThemeSelectedAlpha = "24";
+constexpr std::string_view kGlobalThemeHoverAlpha = "0F";
+// 客户端的 system 画的是宿主自己的原生配色，在 Windows 上就是 fluent。
+constexpr std::string_view kGlobalThemeSystem = "system";
+
+const GlobalThemeBase *FindGlobalThemeBase(const std::string &id)
+{
+    for (const auto &base : kGlobalThemeBases)
+    {
+        if (base.id == id)
+        {
+            return &base;
+        }
+    }
+    return nullptr;
+}
+
+bool ParseColorChannel(std::string_view text, unsigned &out)
+{
+    if (!text.empty() && text.front() == '+')
+    {
+        text.remove_prefix(1);
+    }
+    if (text.empty() || text.size() > 3 ||
+        !std::all_of(text.begin(), text.end(), [](unsigned char ch) { return std::isdigit(ch) != 0; }))
+    {
+        return false;
+    }
+    out = static_cast<unsigned>(std::stoul(std::string(text)));
+    return out <= 255;
+}
+
+// theme.rs 的 normalized_color：读成 #RRGGBB 或
+// #RRGGBBAA（大写），读不懂的返回空串。客户端把读不懂的颜色当作没写，换算全局主题时这里也一样。
+std::string NormalizedColor(std::string_view value)
+{
+    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())))
+        value.remove_prefix(1);
+    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())))
+        value.remove_suffix(1);
+    std::string lower(value);
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    if (lower == "transparent")
+    {
+        return "#00000000";
+    }
+    if (!lower.empty() && lower.front() == '#')
+    {
+        std::string hex = lower.substr(1);
+        if (!std::all_of(hex.begin(), hex.end(), [](unsigned char ch) { return std::isxdigit(ch) != 0; }))
+        {
+            return {};
+        }
+        std::transform(hex.begin(), hex.end(), hex.begin(),
+                       [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+        if (hex.size() == 3)
+        {
+            return std::string{'#', hex[0], hex[0], hex[1], hex[1], hex[2], hex[2]};
+        }
+        return hex.size() == 6 || hex.size() == 8 ? "#" + hex : std::string{};
+    }
+    const bool withAlpha = lower.rfind("rgba(", 0) == 0;
+    if ((!withAlpha && lower.rfind("rgb(", 0) != 0) || lower.back() != ')')
+    {
+        return {};
+    }
+    const size_t open = lower.find('(');
+    std::vector<std::string_view> parts;
+    std::string_view arguments = std::string_view(lower).substr(open + 1, lower.size() - open - 2);
+    for (size_t comma; (comma = arguments.find(',')) != std::string_view::npos; arguments.remove_prefix(comma + 1))
+    {
+        parts.push_back(arguments.substr(0, comma));
+    }
+    parts.push_back(arguments);
+    if (parts.size() != (withAlpha ? 4u : 3u))
+    {
+        return {};
+    }
+    for (auto &part : parts)
+    {
+        while (!part.empty() && std::isspace(static_cast<unsigned char>(part.front())))
+            part.remove_prefix(1);
+        while (!part.empty() && std::isspace(static_cast<unsigned char>(part.back())))
+            part.remove_suffix(1);
+    }
+    unsigned channels[3]{};
+    for (size_t i = 0; i < 3; ++i)
+    {
+        if (!ParseColorChannel(parts[i], channels[i]))
+        {
+            return {};
+        }
+    }
+    char buffer[10];
+    std::snprintf(buffer, sizeof(buffer), "#%02X%02X%02X", channels[0], channels[1], channels[2]);
+    if (!withAlpha)
+    {
+        return buffer;
+    }
+    std::string_view alphaText = parts[3];
+    if (!alphaText.empty() && alphaText.front() == '+')
+    {
+        alphaText.remove_prefix(1);
+    }
+    double alpha = 0.0;
+    const auto [end, ec] = std::from_chars(alphaText.data(), alphaText.data() + alphaText.size(), alpha);
+    if (alphaText.empty() || ec != std::errc() || end != alphaText.data() + alphaText.size() || !std::isfinite(alpha) ||
+        alpha < 0.0 || alpha > 1.0)
+    {
+        return {};
+    }
+    char alphaBuffer[3];
+    std::snprintf(alphaBuffer, sizeof(alphaBuffer), "%02X", static_cast<unsigned>(std::lround(alpha * 255.0)));
+    return std::string(buffer) + alphaBuffer;
+}
+
+void FillColor(std::string &slot, const std::string &value)
+{
+    if (slot.empty())
+    {
+        slot = value;
+    }
+}
+
+// 把 base 是全局主题的包换算成 Windows 画得出的 fluent 包，画出来与客户端 theme::resolve 一致：
+// 主题固定明暗，所以只取包里那一种明暗的配色，深浅两套都画它；客户端读的八个颜色先按 normalized_color
+// 规范化，没写的再按主题补齐——选中行是强调色叠 SELECTED_ALPHA，悬停行是文字色叠
+// HOVER_ALPHA，选中文字取强调色，选中序号与翻译取序号色。
+// 右键菜单和悬浮工具栏在客户端也从同一套候选配色派生，这里一并补上，免得跟着 Windows 当前的明暗画成另一种底色。
+// 包没有声明主题那一种明暗时，客户端不画它，这里清空 themes，让各处的 Supports 都判为不兼容。
+void ApplyGlobalThemeBase(Package &package, const GlobalThemeBase &base)
+{
+    package.base = "fluent";
+    const std::string mode = base.dark ? "dark" : "light";
+    if (std::find(package.themes.begin(), package.themes.end(), mode) == package.themes.end())
+    {
+        package.themes.clear();
+        return;
+    }
+    CandidateColors colors = base.dark ? package.dark : package.light;
+    for (std::string *slot : {&colors.surface, &colors.border, &colors.text, &colors.number, &colors.accent,
+                              &colors.selected, &colors.hover, &colors.translation})
+    {
+        *slot = NormalizedColor(*slot);
+    }
+    FillColor(colors.surface, std::string(base.panel));
+    FillColor(colors.border, std::string(kGlobalThemeBorder));
+    FillColor(colors.text, std::string(base.text));
+    FillColor(colors.number, std::string(base.secondary));
+    FillColor(colors.accent, std::string(base.accent));
+    FillColor(colors.selected, colors.accent.substr(0, 7) + std::string(kGlobalThemeSelectedAlpha));
+    FillColor(colors.hover, colors.text.substr(0, 7) + std::string(kGlobalThemeHoverAlpha));
+    FillColor(colors.translation, colors.number);
+    FillColor(colors.selectedText, colors.accent);
+    FillColor(colors.selectedNumber, colors.number);
+    FillColor(colors.menuBackground, colors.surface);
+    FillColor(colors.menuBorder, colors.border);
+    FillColor(colors.menuText, colors.text);
+    FillColor(colors.menuHover, colors.hover);
+
+    ToolbarColors toolbar = base.dark ? package.toolbarDark : package.toolbarLight;
+    for (std::string *slot :
+         {&toolbar.background, &toolbar.border, &toolbar.handle, &toolbar.divider, &toolbar.icon, &toolbar.hover})
+    {
+        *slot = NormalizedColor(*slot);
+    }
+    FillColor(toolbar.background, colors.surface);
+    FillColor(toolbar.border, colors.border);
+    FillColor(toolbar.handle, colors.number);
+    FillColor(toolbar.divider, colors.border);
+    FillColor(toolbar.icon, colors.text);
+    FillColor(toolbar.hover, colors.hover);
+
+    package.dark = colors;
+    package.light = colors;
+    package.toolbarDark = toolbar;
+    package.toolbarLight = toolbar;
+    package.themes = {"dark", "light"};
+}
+
+// 客户端的 is_image：按扩展名判断是不是它允许的图片类型。
+bool IsClientImage(const std::string &name)
+{
+    const size_t dot = name.rfind('.');
+    if (dot == std::string::npos)
+    {
+        return false;
+    }
+    std::string ext = name.substr(dot + 1);
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    static const std::vector<std::string> images = {"png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "avif"};
+    return std::find(images.begin(), images.end(), ext) != images.end();
+}
 } // namespace
 
 const std::vector<std::string> &BuiltInIds()
@@ -337,7 +559,8 @@ std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::s
             !ReadString(root, "version", package.version, 32, true) ||
             !ReadString(root, "author", package.author, 120, false) ||
             !ReadString(root, "description", package.description, 500, false) ||
-            !ReadString(root, "base", package.base, 32, true) || !IsBuiltIn(package.base))
+            !ReadString(root, "base", package.base, 32, true) ||
+            !(IsBuiltIn(package.base) || package.base == kGlobalThemeSystem || FindGlobalThemeBase(package.base)))
         {
             SetError(error, "manifest 的基本信息无效");
             return std::nullopt;
@@ -361,12 +584,12 @@ std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::s
             SetError(error, "candidate_window.min_width_dip 超出范围");
             return std::nullopt;
         }
-        // 装饰图是可选的：没有这张表就没有装饰；有这张表时图片和两个尺寸都必须给出。
+        // 装饰图是可选的，规则与跨平台客户端一致：没有这张表、或两个尺寸都是 0（不写算 0）就没有装饰；两个尺寸必须同为
+        // 0 或同大于 0。 有尺寸时 image 可以不写，改用 preview（是图片时）；两者都没有就不画装饰。
         if (const toml::node *decorationNode = window->get("decoration"))
         {
             const auto *decoration = decorationNode->as_table();
-            if (!decoration || !decoration->contains("image") ||
-                !ReadResource(*decoration, "image", package.decorationImage) ||
+            if (!decoration || !ReadResource(*decoration, "image", package.decorationImage) ||
                 !ReadEnum(*decoration, "align", {"left", "center", "right"}, package.decorationAlign))
             {
                 SetError(error, "candidate_window.decoration 无效");
@@ -374,10 +597,29 @@ std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::s
             }
             package.decorationTopDip = BoundedNumber(*decoration, "top_inset_dip", 500.0);
             package.decorationWidthDip = BoundedNumber(*decoration, "width_dip", 1000.0);
-            if (package.decorationTopDip <= 0.0 || package.decorationWidthDip <= 0.0)
+            if (package.decorationTopDip < 0.0 || package.decorationWidthDip < 0.0 ||
+                (package.decorationTopDip == 0.0) != (package.decorationWidthDip == 0.0) ||
+                (package.decorationTopDip == 0.0 && !package.decorationImage.empty()))
             {
                 SetError(error, "candidate_window.decoration 尺寸无效");
                 return std::nullopt;
+            }
+            if (package.decorationTopDip > 0.0 && package.decorationImage.empty())
+            {
+                // preview 只在这里用作装饰图的回退；它写得不对时只是不回退，不让整个包失效，以前不读 preview
+                // 的包照旧加载。
+                std::string preview;
+                std::error_code previewEc;
+                if (ReadResource(root, "preview", preview) && !preview.empty() && IsClientImage(preview) &&
+                    std::filesystem::is_regular_file(directory / std::filesystem::u8path(preview), previewEc))
+                {
+                    package.decorationImage = preview;
+                }
+                else
+                {
+                    package.decorationTopDip = 0.0;
+                    package.decorationWidthDip = 0.0;
+                }
             }
         }
         if (window->contains("corner_radius_dip"))
@@ -461,6 +703,15 @@ std::optional<Package> Load(const std::filesystem::path &skinsRoot, const std::s
                 }
                 package.toolbarCornerRadiusDip = radius;
             }
+        }
+        // base 写的是跨平台全局主题时，换算成 fluent 再交给渲染端，渲染端只认内置皮肤 ID。
+        if (package.base == kGlobalThemeSystem)
+        {
+            package.base = "fluent";
+        }
+        else if (const GlobalThemeBase *theme = FindGlobalThemeBase(package.base))
+        {
+            ApplyGlobalThemeBase(package, *theme);
         }
         std::error_code ec;
         if (!package.decorationImage.empty() &&

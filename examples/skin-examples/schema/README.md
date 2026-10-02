@@ -7,6 +7,7 @@
 ## 顶层字段
 
 - 必填：`schema_version`、`id`、`name`、`version`、`base`（继承的内置皮肤：`fluent`、`wechat`、`graphite`、`willow_green`、`autumn_osmanthus`、`microsoft`）
+- `base` 也可以写跨平台客户端的全局主题：`system`、`shuishan`、`light`、`paper`、`night`、`ink`，社区皮肤库里的皮肤用的就是这一套。`system` 等同 `fluent`。其余五个主题各自固定一种明暗（`shuishan`、`night`、`ink` 为深色，`light`、`paper` 为浅色）：只取该明暗的 `[candidate.*]` 与 `[toolbar.*]` 配色，Windows 深浅两种模式都画它，没写的颜色按主题补齐，右键菜单与工具栏也跟着用这套配色；`supports.themes` 没有声明该明暗时皮肤不会生效。要在 Windows 上沿用其他内置皮肤的外观，仍写上面的内置皮肤 ID
 - 可选：`author`、`description`
 - `[supports]`：`layouts`（`horizontal` / `vertical`）、`themes`（`dark` / `light`）
 - `[license]`：`code`、`assets`
@@ -23,7 +24,7 @@
 
 ### `[candidate_window.decoration]`（可选）
 
-卡片上方的装饰图。写了这张表就必须同时给出 `image`、`top_inset_dip`、`width_dip`。
+卡片上方的装饰图。`top_inset_dip` 与 `width_dip` 要么都大于 0，要么都为 0（不写算 0）；都为 0 时没有装饰，也不能写 `image`。有尺寸而不写 `image` 时改用顶层的 `preview`（须是图片），两者都没有就不画装饰。
 
 - `image`：图片路径
 - `top_inset_dip` / `width_dip`：装饰框的高和宽，框贴在卡片上方，不与卡片重叠；图片在框内等比缩放

@@ -59,10 +59,10 @@ my-skin/
 | --- | --- |
 | `schema_version` | 皮肤格式版本，目前为 `1` |
 | `id` / `name` / `version` / `author` / `description` | 基本信息，`id` 建议与目录名一致 |
-| `base` | 继承的内置皮肤，如 `fluent`；未写的键沿用 base |
+| `base` | 继承的内置皮肤，如 `fluent`；未写的键沿用 base。也可以写跨平台全局主题 `system`、`shuishan`、`light`、`paper`、`night`、`ink`，见[字段说明](../examples/skin-examples/schema/README.md) |
 | `[supports]` | `layouts`（`horizontal` / `vertical`）、`themes`（`dark` / `light`） |
 | `[candidate_window]` | `min_width_dip`、`corner_radius_dip`（0–32）、`border_width_dip`（0–4）、`item_corner_radius_dip`（高亮圆角，0–16）、`shadow`（`none` / `soft` / `strong`）、`font_family`（排在用户字体前面）、`page_arrows`（翻页箭头：横排在候选右侧，竖排在最后一行下方、与序号左对齐；不写时沿用 base 的[默认皮肤设置](#默认皮肤设置default)，出厂关闭） |
-| `[candidate_window.decoration]` | 卡片上方的装饰图：`image`、`top_inset_dip`、`width_dip`、`align`（`left` / `center` / `right`） |
+| `[candidate_window.decoration]` | 卡片上方的装饰图：`image`（不写时用 `preview`）、`top_inset_dip`、`width_dip`、`align`（`left` / `center` / `right`） |
 | `[candidate_window.background]` | 卡片背景图：`image`、`fit`（`cover` / `contain` / `stretch`）、`opacity`（0–1） |
 | `[candidate.dark]` / `[candidate.light]` | 候选配色：`accent`、`selected`、`hover`、`surface`、`border`、`text`、`number`、`translation`、`show_selected_bar`；细分配色 `candidate_text`、`preedit_text`、`preedit_caret`、`selected_text`、`selected_number`、`selected_translation`、`selected_bar`、`preedit_background`、`preedit_divider` |
 | `[candidate.dark.menu]` / `[candidate.light.menu]` | 候选窗右键菜单：`background`、`border`、`text`、`hover` |

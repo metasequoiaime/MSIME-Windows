@@ -8,6 +8,7 @@
 #include <fstream>
 #include <string>
 #include <system_error>
+#include <utility>
 
 namespace
 {
@@ -22,8 +23,10 @@ layouts = ["horizontal", "vertical"]
 themes = ["dark", "light"]
 )";
 
-// `candidateWindow` is appended verbatim after the head, so each case owns the [candidate_window] tables.
-std::filesystem::path WriteSkin(const std::wstring &leaf, const std::string &candidateWindow)
+// `candidateWindow` is appended verbatim after the head, so each case owns the [candidate_window] tables;
+// `topLevel` lands before [supports], for keys such as preview that belong to the manifest root.
+std::filesystem::path WriteSkin(const std::wstring &leaf, const std::string &candidateWindow,
+                                const std::string &topLevel = {})
 {
     namespace fs = std::filesystem;
     const fs::path skins_root =
@@ -39,7 +42,9 @@ std::filesystem::path WriteSkin(const std::wstring &leaf, const std::string &can
     }
     std::ofstream manifest(skins_root / L"art" / L"skin.toml", std::ios::binary | std::ios::trunc);
     REQUIRE(manifest.is_open());
-    manifest << kManifestHead << candidateWindow;
+    std::string head = kManifestHead;
+    head.insert(head.find("[supports]"), topLevel);
+    manifest << head << candidateWindow;
     return skins_root;
 }
 
@@ -119,9 +124,8 @@ TEST_CASE(candidate_skin_catalog_rejects_incomplete_or_invalid_image_tables)
     const std::string background = "[candidate_window.background]\n";
     const std::string paper = "image = \"assets/paper.png\"\n";
 
-    // A decoration needs its image and both sizes.
-    REQUIRE(LoadFails(L"deco-empty", window + decoration));
-    REQUIRE(LoadFails(L"deco-no-image", window + decoration + sized));
+    // Both sizes are zero or both above zero, and an image needs a size to be drawn at.
+    REQUIRE(LoadFails(L"deco-image-unsized", window + decoration + character));
     REQUIRE(LoadFails(L"deco-no-top", window + decoration + character + "width_dip = 136\n"));
     REQUIRE(LoadFails(L"deco-no-width", window + decoration + character + "top_inset_dip = 88\n"));
     REQUIRE(LoadFails(L"deco-missing", window + decoration + sized + "image = \"assets/missing.png\"\n"));
@@ -135,6 +139,50 @@ TEST_CASE(candidate_skin_catalog_rejects_incomplete_or_invalid_image_tables)
     REQUIRE(LoadFails(L"bg-fit", window + background + paper + "fit = \"tile\"\n"));
     REQUIRE(LoadFails(L"bg-opacity", window + background + paper + "opacity = 2\n"));
     REQUIRE(LoadFails(L"bg-missing", window + background + "image = \"assets/missing.png\"\n"));
+}
+
+// The decoration rules are the cross-platform client's, so a package shared from another platform loads: an
+// empty or zero-sized table means no decoration, and a sized one without an image draws the preview.
+TEST_CASE(candidate_skin_catalog_decoration_follows_the_client_rules)
+{
+    const std::string window = "[candidate_window]\n";
+    const std::string decoration = "[candidate_window.decoration]\n";
+    const std::string sized = "top_inset_dip = 88\nwidth_dip = 136\n";
+    std::string error;
+
+    for (const auto &[leaf, tables] : {std::pair<std::wstring, std::string>{L"deco-empty", window + decoration},
+                                       {L"deco-zero", window + decoration + "top_inset_dip = 0\nwidth_dip = 0\n"}})
+    {
+        const auto root = WriteSkin(leaf, tables);
+        const auto package = CandidateSkinCatalog::Load(root, "art", &error);
+        REQUIRE(package.has_value());
+        REQUIRE(package->decorationImage.empty());
+        REQUIRE_EQ(package->decorationTopDip, 0.0);
+        REQUIRE_EQ(package->decorationWidthDip, 0.0);
+        RemoveSkin(root);
+    }
+
+    const auto previewRoot =
+        WriteSkin(L"deco-preview", window + decoration + sized, "preview = \"assets/character.png\"\n");
+    const auto preview = CandidateSkinCatalog::Load(previewRoot, "art", &error);
+    REQUIRE(preview.has_value());
+    REQUIRE_EQ(preview->decorationImage, std::string("assets/character.png"));
+    REQUIRE_EQ(preview->decorationTopDip, 88.0);
+    RemoveSkin(previewRoot);
+
+    // Without an image or an image preview there is nothing to draw, so the band is dropped too.
+    for (const auto &[leaf, head] : {std::pair<std::wstring, std::string>{L"deco-no-preview", ""},
+                                     {L"deco-css-preview", "preview = \"assets/paper.css\"\n"},
+                                     {L"deco-missing-preview", "preview = \"assets/missing.png\"\n"}})
+    {
+        const auto root = WriteSkin(leaf, window + decoration + sized, head);
+        const auto package = CandidateSkinCatalog::Load(root, "art", &error);
+        REQUIRE(package.has_value());
+        REQUIRE(package->decorationImage.empty());
+        REQUIRE_EQ(package->decorationTopDip, 0.0);
+        REQUIRE_EQ(package->decorationWidthDip, 0.0);
+        RemoveSkin(root);
+    }
 }
 
 TEST_CASE(candidate_skin_catalog_reads_toolbar_colors_and_corner_radius)

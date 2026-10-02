@@ -1,0 +1,20 @@
+name: Skin client dialect
+# server/tests/data/client_dialect.json copies msime-cloud's case table for the cross-platform client's skin loader, which the community library validates packages with. A change there does not touch this repository, so this compares the copy on a schedule instead of on pull requests, where it would fail changes that have nothing to do with skins. A failure means: run scripts/sync-client-dialect.py, then fix what the server tests report.
+on:
+  schedule:
+    # Mondays at 09:00 Asia/Tokyo (UTC+09:00).
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    name: Compare with msime-cloud
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compare client_dialect.json
+        run: python3 scripts/sync-client-dialect.py --check
