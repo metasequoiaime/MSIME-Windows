@@ -68,6 +68,14 @@ struct AiAssistantConfig
     std::map<std::string, std::string> tokens;
     std::string endpoint = "https://api.deepseek.com/chat/completions";
     std::string model = "deepseek-v4-flash";
+    std::map<std::string, std::string> endpoints{{"deepseek", "https://api.deepseek.com/chat/completions"},
+                                                 {"openai", "https://api.openai.com/v1/chat/completions"},
+                                                 {"siliconflow", "https://api.siliconflow.cn/v1/chat/completions"},
+                                                 {"groq", "https://api.groq.com/openai/v1/chat/completions"}};
+    std::map<std::string, std::string> models{{"deepseek", "deepseek-v4-flash"},
+                                              {"openai", "gpt-4o-mini"},
+                                              {"siliconflow", "Qwen/Qwen3-8B"},
+                                              {"groq", "llama-3.3-70b-versatile"}};
     int candidate_limit = 3;
     // custom_1 | custom_2 | custom_3
     std::string prompt_id = "custom_1";

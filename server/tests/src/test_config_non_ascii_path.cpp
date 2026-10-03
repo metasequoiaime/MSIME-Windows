@@ -143,6 +143,67 @@ TEST_CASE(config_round_trips_under_non_ascii_profile_path)
     fs::remove_all(unique_root, ec);
 }
 
+TEST_CASE(ai_provider_configuration_round_trips_without_mixing_credentials)
+{
+    namespace fs = std::filesystem;
+    const fs::path unique_root = MakeProfileRoot() / L"ai-providers";
+    const fs::path data_dir = unique_root / L"metasequoiaime";
+    std::error_code ec;
+    fs::remove_all(unique_root, ec);
+    SeedTemplate(data_dir);
+    WriteText(data_dir / L"config.toml", "[ai_assistant]\nprovider = \"deepseek\"\n"
+                                         "token = \"test-deepseek\"\ntoken_deepseek = \"test-deepseek\"\n"
+                                         "token_openai = \"test-openai\"\n"
+                                         "endpoint = \"https://deepseek.example.test/chat/completions\"\n"
+                                         "model = \"custom-deepseek\"\n");
+    {
+        ScopedConfigLocation location(unique_root);
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredAiAssistant().endpoints.at("deepseek"),
+                   std::string("https://deepseek.example.test/chat/completions"));
+        REQUIRE_EQ(GetConfiguredAiAssistant().models.at("deepseek"), std::string("custom-deepseek"));
+
+        REQUIRE(SetConfiguredAiAssistantString("provider", "openai"));
+        REQUIRE_EQ(GetConfiguredAiAssistant().token, std::string("test-openai"));
+        REQUIRE_EQ(GetConfiguredAiAssistant().endpoint, std::string("https://api.openai.com/v1/chat/completions"));
+        REQUIRE_EQ(GetConfiguredAiAssistant().model, std::string("gpt-4o-mini"));
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredAiAssistant().provider, std::string("openai"));
+        REQUIRE_EQ(GetConfiguredAiAssistant().token, std::string("test-openai"));
+        REQUIRE_EQ(GetConfiguredAiAssistant().endpoint, std::string("https://api.openai.com/v1/chat/completions"));
+
+        REQUIRE(SetConfiguredAiAssistantString("endpoint", "https://openai.example.test/v1/chat/completions"));
+        REQUIRE(SetConfiguredAiAssistantString("model", "custom-openai"));
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredAiAssistant().endpoints.at("openai"),
+                   std::string("https://openai.example.test/v1/chat/completions"));
+        REQUIRE_EQ(GetConfiguredAiAssistant().models.at("openai"), std::string("custom-openai"));
+
+        REQUIRE(SetConfiguredAiAssistantString("provider", "deepseek"));
+        REQUIRE_EQ(GetConfiguredAiAssistant().token, std::string("test-deepseek"));
+        REQUIRE_EQ(GetConfiguredAiAssistant().endpoint, std::string("https://deepseek.example.test/chat/completions"));
+        REQUIRE_EQ(GetConfiguredAiAssistant().model, std::string("custom-deepseek"));
+        InitImeConfig();
+        REQUIRE_EQ(GetConfiguredAiAssistant().endpoint, std::string("https://deepseek.example.test/chat/completions"));
+        REQUIRE_EQ(GetConfiguredAiAssistant().model, std::string("custom-deepseek"));
+
+        REQUIRE(SetConfiguredAiAssistantString("provider", "openai"));
+        REQUIRE_EQ(GetConfiguredAiAssistant().endpoint, std::string("https://openai.example.test/v1/chat/completions"));
+        REQUIRE_EQ(GetConfiguredAiAssistant().model, std::string("custom-openai"));
+
+        for (const std::string provider : {"siliconflow", "groq"})
+        {
+            const AiAssistantConfig defaults;
+            REQUIRE(SetConfiguredAiAssistantString("provider", provider));
+            InitImeConfig();
+            REQUIRE_EQ(GetConfiguredAiAssistant().token, std::string());
+            REQUIRE_EQ(GetConfiguredAiAssistant().endpoint, defaults.endpoints.at(provider));
+            REQUIRE_EQ(GetConfiguredAiAssistant().model, defaults.models.at(provider));
+        }
+    }
+    fs::remove_all(unique_root, ec);
+}
+
 TEST_CASE(config_recovers_unparseable_file_and_saves)
 {
     namespace fs = std::filesystem;

@@ -470,6 +470,15 @@ token_siliconflow = ""
 token_groq = ""
 endpoint = "https://api.deepseek.com/chat/completions"
 model = "deepseek-v4-flash"
+# 空槽位使用提供商默认值，旧版 endpoint/model 只归属于当前提供商
+endpoint_deepseek = ""
+endpoint_openai = ""
+endpoint_siliconflow = ""
+endpoint_groq = ""
+model_deepseek = ""
+model_openai = ""
+model_siliconflow = ""
+model_groq = ""
 candidate_limit = 3
 prompt_id = "custom_1"
 prompt = """你是一个中文全拼输入法联想引擎。输入为已经切分好的拼音数组、前文上下文和候选数量。

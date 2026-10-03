@@ -772,6 +772,24 @@ bool LoadImeConfig()
         g_ai_assistant.endpoint =
             tbl["ai_assistant"]["endpoint"].value_or(std::string("https://api.deepseek.com/chat/completions"));
         g_ai_assistant.model = tbl["ai_assistant"]["model"].value_or(std::string("deepseek-v4-flash"));
+        const AiAssistantConfig ai_defaults;
+        g_ai_assistant.endpoints = ai_defaults.endpoints;
+        g_ai_assistant.models = ai_defaults.models;
+        for (const auto provider : AiAssistantProviders())
+        {
+            const std::string id(provider);
+            const auto load_slot = [&](const std::string &key, const std::string &legacy, std::string &target) {
+                const std::string stored = tbl["ai_assistant"][key + "_" + id].value_or(std::string());
+                if (!stored.empty())
+                    target = stored;
+                else if (id == g_ai_assistant.provider)
+                    target = legacy;
+            };
+            load_slot("endpoint", g_ai_assistant.endpoint, g_ai_assistant.endpoints[id]);
+            load_slot("model", g_ai_assistant.model, g_ai_assistant.models[id]);
+        }
+        g_ai_assistant.endpoint = g_ai_assistant.endpoints[g_ai_assistant.provider];
+        g_ai_assistant.model = g_ai_assistant.models[g_ai_assistant.provider];
         const int ai_limit = tbl["ai_assistant"]["candidate_limit"].value_or(3);
         g_ai_assistant.candidate_limit = ai_limit >= 1 && ai_limit <= 10 ? ai_limit : 3;
         const std::string legacy_ai_prompt = tbl["ai_assistant"]["prompt"].value_or(g_ai_assistant.prompt);

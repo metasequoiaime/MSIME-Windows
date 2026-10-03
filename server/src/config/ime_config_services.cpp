@@ -293,6 +293,40 @@ bool SetConfiguredAiAssistantString(const std::string &key, const std::string &v
 {
     if (key == "prompt_id" && value != "custom_1" && value != "custom_2" && value != "custom_3")
         return false;
+    if (key == "provider")
+    {
+        const std::string provider = VoiceInput::NormalizeProviderId(value);
+        if (AiAssistantTokenSlotKey(provider).empty())
+            return false;
+        const std::string token = g_ai_assistant.tokens[provider];
+        const std::string endpoint = g_ai_assistant.endpoints[provider];
+        const std::string model = g_ai_assistant.models[provider];
+        if (!WriteConfiguredValues(
+                {{"ai_assistant", "endpoint_" + g_ai_assistant.provider,
+                  EscapeTomlBasicString(g_ai_assistant.endpoint)},
+                 {"ai_assistant", "model_" + g_ai_assistant.provider, EscapeTomlBasicString(g_ai_assistant.model)},
+                 {"ai_assistant", "provider", EscapeTomlBasicString(provider)},
+                 {"ai_assistant", "token", EscapeTomlBasicString(token)},
+                 {"ai_assistant", "endpoint", EscapeTomlBasicString(endpoint)},
+                 {"ai_assistant", "model", EscapeTomlBasicString(model)}}))
+            return false;
+        g_ai_assistant.provider = provider;
+        g_ai_assistant.token = token;
+        g_ai_assistant.endpoint = endpoint;
+        g_ai_assistant.model = model;
+        return true;
+    }
+    if (key == "endpoint" || key == "model")
+    {
+        const std::string escaped = EscapeTomlBasicString(value);
+        if (!WriteConfiguredValues(
+                {{"ai_assistant", key, escaped}, {"ai_assistant", key + "_" + g_ai_assistant.provider, escaped}}))
+            return false;
+        auto &slots = key == "endpoint" ? g_ai_assistant.endpoints : g_ai_assistant.models;
+        slots[g_ai_assistant.provider] = value;
+        (key == "endpoint" ? g_ai_assistant.endpoint : g_ai_assistant.model) = value;
+        return true;
+    }
     const auto persist = [](const std::string &toml_key, const std::string &toml_value, std::string &target) {
         if (!WriteConfiguredValue("ai_assistant", toml_key, EscapeTomlBasicString(toml_value)))
             return false;
@@ -315,18 +349,8 @@ bool SetConfiguredAiAssistantString(const std::string &key, const std::string &v
     }
 
     std::string *target = nullptr;
-    if (key == "provider")
-    {
-        if (AiAssistantTokenSlotKey(value).empty())
-            return false;
-        target = &g_ai_assistant.provider;
-    }
-    else if (key == "token")
+    if (key == "token")
         target = &g_ai_assistant.token;
-    else if (key == "endpoint")
-        target = &g_ai_assistant.endpoint;
-    else if (key == "model")
-        target = &g_ai_assistant.model;
     else if (key == "prompt_id")
         target = &g_ai_assistant.prompt_id;
     else if (key == "prompt_custom_1")
@@ -339,7 +363,7 @@ bool SetConfiguredAiAssistantString(const std::string &key, const std::string &v
         target = &g_ai_assistant.prompt;
     if (!target || !WriteConfiguredValue("ai_assistant", key, EscapeTomlBasicString(value)))
         return false;
-    *target = key == "provider" ? VoiceInput::NormalizeProviderId(value) : value;
+    *target = value;
     if (key == "prompt_custom_1")
         WriteConfiguredValue("ai_assistant", "prompt", EscapeTomlBasicString(""));
     if (key == "prompt")
@@ -350,11 +374,7 @@ bool SetConfiguredAiAssistantString(const std::string &key, const std::string &v
                                 : g_ai_assistant.prompt_id == "custom_3" ? g_ai_assistant.prompt_custom_3
                                                                          : g_ai_assistant.prompt_custom_1;
     }
-    if (key == "provider")
-    {
-        persist("token", g_ai_assistant.tokens[g_ai_assistant.provider], g_ai_assistant.token);
-    }
-    else if (key == "token")
+    if (key == "token")
     {
         const std::string slot = AiAssistantTokenSlotKey(g_ai_assistant.provider);
         g_ai_assistant.tokens[g_ai_assistant.provider] = value;

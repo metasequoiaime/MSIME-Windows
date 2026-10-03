@@ -637,6 +637,8 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
             {"tokens", ai.tokens},
             {"endpoint", ai.endpoint},
             {"model", ai.model},
+            {"endpoints", ai.endpoints},
+            {"models", ai.models},
             {"candidate_limit", ai.candidate_limit},
             {"prompt", ai.prompt},
             {"prompt_id", ai.prompt_id},
