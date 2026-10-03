@@ -1,6 +1,12 @@
 #include "sentence_model.h"
 
 #include "json.h"
+#if defined(MSIME_NEURAL_AVX2)
+#include "int8_linear_avx2.h"
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -91,6 +97,15 @@ void linear_into(const std::vector<float> &x, const Matrix &w, const std::vector
 {
     std::size_t rows = inputs == 0 ? 0 : x.size() / inputs;
     out.resize(rows * outputs);
+#if defined(MSIME_NEURAL_AVX2)
+    static const bool use_avx2 = detail::supports_avx2_fma();
+    if (w.quantized && use_avx2 && rows != 0 && inputs != 0)
+    {
+        detail::linear_int8_avx2(x.data(), w.ints.data(), w.scales.data(), bias.empty() ? nullptr : bias.data(), rows,
+                                 inputs, outputs, out.data());
+        return;
+    }
+#endif
     if (w.quantized && scratch.size() < inputs)
     {
         scratch.resize(inputs);
@@ -335,6 +350,35 @@ std::size_t product(const std::vector<std::size_t> &shape)
 }
 
 } // namespace
+
+#if defined(MSIME_NEURAL_AVX2)
+namespace detail
+{
+bool supports_avx2_fma()
+{
+#if defined(_MSC_VER)
+    int info[4] = {};
+    __cpuid(info, 0);
+    if (info[0] < 7)
+    {
+        return false;
+    }
+    __cpuid(info, 1);
+    constexpr int kFma = 1 << 12;
+    constexpr int kOsxsave = 1 << 27;
+    constexpr int kAvx = 1 << 28;
+    if ((info[2] & (kFma | kOsxsave | kAvx)) != (kFma | kOsxsave | kAvx) || (_xgetbv(0) & 6) != 6)
+    {
+        return false;
+    }
+    __cpuidex(info, 7, 0);
+    return (info[1] & (1 << 5)) != 0;
+#else
+    return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
+#endif
+}
+} // namespace detail
+#endif
 
 struct SentenceModel::Workspace
 {

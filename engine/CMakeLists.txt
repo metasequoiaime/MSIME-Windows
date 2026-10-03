@@ -95,6 +95,19 @@ set(METASEQUOIA_IME_ENGINE_SOURCES
     googlepinyinime-rev/src/share/utf16reader.cpp
 )
 
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" MSIME_NEURAL_PROCESSOR)
+if(MSIME_NEURAL_PROCESSOR MATCHES "^(amd64|x86_64|x86|i[3-6]86)$")
+    if(MSVC)
+        list(APPEND METASEQUOIA_IME_ENGINE_SOURCES neural/int8_linear_avx2.cpp)
+        set_property(SOURCE neural/int8_linear_avx2.cpp APPEND PROPERTY COMPILE_OPTIONS /arch:AVX2)
+        set(MSIME_NEURAL_AVX2 1)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+        list(APPEND METASEQUOIA_IME_ENGINE_SOURCES neural/int8_linear_avx2.cpp)
+        set_property(SOURCE neural/int8_linear_avx2.cpp APPEND PROPERTY COMPILE_OPTIONS -mavx2 -mfma)
+        set(MSIME_NEURAL_AVX2 1)
+    endif()
+endif()
+
 # The vendored decoder accepts UTF-8 paths. Adapt its namespace-local file IO to native
 # Windows paths without editing googlepinyinime-rev or changing the process locale.
 if(WIN32)
@@ -123,6 +136,9 @@ target_include_directories(MetasequoiaImeEngine
 )
 
 target_compile_definitions(MetasequoiaImeEngine PRIVATE FMT_HEADER_ONLY=1 SPDLOG_FMT_EXTERNAL)
+if(MSIME_NEURAL_AVX2)
+    target_compile_definitions(MetasequoiaImeEngine PRIVATE MSIME_NEURAL_AVX2=1)
+endif()
 
 target_link_libraries(MetasequoiaImeEngine
     PUBLIC
@@ -220,6 +236,12 @@ if(BUILD_TESTING)
     add_executable(test_neural_sentence tests/src/test_neural_sentence.cpp)
     target_link_libraries(test_neural_sentence PRIVATE MetasequoiaIme::Engine)
     add_test(NAME neural_sentence COMMAND test_neural_sentence)
+
+    if(MSIME_NEURAL_AVX2)
+        add_executable(test_neural_int8_linear tests/src/test_neural_int8_linear.cpp)
+        target_link_libraries(test_neural_int8_linear PRIVATE MetasequoiaIme::Engine)
+        add_test(NAME neural_int8_linear COMMAND test_neural_int8_linear)
+    endif()
 
     add_executable(test_input_session tests/src/test_input_session.cpp)
     target_compile_definitions(test_input_session PRIVATE METASEQUOIA_SKIP_FREQUENCY_TESTS)
