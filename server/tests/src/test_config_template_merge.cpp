@@ -85,6 +85,22 @@ TEST_CASE(shipped_caret_indicator_defaults_and_upgrade_behavior)
     REQUIRE(opted_in["general"]["caret_state_indicator"].value_or(false));
 }
 
+TEST_CASE(shipped_tsf_diagnostic_log_survives_template_upgrade)
+{
+    std::ifstream input(MSIME_DEFAULT_CONFIG_PATH, std::ios::binary);
+    REQUIRE(static_cast<bool>(input));
+    const std::string installed((std::istreambuf_iterator<char>(input)), {});
+    const std::string configured = "[general]\ntsf_diagnostic_log = true\n";
+    const std::string legacy_template = "[general]\ndiagnostic_log = false\n";
+
+    for (const auto &baseline : {std::string(), legacy_template, installed})
+    {
+        const auto merged = toml::parse(MergeConfigIntoTemplate(installed, configured, baseline));
+        REQUIRE(merged["general"]["tsf_diagnostic_log"].value_or(false));
+    }
+    REQUIRE(!toml::parse(installed)["general"]["tsf_diagnostic_log"].value_or(true));
+}
+
 TEST_CASE(candidate_key_config_rejects_invalid_groups_without_changing_state)
 {
     const auto keys = GetConfiguredWordToCharacterKeys();

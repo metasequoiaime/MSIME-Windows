@@ -12,6 +12,7 @@ theme = "dark"
 [general]
 # 界面诊断日志总开关（默认关闭；不记录输入内容或候选文本）
 diagnostic_log = false
+tsf_diagnostic_log = false
 # 候选框诊断日志（旧键，与 diagnostic_log 同步；默认关闭）
 candidate_window_diagnostic_log = false
 # 悬浮工具栏
