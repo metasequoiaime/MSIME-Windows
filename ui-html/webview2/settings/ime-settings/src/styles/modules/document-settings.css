@@ -463,3 +463,67 @@
     gap: 5px;
   }
 }
+
+/* 帮助页的网络代理：与其他设置页同款的卡片与单选组，地址输入沿用 AI 页的输入框外观 */
+.network-proxy-section {
+  margin-top: 24px;
+  padding: 20px 24px;
+}
+
+.network-proxy-options {
+  margin-top: 8px;
+}
+
+.network-proxy-options .radio-option {
+  padding: 8px 4px;
+}
+
+.network-proxy-server {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 12px;
+  max-width: 360px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.network-proxy-server input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  color: var(--text-color);
+  background: var(--surface-sunken);
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+  outline: none;
+  font: inherit;
+}
+
+.network-proxy-server input::placeholder {
+  color: var(--text-subtle);
+}
+
+.network-proxy-server input:focus {
+  border-color: var(--accent-color);
+  background: var(--control-bg);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 20%, transparent);
+}
+
+.network-proxy-server input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.network-proxy-server input.is-invalid {
+  border-color: var(--danger-text);
+}
+
+.network-proxy-status {
+  margin-top: 8px;
+}
+
+.network-proxy-status.is-error {
+  color: var(--danger-text);
+}

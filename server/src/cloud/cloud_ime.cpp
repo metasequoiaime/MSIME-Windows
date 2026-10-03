@@ -10,6 +10,7 @@
 #include <winhttp.h>
 #include <fmt/xchar.h>
 #include "utils/common_utils.h"
+#include "utils/network_proxy.h"
 
 #pragma comment(lib, "winhttp.lib")
 
@@ -52,8 +53,7 @@ std::string UrlEncode(const std::string &input)
 
 bool HttpGet(const std::wstring &host, const std::wstring &path, std::string &response_out)
 {
-    HINTERNET hSession = WinHttpOpen(L"MetasequoiaImeServer/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    HINTERNET hSession = NetworkProxy::OpenWinHttpSession(L"MetasequoiaImeServer/1.0");
     if (!hSession)
         return false;
 

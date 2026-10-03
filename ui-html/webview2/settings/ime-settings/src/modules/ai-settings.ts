@@ -29,40 +29,32 @@ const PROVIDER_DEFAULTS: Record<string, ProviderDefaults> = {
 
 const PROVIDERS = ['deepseek', 'openai', 'siliconflow', 'groq'] as const;
 let tokens: Record<string, string> = {};
+let endpoints: Record<string, string> = {};
+let models: Record<string, string> = {};
 let currentProvider = 'deepseek';
 let currentPromptId = 'custom_1';
 let customPrompts: Record<string, string> = { custom_1: '', custom_2: '', custom_3: '' };
 
-function knownValues(field: keyof ProviderDefaults): string[] {
-  return Object.values(PROVIDER_DEFAULTS).map((item) => item[field]);
-}
-
-function fillIfDefault(id: string, value: string, known: string[], path: string): void {
-  const input = document.getElementById(id) as HTMLInputElement | null;
-  if (!input) return;
-  const current = input.value.trim();
-  if (current && !known.includes(current)) return;
-  input.value = value;
-  updateConfig(path, value);
-}
-
-function applyProviderDefaults(provider: string): void {
+function applyProviderFields(provider: string): void {
   const defaults = PROVIDER_DEFAULTS[provider];
   if (!defaults) return;
+  const endpoint = document.getElementById('aiEndpoint') as HTMLInputElement | null;
   const model = document.getElementById('aiModel') as HTMLInputElement | null;
-  if (model) model.placeholder = defaults.model;
-  fillIfDefault('aiEndpoint', defaults.endpoint, knownValues('endpoint'), 'ai_assistant.endpoint');
-  fillIfDefault('aiModel', defaults.model, knownValues('model'), 'ai_assistant.model');
+  if (endpoint) endpoint.value = endpoints[provider] ?? defaults.endpoint;
+  if (model) {
+    model.value = models[provider] ?? defaults.model;
+    model.placeholder = defaults.model;
+  }
 }
 
-function readTokenMap(raw: unknown, provider: string, legacyToken: string): Record<string, string> {
+function readProviderMap(raw: unknown, provider: string, legacyValue: string): Record<string, string> {
   const result: Record<string, string> = {};
   if (raw && typeof raw === 'object') {
     Object.entries(raw as Record<string, unknown>).forEach(([key, value]) => {
       if (typeof value === 'string') result[key] = value;
     });
   }
-  if (legacyToken && !result[provider]) result[provider] = legacyToken;
+  if (legacyValue && !result[provider]) result[provider] = legacyValue;
   return result;
 }
 
@@ -72,10 +64,19 @@ function switchProvider(provider: string): void {
     tokens[currentProvider] = token.value.trim();
     updateConfig(`ai_assistant.token_${currentProvider}`, tokens[currentProvider]);
   }
+  for (const [id, key, slots] of [
+    ['aiEndpoint', 'endpoint', endpoints], ['aiModel', 'model', models]
+  ] as const) {
+    const input = document.getElementById(id) as HTMLInputElement | null;
+    if (input) {
+      slots[currentProvider] = input.value;
+      updateConfig(`ai_assistant.${key}`, input.value);
+    }
+  }
   currentProvider = provider;
   if (token) token.value = tokens[provider] ?? '';
   updateConfig('ai_assistant.provider', provider);
-  applyProviderDefaults(provider);
+  applyProviderFields(provider);
 }
 
 function switchPrompt(id: string): void {
@@ -164,7 +165,9 @@ export function applyAiConfig(config: Record<string, unknown>): void {
   if (limit && typeof config.candidate_limit === 'number') limit.value = String(config.candidate_limit);
   if (typeof config.enabled === 'boolean') applyToggleState('aiEnabled', config.enabled);
   currentProvider = typeof config.provider === 'string' ? config.provider : 'deepseek';
-  tokens = readTokenMap(config.tokens, currentProvider, typeof config.token === 'string' ? config.token : '');
+  tokens = readProviderMap(config.tokens, currentProvider, typeof config.token === 'string' ? config.token : '');
+  endpoints = readProviderMap(config.endpoints, currentProvider, typeof config.endpoint === 'string' ? config.endpoint : '');
+  models = readProviderMap(config.models, currentProvider, typeof config.model === 'string' ? config.model : '');
   PROVIDERS.forEach((provider) => {
     const slot = config[`token_${provider}`];
     if (typeof slot === 'string' && slot) tokens[provider] = slot;

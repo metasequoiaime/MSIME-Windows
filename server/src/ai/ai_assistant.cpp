@@ -2,6 +2,7 @@
 #include "ai_assistant_cache.h"
 #include "ai_assistant_cache_key.h"
 
+#include "utils/network_proxy.h"
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 #include <Windows.h>
@@ -72,6 +73,7 @@ std::string Fetch(const AiAssistant::Request &request, uint64_t generation)
     headers = curl_slist_append(headers, authorization.c_str());
     const std::string payload = body.dump();
     curl_easy_setopt(curl, CURLOPT_URL, config.endpoint.c_str());
+    NetworkProxy::ApplyToCurl(curl);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(payload.size()));

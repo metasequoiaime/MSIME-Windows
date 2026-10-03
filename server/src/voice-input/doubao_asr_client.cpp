@@ -1,4 +1,5 @@
 #include "doubao_asr_client.h"
+#include "utils/network_proxy.h"
 
 #include <nlohmann/json.hpp>
 #include <windows.h>
@@ -274,8 +275,7 @@ HINTERNET ConnectWebSocket(const std::string &endpoint, bool legacy_auth, const 
     std::wstring path(components.lpszUrlPath, components.dwUrlPathLength);
     if (components.dwExtraInfoLength)
         path.append(components.lpszExtraInfo, components.dwExtraInfoLength);
-    session.value = WinHttpOpen(L"MetasequoiaImeServer/1.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
-                                WINHTTP_NO_PROXY_BYPASS, 0);
+    session.value = NetworkProxy::OpenWinHttpSession(L"MetasequoiaImeServer/1.0");
     if (!session.value)
         return nullptr;
     WinHttpSetTimeouts(session.value, 10000, 10000, 10000, 30000);

@@ -240,6 +240,8 @@ set(SRC_FILES
     "./src/utils/ime_paths.cpp"
     "./src/utils/ime_utils.cpp"
     "./src/utils/ime_utils.h"
+    "./src/utils/network_proxy.cpp"
+    "./src/utils/network_proxy.h"
     "./src/utils/serial_task_runner.cpp"
     "./src/utils/serial_task_runner.h"
     "./src/utils/shuangpin_preedit_display.cpp"
@@ -487,6 +489,8 @@ add_executable(${SETTINGS_EXECUTABLE_NAME} WIN32
     "./src/utils/common_utils.cpp"
     "./src/utils/common_utils.h"
     "./src/utils/ime_paths.cpp"
+    "./src/utils/network_proxy.cpp"
+    "./src/utils/network_proxy.h"
     "./src/resource/resource.rc"
 )
 target_include_directories(${SETTINGS_EXECUTABLE_NAME}

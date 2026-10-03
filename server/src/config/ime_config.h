@@ -68,6 +68,14 @@ struct AiAssistantConfig
     std::map<std::string, std::string> tokens;
     std::string endpoint = "https://api.deepseek.com/chat/completions";
     std::string model = "deepseek-v4-flash";
+    std::map<std::string, std::string> endpoints{{"deepseek", "https://api.deepseek.com/chat/completions"},
+                                                 {"openai", "https://api.openai.com/v1/chat/completions"},
+                                                 {"siliconflow", "https://api.siliconflow.cn/v1/chat/completions"},
+                                                 {"groq", "https://api.groq.com/openai/v1/chat/completions"}};
+    std::map<std::string, std::string> models{{"deepseek", "deepseek-v4-flash"},
+                                              {"openai", "gpt-4o-mini"},
+                                              {"siliconflow", "Qwen/Qwen3-8B"},
+                                              {"groq", "llama-3.3-70b-versatile"}};
     int candidate_limit = 3;
     // custom_1 | custom_2 | custom_3
     std::string prompt_id = "custom_1";
@@ -123,6 +131,13 @@ struct NiuTransConfig
     // 控制台->API应用 中的应用唯一标识与 apikey。
     std::string app_id;
     std::string apikey;
+};
+
+// [network] 段：云输入、模型下载、AI、翻译、语音等所有出站请求共用的代理设置。
+struct NetworkProxyConfig
+{
+    std::string mode = "system"; // system（跟随系统）| none（直连）| custom（自定义 HTTP 代理）
+    std::string server;          // custom 模式的 HTTP 代理，已规范化为 host:port
 };
 
 struct FrequencyAdjustmentConfig
@@ -518,6 +533,12 @@ bool SetConfiguredCustomTranslationString(const std::string &key, const std::str
 const NiuTransConfig &GetConfiguredNiuTrans();
 bool SetConfiguredNiuTransBool(const std::string &key, bool value);
 bool SetConfiguredNiuTransString(const std::string &key, const std::string &value);
+// Snapshot by value: download threads and the cloud worker read it while the settings host rewrites it.
+NetworkProxyConfig GetConfiguredNetworkProxy();
+bool SetConfiguredNetworkString(const std::string &key, const std::string &value);
+// Accepts "host:port" or "http://host:port[/]"; returns the normalized "host:port", or an empty string when the
+// value is not a usable HTTP proxy (other schemes such as socks5:// are rejected: WinHTTP cannot speak them).
+std::string NormalizeNetworkProxyServer(const std::string &value);
 const FrequencyAdjustmentConfig &GetConfiguredFrequencyAdjustment();
 bool SetConfiguredFrequencyAdjustmentString(const std::string &key, const std::string &value);
 bool SetConfiguredFrequencyAdjustmentInt(const std::string &key, int value);

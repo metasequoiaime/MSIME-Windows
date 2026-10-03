@@ -12,6 +12,7 @@ theme = "dark"
 [general]
 # 界面诊断日志总开关（默认关闭；不记录输入内容或候选文本）
 diagnostic_log = false
+tsf_diagnostic_log = false
 # 候选框诊断日志（旧键，与 diagnostic_log 同步；默认关闭）
 candidate_window_diagnostic_log = false
 # 悬浮工具栏
@@ -127,6 +128,14 @@ enabled = false
 app_id = ""
 apikey = ""
 
+#
+# 网络代理：云输入、模型下载、AI 联想、翻译、语音识别等需要联网的功能共用。
+# proxy_mode：system 跟随系统代理设置 / none 不使用代理（直连）/ custom 使用下面的 HTTP 代理。
+# proxy_server：custom 模式的 HTTP 代理地址，形如 127.0.0.1:7890；留空时按 system 处理。
+#
+[network]
+proxy_mode = "system"
+proxy_server = ""
 [frequency_adjustment]
 # disabled / pin / halve / linear / promote
 mode = "promote"
@@ -472,6 +481,15 @@ token_siliconflow = "<YOUR_AI_TOKEN_SILICONFLOW>"
 token_groq = "<YOUR_AI_TOKEN_GROQ>"
 endpoint = "https://api.deepseek.com/chat/completions"
 model = "deepseek-v4-flash"
+# 空槽位使用提供商默认值，旧版 endpoint/model 只归属于当前提供商
+endpoint_deepseek = ""
+endpoint_openai = ""
+endpoint_siliconflow = ""
+endpoint_groq = ""
+model_deepseek = ""
+model_openai = ""
+model_siliconflow = ""
+model_groq = ""
 candidate_limit = 3
 prompt_id = "custom_1"
 prompt = """你是一个中文全拼输入法联想引擎。输入为已经切分好的拼音数组、前文上下文和候选数量。

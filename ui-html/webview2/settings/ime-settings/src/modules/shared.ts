@@ -22,7 +22,14 @@ export function registerDropdownPreparer(menuId: string, preparer: DropdownPrepa
 let collocationPollTimer: ReturnType<typeof setInterval> | null = null;
 
 export type CollocationModelStatus = { state?: string; progress?: number; error?: string };
-export type CollocationCatalogEntry = { id: string; displayName?: string; sizeHint?: string; license?: string };
+export type CollocationCatalogEntry = {
+  id: string; displayName?: string; sizeHint?: string; license?: string; url?: string
+};
+
+// 下载与本地导入共用宿主的单槽：任一在进行时，其余行的下载/导入一并禁用，并持续轮询快照。
+function isCollocationBusy(state: string | undefined): boolean {
+  return state === 'downloading' || state === 'importing';
+}
 
 // 整句开关只有在当前激活的模型就绪时才有意义：模型缺席（包括未选择任何模型）时词格会
 // 静默降级，开关开着也看不到任何效果。与智能标点／候选混输的子开关一样，这里只置灰
@@ -44,6 +51,7 @@ function collocationStatusText(status: CollocationModelStatus | undefined): stri
   const state = status?.state ?? 'absent';
   if (state === 'ready') return '模型已就绪';
   if (state === 'downloading') return `下载中 ${status?.progress ?? 0}%`;
+  if (state === 'importing') return '导入并校验中…';
   if (state === 'error') return `下载失败：${status?.error || '未知原因'}`;
   return '未下载';
 }
@@ -70,6 +78,19 @@ function seedCollocationRows(catalog: CollocationCatalogEntry[]): void {
     meta.className = 'collocation-model-meta';
     meta.textContent = [entry.sizeHint, entry.license].filter(Boolean).join(' · ');
     name.appendChild(meta);
+    // 应用内下载慢时的备用通道：直链交给系统浏览器（宿主只放行 https://），下好后用「导入」。
+    if (entry.url) {
+      const url = entry.url;
+      const browser = document.createElement('button');
+      browser.type = 'button';
+      browser.className = 'collocation-model-link';
+      browser.textContent = '浏览器下载';
+      browser.title = url;
+      browser.addEventListener('click', () => {
+        window.chrome?.webview?.postMessage(serializeHostMessage({ type: 'openExternalUrl', data: url }));
+      });
+      name.appendChild(browser);
+    }
     const status = document.createElement('div');
     status.className = 'input-setting-description collocation-model-status';
     info.appendChild(name);
@@ -98,6 +119,17 @@ function seedCollocationRows(catalog: CollocationCatalogEntry[]): void {
       }));
     });
     actions.appendChild(download);
+    const importButton = document.createElement('button');
+    importButton.type = 'button';
+    importButton.className = 'restart-server-button collocation-model-import';
+    importButton.textContent = '导入';
+    importButton.title = '选择用浏览器下载好的 .gram 文件';
+    importButton.addEventListener('click', () => {
+      window.chrome?.webview?.postMessage(serializeHostMessage({
+        type: 'collocationModelImport', data: { modelId: entry.id }
+      }));
+    });
+    actions.appendChild(importButton);
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'restart-server-button collocation-model-delete';
@@ -126,8 +158,8 @@ export function applyCollocationModelStatus(
   seedCollocationRows(catalog ?? []);
   // 激活值留空 = 未选择任何模型：没有受保护的包，整句开关保持置灰。
   const activeId = activeModel ?? '';
-  // 单网络槽：同一时刻至多一个下载在飞，宿主对忙碌请求直接拒绝。
-  const anyDownloading = Object.values(statuses ?? {}).some((s) => s.state === 'downloading');
+  // 单槽：同一时刻至多一个下载或导入在进行，宿主对忙碌请求直接拒绝。
+  const anyBusy = Object.values(statuses ?? {}).some((s) => isCollocationBusy(s.state));
   document.querySelectorAll<HTMLElement>('.collocation-model-row').forEach((row) => {
     const id = row.dataset.modelId ?? '';
     const status = statuses?.[id];
@@ -135,8 +167,13 @@ export function applyCollocationModelStatus(
     const text = row.querySelector<HTMLElement>('.collocation-model-status');
     if (text) text.textContent = collocationStatusText(status);
     const download = row.querySelector<HTMLButtonElement>('.collocation-model-download');
-    // 其余行的下载按钮在下载态一并禁用，把单网络槽语义摆到界面上（服务端拒绝是兜底）。
-    if (download) download.disabled = state === 'downloading' || state === 'ready' || anyDownloading;
+    // 其余行的下载/导入按钮在忙碌态一并禁用，把单槽语义摆到界面上（服务端拒绝是兜底）。
+    if (download) download.disabled = state === 'ready' || anyBusy;
+    const importButton = row.querySelector<HTMLButtonElement>('.collocation-model-import');
+    if (importButton) {
+      importButton.hidden = state === 'ready';
+      importButton.disabled = anyBusy;
+    }
     const remove = row.querySelector<HTMLButtonElement>('.collocation-model-delete');
     if (remove) {
       // 任何就绪的包都可删（包括当前激活的包）：宿主删除激活包时会一并清空激活值，
@@ -151,11 +188,11 @@ export function applyCollocationModelStatus(
     }
   });
   setCollocationTogglesDisabled(statuses?.[activeId]?.state !== 'ready');
-  if (anyDownloading && collocationPollTimer === null) {
+  if (anyBusy && collocationPollTimer === null) {
     collocationPollTimer = setInterval(() => {
       window.chrome?.webview?.postMessage(serializeHostMessage({ type: 'collocationModelStatusRequest' }));
     }, 2000);
-  } else if (!anyDownloading && collocationPollTimer !== null) {
+  } else if (!anyBusy && collocationPollTimer !== null) {
     clearInterval(collocationPollTimer);
     collocationPollTimer = null;
   }

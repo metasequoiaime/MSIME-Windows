@@ -60,6 +60,23 @@
         "additionalProperties": false
       }
     },
+    "collocationModelImport": {
+      "surfaces": [
+        "settings"
+      ],
+      "data": {
+        "type": "object",
+        "properties": {
+          "modelId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "modelId"
+        ],
+        "additionalProperties": false
+      }
+    },
     "collocationModelStatusRequest": {
       "surfaces": [
         "settings"

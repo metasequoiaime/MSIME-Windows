@@ -3,8 +3,10 @@
 #include "config/ime_config.h"
 #include "engine/core/data_path.h"
 #include "engine/ngram/octagram/octagram_gram.h"
+#include "utils/network_proxy.h"
 
 #include <Windows.h>
+#include <ShObjIdl.h>
 #include <winhttp.h>
 
 #include <filesystem>
@@ -123,8 +125,15 @@ enum class DownloadState
 {
     Idle,
     Downloading,
+    Importing,
     Error,
 };
+
+// 下载与导入共用单槽：两者都在写同一个模型目录，且都要等格式校验落位。
+bool IsBusy(DownloadState state)
+{
+    return state == DownloadState::Downloading || state == DownloadState::Importing;
+}
 
 struct RuntimeState
 {
@@ -147,6 +156,8 @@ void SetState(const std::string &model_id, DownloadState state, int progress, st
     runtime.error = std::move(error);
 }
 
+void InstallPart(const CatalogEntry &entry, bool imported);
+
 // 后台线程：下载 -> 校验 -> 原子落位。全程只碰 PartFile，失败时不留半个模型
 // 在正式位置上。条目按值收进线程：detached 线程的生命周期长于调用栈，host/path/id
 // 必须自持。release 资产与 raw 文件都经 302 跳转到 CDN，显式放开自动重定向。
@@ -164,8 +175,7 @@ void DownloadThread(CatalogEntry entry)
         return;
     }
 
-    HINTERNET session = WinHttpOpen(L"MetasequoiaImeServer/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                                    WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    HINTERNET session = NetworkProxy::OpenWinHttpSession(L"MetasequoiaImeServer/1.0");
     if (session == nullptr)
     {
         SetState(model_id, DownloadState::Error, 0, "无法初始化网络");
@@ -275,6 +285,39 @@ void DownloadThread(CatalogEntry entry)
         return;
     }
 
+    InstallPart(entry, false);
+}
+
+// 后台线程：把用户在浏览器里下好的文件复制成 PartFile，之后与下载走同一条校验落位路径。
+// 先复制再校验，而不是直接校验原文件：校验通过后的 rename 必须在同一卷上原子完成，
+// 原文件可能在别的盘，也不该被我们挪走。
+void ImportThread(CatalogEntry entry, std::filesystem::path source)
+{
+    const std::string model_id = entry.id;
+    std::error_code fs_error;
+    std::filesystem::create_directories(ModelDirectory(model_id), fs_error);
+    if (fs_error)
+    {
+        SetState(model_id, DownloadState::Error, 0, "无法创建模型目录");
+        return;
+    }
+    std::filesystem::copy_file(source, PartFile(model_id), std::filesystem::copy_options::overwrite_existing, fs_error);
+    if (fs_error)
+    {
+        SetState(model_id, DownloadState::Error, 0, "无法读取所选文件");
+        std::error_code cleanup;
+        std::filesystem::remove(PartFile(model_id), cleanup);
+        return;
+    }
+    InstallPart(entry, true);
+}
+
+// PartFile 已完整写好之后的公共尾段：格式校验 -> 原子落位 -> NOTICE。下载与本地导入都走这里，
+// 所以「文件存在 = 曾通过校验」对两条来源同样成立。
+void InstallPart(const CatalogEntry &entry, bool imported)
+{
+    const std::string model_id = entry.id;
+
     // 格式锁：唯一真正拦下坏模型的检查，也是「已下载」的定义——能被引擎读取端
     // 打开（魔数与双数组边界合法）就放行落位，打开不了的一律按损坏拒绝。
     std::string format_error;
@@ -310,14 +353,58 @@ void DownloadThread(CatalogEntry entry)
     {
         const std::string note = entry.license_note == nullptr ? std::string() : std::string(entry.license_note);
         notice << "# " << entry.display_name << "（" << model_id << "）\n\n"
-               << "- 来源：https://" << Utf8FromWide(entry.host) << Utf8FromWide(entry.path) << "\n"
+               << "- 来源：" << SourceUrl(entry) << (imported ? "（用户自行下载后本地导入）" : "") << "\n"
                << "- 许可：" << entry.license << (note.empty() ? "" : "（" + note + "）") << "\n"
                << "- 文件：" << model_id << ".gram（" << model_bytes << " 字节）\n";
     }
     SetState(model_id, DownloadState::Idle, 100, {});
 }
 
+// 下载与导入的公共前置：目录内 id、已就绪不重做、单槽占位。占位成功返回 entry 并把该 id
+// 置为 state；请求已被满足（已就绪，或同 id 同类任务已在进行）时 satisfied 置 true 并返回
+// nullptr；其余拒绝返回 nullptr。
+const CatalogEntry *ClaimSlot(const std::string &model_id, DownloadState state, bool &satisfied)
+{
+    satisfied = false;
+    const CatalogEntry *entry = FindEntry(model_id);
+    if (entry == nullptr)
+        return nullptr;
+    PurgeIfTrashed(model_id);
+    std::error_code fs_error;
+    // 已存在且通过格式校验的包不重做：落位只在格式校验之后发生，文件存在即曾通过校验，
+    // 重做只会白白覆盖一份好包。逻辑已删除（.trash 在）的包不在此列：它们必须允许重新
+    // 获取，哪怕旧 .gram 的物理删除还在等映射释放（小包可能在旧映射释放前就落位，
+    // 落位失败进 Error 态，等映射释放后重试即可成功）。
+    const bool trashed = std::filesystem::exists(ModelDirectory(model_id) / ".trash", fs_error) && !fs_error;
+    if (!trashed && std::filesystem::exists(ModelFile(model_id), fs_error) && !fs_error)
+    {
+        satisfied = true;
+        return nullptr;
+    }
+    std::lock_guard lock(g_mutex);
+    // 单槽：同一时刻至多一个下载或导入，不做并发队列。同 id 同类请求幂等；其他 id
+    // 忙碌时拒绝，页面在忙碌态禁用其余下载/导入按钮。
+    for (const auto &[id, runtime] : g_states)
+    {
+        if (IsBusy(runtime.state))
+        {
+            satisfied = id == model_id && runtime.state == state;
+            return nullptr;
+        }
+    }
+    RuntimeState &runtime = g_states[model_id];
+    runtime.state = state;
+    runtime.progress = 0;
+    runtime.error.clear();
+    return entry;
+}
+
 } // namespace
+
+std::string SourceUrl(const CatalogEntry &entry)
+{
+    return "https://" + Utf8FromWide(entry.host) + Utf8FromWide(entry.path);
+}
 
 std::map<std::string, ModelStatus> GetModelStatuses()
 {
@@ -334,6 +421,11 @@ std::map<std::string, ModelStatus> GetModelStatuses()
             if (it != g_states.end() && it->second.state == DownloadState::Downloading)
             {
                 statuses[entry.id] = {"downloading", it->second.progress, {}};
+                continue;
+            }
+            if (it != g_states.end() && it->second.state == DownloadState::Importing)
+            {
+                statuses[entry.id] = {"importing", 0, {}};
                 continue;
             }
             if (it != g_states.end() && it->second.state == DownloadState::Error)
@@ -371,34 +463,57 @@ const char *BadgeForModel(const std::string &model_id)
 
 bool StartDownload(const std::string &model_id)
 {
-    const CatalogEntry *entry = FindEntry(model_id);
+    bool satisfied = false;
+    const CatalogEntry *entry = ClaimSlot(model_id, DownloadState::Downloading, satisfied);
     if (entry == nullptr)
-        return false;
-    PurgeIfTrashed(model_id);
-    std::error_code fs_error;
-    // 已存在且通过格式校验的包不重下：落位只在格式校验之后发生，文件存在即曾通过校验，
-    // 重下只会白白覆盖一份好包。逻辑已删除（.trash 在）的包不在此列：它们必须允许重新
-    // 下载，哪怕旧 .gram 的物理删除还在等映射释放（小包可能在旧映射释放前就下载完，
-    // 落位失败进 Error 态，等映射释放后重试即可成功）。
-    const bool trashed = std::filesystem::exists(ModelDirectory(model_id) / ".trash", fs_error) && !fs_error;
-    if (!trashed && std::filesystem::exists(ModelFile(model_id), fs_error) && !fs_error)
-        return true;
-    {
-        std::lock_guard lock(g_mutex);
-        // 单网络槽：同一时刻至多一个下载，不做并发队列。同 id 重复请求幂等；其他 id
-        // 忙碌时拒绝，页面在下载态禁用其余下载按钮。
-        for (const auto &[id, runtime] : g_states)
-        {
-            if (runtime.state == DownloadState::Downloading)
-                return id == model_id;
-        }
-        RuntimeState &runtime = g_states[model_id];
-        runtime.state = DownloadState::Downloading;
-        runtime.progress = 0;
-        runtime.error.clear();
-    }
+        return satisfied;
     std::thread(DownloadThread, *entry).detach();
     return true;
+}
+
+bool ImportModel(const std::string &model_id, const std::filesystem::path &source)
+{
+    std::error_code fs_error;
+    if (!std::filesystem::is_regular_file(source, fs_error) || fs_error)
+        return false;
+    bool satisfied = false;
+    const CatalogEntry *entry = ClaimSlot(model_id, DownloadState::Importing, satisfied);
+    if (entry == nullptr)
+        return satisfied;
+    std::thread(ImportThread, *entry, source).detach();
+    return true;
+}
+
+std::filesystem::path PromptForModelFile(HWND owner)
+{
+    // 设置窗口的 UI 线程早已为 WebView2 初始化过 STA，这里的 CoInitializeEx 只是配平引用计数。
+    const HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    std::filesystem::path selected;
+    IFileOpenDialog *dialog = nullptr;
+    if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))))
+    {
+        const COMDLG_FILTERSPEC filters[] = {{L"octagram 语法模型 (*.gram)", L"*.gram"}, {L"所有文件", L"*.*"}};
+        dialog->SetFileTypes(ARRAYSIZE(filters), filters);
+        dialog->SetTitle(L"选择已下载的 .gram 模型文件");
+        DWORD options = 0;
+        if (SUCCEEDED(dialog->GetOptions(&options)))
+            dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST);
+        IShellItem *item = nullptr;
+        if (SUCCEEDED(dialog->Show(owner)) && SUCCEEDED(dialog->GetResult(&item)))
+        {
+            PWSTR path = nullptr;
+            if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))
+            {
+                selected = path;
+                CoTaskMemFree(path);
+            }
+            item->Release();
+        }
+        dialog->Release();
+    }
+    if (SUCCEEDED(init))
+        CoUninitialize();
+    return selected;
 }
 
 bool DeleteModel(const std::string &model_id)
@@ -408,7 +523,7 @@ bool DeleteModel(const std::string &model_id)
     {
         std::lock_guard lock(g_mutex);
         const auto it = g_states.find(model_id);
-        if (it != g_states.end() && it->second.state == DownloadState::Downloading)
+        if (it != g_states.end() && IsBusy(it->second.state))
             return false;
     }
     PurgeIfTrashed(model_id);

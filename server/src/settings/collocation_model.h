@@ -16,6 +16,9 @@
 // runtime 状态：独立设置进程与 Server 各自能看到自己的下载进度。同一时刻至多一个下载在飞
 // （单网络槽），忙碌时对新 id 的下载请求直接拒绝，页面在下载态禁用其余下载按钮。
 
+#include <Windows.h>
+
+#include <filesystem>
 #include <map>
 #include <string>
 #include <vector>
@@ -45,13 +48,17 @@ struct CatalogEntry
 // 编译期内置目录，首条目是推荐包。
 const std::vector<CatalogEntry> &Catalog();
 
+// 条目的 HTTPS 直链。设置页把它给用户在浏览器里下载（应用内下载慢时的备用通道），
+// 同一个地址也写进 NOTICE.md 作来源署名。
+std::string SourceUrl(const CatalogEntry &entry);
+
 // 候选窗给该模型包的整句候选挂的来源标签（不含六角括号）。目录里没有的 id——手填进
 // config.toml 的自备模型——落回八股：那是 octagram 这套格式的通称，不冒充任何一家。
 const char *BadgeForModel(const std::string &model_id);
 
 struct ModelStatus
 {
-    std::string state; // "absent" | "downloading" | "ready" | "error"
+    std::string state; // "absent" | "downloading" | "importing" | "ready" | "error"
     int progress = 0;  // 下载中 0-100；其余状态无意义
     std::string error; // state == "error" 时的人类可读原因
 };
@@ -64,7 +71,15 @@ std::map<std::string, ModelStatus> GetModelStatuses();
 // false，原因记入该 id 的状态。完成/失败经状态查询可见。
 bool StartDownload(const std::string &model_id);
 
-// 删除已下载的模型目录（.gram 与 NOTICE.md 一并）。守卫：该 id 下载中拒绝。删除当前
+// 把用户在浏览器里自行下载的 .gram 导入为指定条目：后台复制到模型目录后，与应用内下载走
+// 同一套格式校验与原子落位，校验不过同样进 error 态、不留残件。与下载共用单槽（任一下载或
+// 导入在进行时拒绝其他 id）；源文件不存在或不是普通文件、目录里没有该 id 时返回 false。
+bool ImportModel(const std::string &model_id, const std::filesystem::path &source);
+
+// 弹出系统「打开文件」对话框让用户选 .gram 文件，取消时返回空路径。须在 UI 线程调用。
+std::filesystem::path PromptForModelFile(HWND owner);
+
+// 删除已下载的模型目录（.gram 与 NOTICE.md 一并）。守卫：该 id 下载或导入中拒绝。删除当前
 // 激活的包时激活值一并清空（未选择），整句加成随之关闭，重新下载后需重新激活。若 .gram
 // 还被引擎的内存映射占用，物理删除推迟到映射释放（状态查询按未下载呈现，重启 Server
 // 必然清掉）。目录里没有的 id 返回 false。

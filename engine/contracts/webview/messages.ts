@@ -9,6 +9,7 @@ export type ClientMessage =
   | { "type": "openShuangpinDirectory"; "protocolVersion"?: 1 }
   | { "type": "collocationModelDownload"; "protocolVersion"?: 1; "data": { "modelId": string } }
   | { "type": "collocationModelDelete"; "protocolVersion"?: 1; "data": { "modelId": string } }
+  | { "type": "collocationModelImport"; "protocolVersion"?: 1; "data": { "modelId": string } }
   | { "type": "collocationModelStatusRequest"; "protocolVersion"?: 1 }
   | { "type": "openHandwritingPanel"; "protocolVersion"?: 1 }
   | { "type": "restartServer"; "protocolVersion"?: 1 }
@@ -69,6 +70,7 @@ export type SettingsMessage =
   | { "type": "openShuangpinDirectory"; "protocolVersion"?: 1 }
   | { "type": "collocationModelDownload"; "protocolVersion"?: 1; "data": { "modelId": string } }
   | { "type": "collocationModelDelete"; "protocolVersion"?: 1; "data": { "modelId": string } }
+  | { "type": "collocationModelImport"; "protocolVersion"?: 1; "data": { "modelId": string } }
   | { "type": "collocationModelStatusRequest"; "protocolVersion"?: 1 }
   | { "type": "openHandwritingPanel"; "protocolVersion"?: 1 }
   | { "type": "restartServer"; "protocolVersion"?: 1 }

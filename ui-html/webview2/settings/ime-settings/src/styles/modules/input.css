@@ -371,6 +371,23 @@
   font-size: 12px;
 }
 
+/* 浏览器下载：跟在大小/许可后面的文字链接，不和行尾的按钮抢视觉 */
+.collocation-model-link {
+  margin-left: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.collocation-model-link:hover,
+.collocation-model-link:focus-visible {
+  text-decoration: underline;
+}
+
 .collocation-model-actions {
   display: flex;
   align-items: center;

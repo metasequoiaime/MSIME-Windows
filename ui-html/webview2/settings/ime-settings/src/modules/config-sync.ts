@@ -419,6 +419,9 @@ function applyConfigData(data: Record<string, any>, target?: string): void {
   if (applies('ai-settings') && data?.ai_assistant && typeof data.ai_assistant === 'object') {
     void import('./ai-settings').then((module) => { if (data === lastSnapshot) module.applyAiConfig(data.ai_assistant); });
   }
+  if (applies('help-settings') && data?.network && typeof data.network === 'object') {
+    void import('./help-settings').then((module) => { if (data === lastSnapshot) module.applyNetworkConfig(data.network); });
+  }
   if (applies('floating-toolbar')) {
     void import('./floating-toolbar').then((module) => {
       if (data !== lastSnapshot) return;

@@ -154,7 +154,10 @@ describe('collocation model status gating', () => {
   const RECOMMENDED_ID = 'wanxiang-lts-zh-hans';
   const CATALOG = [
     { id: RECOMMENDED_ID, displayName: '万象 LTS（推荐）', sizeHint: '约 390 MB', license: 'CC-BY-4.0' },
-    { id: 'zh-moqi', displayName: '白霜（实验）', sizeHint: '约 7 MB', license: 'GPL-3.0' }
+    {
+      id: 'zh-moqi', displayName: '白霜（实验）', sizeHint: '约 7 MB', license: 'GPL-3.0',
+      url: 'https://raw.githubusercontent.com/gaboolic/rime-frost/master/zh-moqi.gram'
+    }
   ];
 
   // 只实现 shared.ts 实际用到的那几个成员：目录行是动态种子的，测试里用这份假 DOM
@@ -229,6 +232,8 @@ describe('collocation model status gating', () => {
   const radioOf = (row: FakeElement): FakeElement => row.querySelector('input[type="radio"]')!;
   const downloadOf = (row: FakeElement): FakeElement => row.querySelector('.collocation-model-download')!;
   const removeOf = (row: FakeElement): FakeElement => row.querySelector('.collocation-model-delete')!;
+  const importOf = (row: FakeElement): FakeElement => row.querySelector('.collocation-model-import')!;
+  const linkOf = (row: FakeElement): FakeElement | null => row.querySelector('.collocation-model-link');
   const statusOf = (row: FakeElement): FakeElement => row.querySelector('.collocation-model-status')!;
 
   beforeEach(() => {
@@ -355,5 +360,42 @@ describe('collocation model status gating', () => {
       type: 'collocationModelDelete',
       data: { modelId: 'zh-moqi' }
     });
+  });
+
+  it('offers a browser download link only for entries with a url, and posts it to the host', () => {
+    applyCollocationModelStatus({ 'zh-moqi': { state: 'absent' } }, CATALOG, '');
+    expect(linkOf(rowById(RECOMMENDED_ID))).toBeNull();
+    linkOf(rowById('zh-moqi'))!.handlers.get('click')?.();
+    expect(JSON.parse(postMessage.mock.calls[0]?.[0] as string)).toMatchObject({
+      type: 'openExternalUrl',
+      data: 'https://raw.githubusercontent.com/gaboolic/rime-frost/master/zh-moqi.gram'
+    });
+  });
+
+  it('sends import requests and treats importing as busy like a download', () => {
+    applyCollocationModelStatus({ [RECOMMENDED_ID]: { state: 'absent' }, 'zh-moqi': { state: 'absent' } }, CATALOG, '');
+    expect(importOf(rowById('zh-moqi')).hidden).toBe(false);
+    expect(importOf(rowById('zh-moqi')).disabled).toBe(false);
+    importOf(rowById('zh-moqi')).handlers.get('click')?.();
+    expect(JSON.parse(postMessage.mock.calls[0]?.[0] as string)).toMatchObject({
+      type: 'collocationModelImport',
+      data: { modelId: 'zh-moqi' }
+    });
+
+    applyCollocationModelStatus(
+      { [RECOMMENDED_ID]: { state: 'absent' }, 'zh-moqi': { state: 'importing' } },
+      CATALOG,
+      ''
+    );
+    expect(statusOf(rowById('zh-moqi')).textContent).toBe('导入并校验中…');
+    // 下载与导入共用宿主的单槽：任一在进行时，所有行的下载与导入都禁用。
+    expect(downloadOf(rowById(RECOMMENDED_ID)).disabled).toBe(true);
+    expect(importOf(rowById(RECOMMENDED_ID)).disabled).toBe(true);
+    expect(importOf(rowById('zh-moqi')).disabled).toBe(true);
+
+    // 就绪的包不再提供导入。
+    applyCollocationModelStatus({ [RECOMMENDED_ID]: { state: 'absent' }, 'zh-moqi': { state: 'ready' } }, CATALOG, '');
+    expect(importOf(rowById('zh-moqi')).hidden).toBe(true);
+    expect(importOf(rowById(RECOMMENDED_ID)).disabled).toBe(false);
   });
 });

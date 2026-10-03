@@ -14,6 +14,7 @@
 #include "wave_overlay.h"
 #include "cue_player.h"
 
+#include "utils/network_proxy.h"
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 #include <windows.h>
@@ -542,6 +543,7 @@ RecognitionResult Recognize(const std::vector<float> &samples, const VoiceInputC
         headers = curl_slist_append(headers, "Expect:");
         headers = curl_slist_append(headers, ("Content-Type: " + payload.content_type).c_str());
         curl_easy_setopt(curl, CURLOPT_URL, config.asr_endpoint.c_str());
+        NetworkProxy::ApplyToCurl(curl);
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         curl_easy_setopt(curl, CURLOPT_POST, 1L);
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.body.data());
@@ -619,6 +621,7 @@ std::string Polish(const std::string &text, const VoiceInputConfig &config)
     headers = curl_slist_append(headers, "Content-Type: application/json");
     headers = curl_slist_append(headers, ("Authorization: Bearer " + polish_token).c_str());
     curl_easy_setopt(curl, CURLOPT_URL, config.polish_endpoint.c_str());
+    NetworkProxy::ApplyToCurl(curl);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.data());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(payload.size()));

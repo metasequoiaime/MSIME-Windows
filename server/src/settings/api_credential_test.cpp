@@ -6,6 +6,7 @@
 #include "cloud/translation_gloss.h"
 #include "voice-input/doubao_asr_client.h"
 
+#include "utils/network_proxy.h"
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -94,6 +95,7 @@ HttpResponse PerformJsonPost(const std::string &endpoint, const std::string &tok
     const std::string authorization = "Authorization: Bearer " + token;
     headers = curl_slist_append(headers, authorization.c_str());
     curl_easy_setopt(curl, CURLOPT_URL, endpoint.c_str());
+    NetworkProxy::ApplyToCurl(curl);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(payload.size()));
@@ -200,6 +202,7 @@ ApiCredentialTest::Result TestBatchAsr(const ApiCredentialTest::Request &request
     headers = curl_slist_append(headers, authorization.c_str());
     headers = curl_slist_append(headers, "Expect:");
     curl_easy_setopt(curl, CURLOPT_URL, endpoint.c_str());
+    NetworkProxy::ApplyToCurl(curl);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteResponse);

@@ -3,6 +3,7 @@
 #include "translation_gloss.h"
 #include <Windows.h>
 #include <bcrypt.h>
+#include "utils/network_proxy.h"
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -164,6 +165,7 @@ std::vector<std::string> TextTranslateBatch(const Credentials &credentials, cons
     headers = curl_slist_append(headers, auth.c_str());
 
     curl_easy_setopt(curl, CURLOPT_URL, kUrl);
+    NetworkProxy::ApplyToCurl(curl);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(payload.size()));

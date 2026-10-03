@@ -1,5 +1,6 @@
 #include "custom_translation.h"
 
+#include "utils/network_proxy.h"
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -124,6 +125,7 @@ std::vector<std::string> TextTranslateBatch(const Config &config, const std::vec
     }
 
     curl_easy_setopt(curl, CURLOPT_URL, config.endpoint.c_str());
+    NetworkProxy::ApplyToCurl(curl);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteResponse);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, kTimeoutMs);

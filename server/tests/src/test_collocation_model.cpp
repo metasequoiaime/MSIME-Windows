@@ -7,6 +7,7 @@
 #include "src/settings/collocation_model.h"
 
 #include <Windows.h>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -231,4 +232,48 @@ TEST_CASE(collocation_path_resolution_treats_empty_as_unselected)
     REQUIRE(ResolveCollocationModelPath("zh-moqi").empty());
     REQUIRE(ResolveCollocationModelPath(collocation::kRecommendedModelId).find("wanxiang-lts-zh-hans") !=
             std::string::npos);
+}
+
+TEST_CASE(collocation_source_url_is_https_direct_link)
+{
+    // 设置页的「浏览器下载」与 NOTICE.md 的来源署名用同一个地址。
+    const auto &entry = collocation::Catalog()[0];
+    REQUIRE_EQ(collocation::SourceUrl(entry),
+               std::string("https://github.com/amzxyz/RIME-LMDG/releases/download/LTS/wanxiang-lts-zh-hans.gram"));
+}
+
+TEST_CASE(collocation_import_rejects_bad_ids_and_sources_and_validates_format)
+{
+    ScopedCollocationEnvironment env;
+    const std::filesystem::path source = env.models_dir().parent_path() / L"浏览器下载.gram";
+    {
+        std::ofstream output(source, std::ios::binary | std::ios::trunc);
+        REQUIRE(static_cast<bool>(output));
+        output << "this is not an octagram model";
+    }
+    // 守卫与下载同一入口：目录外 id、缺失的源文件都同步拒绝，不起线程。
+    REQUIRE(!collocation::ImportModel("not-in-catalog", source));
+    REQUIRE(!collocation::ImportModel("zh-moqi", env.models_dir().parent_path() / L"missing.gram"));
+
+    // 格式锁对导入同样生效：坏字节进 error 态，模型目录里既不留 .gram 也不留 .part。
+    REQUIRE(collocation::ImportModel("zh-moqi", source));
+    std::string state;
+    for (int attempt = 0; attempt < 200; ++attempt)
+    {
+        state = collocation::GetModelStatuses()["zh-moqi"].state;
+        if (state != "importing")
+            break;
+        Sleep(25);
+    }
+    REQUIRE_EQ(state, std::string("error"));
+    REQUIRE(!std::filesystem::exists(env.models_dir() / L"zh-moqi" / L"zh-moqi.gram"));
+    REQUIRE(!std::filesystem::exists(env.models_dir() / L"zh-moqi" / L"zh-moqi.gram.part"));
+    // 用户选的原文件不被挪走。
+    REQUIRE(std::filesystem::exists(source));
+
+    // 已就绪的包不重做：幂等返回 true，原文件保持不变。
+    SeedModelFile(env.models_dir(), L"wanxiang-lts-zh-hans");
+    REQUIRE(collocation::ImportModel(collocation::kRecommendedModelId, source));
+    REQUIRE_EQ(std::filesystem::file_size(env.models_dir() / L"wanxiang-lts-zh-hans" / L"wanxiang-lts-zh-hans.gram"),
+               static_cast<std::uintmax_t>(4));
 }

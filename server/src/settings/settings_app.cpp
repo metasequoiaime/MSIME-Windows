@@ -364,6 +364,7 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
     const TencentTmtConfig &tencent_tmt = GetConfiguredTencentTmt();
     const CustomTranslationConfig &custom_translation = GetConfiguredCustomTranslation();
     const NiuTransConfig &niutrans = GetConfiguredNiuTrans();
+    const NetworkProxyConfig network_proxy = GetConfiguredNetworkProxy();
     const FrequencyAdjustmentConfig &frequency = GetConfiguredFrequencyAdjustment();
     const FloatingToolbarItemsConfig &toolbar = GetConfiguredFloatingToolbarItems();
     const std::filesystem::path skins_root = std::filesystem::path(CommonUtils::get_ime_data_path_w()) / L"skins";
@@ -525,7 +526,8 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
                      catalog.push_back(nlohmann::json{{"id", entry.id},
                                                       {"displayName", entry.display_name},
                                                       {"sizeHint", entry.size_hint},
-                                                      {"license", entry.license}});
+                                                      {"license", entry.license},
+                                                      {"url", collocation::SourceUrl(entry)}});
                  }
                  return catalog;
              }()}}},
@@ -637,6 +639,8 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
             {"tokens", ai.tokens},
             {"endpoint", ai.endpoint},
             {"model", ai.model},
+            {"endpoints", ai.endpoints},
+            {"models", ai.models},
             {"candidate_limit", ai.candidate_limit},
             {"prompt", ai.prompt},
             {"prompt_id", ai.prompt_id},
@@ -653,6 +657,7 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
             {"endpoint", custom_translation.endpoint},
             {"api_key", custom_translation.api_key}}},
           {"niutrans", {{"enabled", niutrans.enabled}, {"app_id", niutrans.app_id}, {"apikey", niutrans.apikey}}},
+          {"network", {{"proxy_mode", network_proxy.mode}, {"proxy_server", network_proxy.server}}},
           {"helpcode",
            {{"shuangpin_helpcode", GetConfiguredShuangpinHelpcodeEnabled()},
             {"shuangpin_mid_sentence_helpcode", GetConfiguredShuangpinMidSentenceHelpcodeEnabled()},
@@ -1016,6 +1021,12 @@ bool ApplyConfigUpdate(const json::object &data)
         return value.is_string() && SetConfiguredNiuTransString(path.substr(std::string("niutrans.").size()),
                                                                 json::value_to<std::string>(value));
     }
+    if (path.rfind("network.", 0) == 0)
+    {
+        const json::value &value = data.at("value");
+        return value.is_string() && SetConfiguredNetworkString(path.substr(std::string("network.").size()),
+                                                               json::value_to<std::string>(value));
+    }
     if (path == "helpcode.show_sp_helpcode_in_candidate_window")
         return SetConfiguredShowShuangpinHelpcodeInCandidateWindow(json::value_to<bool>(data.at("value")));
     if (path == "helpcode.shuangpin_helpcode")
@@ -1373,6 +1384,16 @@ void HandleWebMessage(HWND hwnd, ICoreWebView2WebMessageReceivedEventArgs *args)
         {
             // 下载中与当前生效解析的 id 在 DeleteModel 里拒绝；无论成败都回快照刷新列表。
             collocation::DeleteModel(json::value_to<std::string>(value.at("data").at("modelId")));
+            PostConfig(false);
+        }
+        else if (type == "collocationModelImport")
+        {
+            // 应用内下载太慢时，用户可以用浏览器下好再导入；选择对话框在 UI 线程模态弹出，
+            // 复制与格式校验在后台线程，进度同样随快照回放（页面在 importing 态轮询）。
+            const std::string model_id = json::value_to<std::string>(value.at("data").at("modelId"));
+            const std::filesystem::path source = collocation::PromptForModelFile(hwnd);
+            if (!source.empty())
+                collocation::ImportModel(model_id, source);
             PostConfig(false);
         }
         else if (type == "collocationModelStatusRequest")

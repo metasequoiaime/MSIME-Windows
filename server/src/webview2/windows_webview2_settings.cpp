@@ -812,6 +812,20 @@ static void ApplyCustomTranslationSubkey(const std::string &path, const json::ob
     }
 }
 
+// [network] 段：联网功能共用的代理
+static void ApplyNetworkSubkey(const std::string &path, const json::object &data)
+{
+    if (path.rfind("network.", 0) == 0)
+    {
+        const json::value &value = data.at("value");
+        if (value.is_string() &&
+            SetConfiguredNetworkString(path.substr(std::string("network.").size()), json::value_to<std::string>(value)))
+        {
+            PostSettingsConfig();
+        }
+    }
+}
+
 // [association] 段：联想、词格、搭配模型等
 static void ApplyAssociationSubkey(const std::string &path, const json::object &data)
 {
@@ -1392,9 +1406,25 @@ HRESULT OnControllerCreatedSettingsWnd(            //
                         collocation::DeleteModel(json::value_to<std::string>(val.at("data").at("modelId")));
                         PostSettingsConfig();
                     }
+                    else if (type == "collocationModelImport")
+                    {
+                        // 浏览器下载后的本地导入：对话框在 UI 线程模态弹出，复制与校验在后台线程。
+                        const std::string modelId = json::value_to<std::string>(val.at("data").at("modelId"));
+                        const std::filesystem::path source = collocation::PromptForModelFile(hwnd);
+                        if (!source.empty())
+                            collocation::ImportModel(modelId, source);
+                        PostSettingsConfig();
+                    }
                     else if (type == "collocationModelStatusRequest")
                     {
                         PostSettingsConfig();
+                    }
+                    else if (type == "openExternalUrl")
+                    {
+                        const std::string url = json::value_to<std::string>(val.at("data"));
+                        if (url.rfind("https://", 0) == 0)
+                            ShellExecuteW(hwnd, L"open", string_to_wstring(url).c_str(), nullptr, nullptr,
+                                          SW_SHOWNORMAL);
                     }
                     else if (type == "configUpdate")
                     {
@@ -1408,6 +1438,7 @@ HRESULT OnControllerCreatedSettingsWnd(            //
                             ApplyStatisticsSubkey(path, data);
                             ApplyTencentTmtSubkey(path, data);
                             ApplyCustomTranslationSubkey(path, data);
+                            ApplyNetworkSubkey(path, data);
                             ApplyAssociationSubkey(path, data);
                             ApplyUtilitySubkey(path, data);
                             ApplyKeybindingsSubkey(path, data);
@@ -1524,6 +1555,7 @@ void PostSettingsConfig()
     const FloatingToolbarItemsConfig &toolbar = GetConfiguredFloatingToolbarItems();
     const TencentTmtConfig &tencent_tmt = GetConfiguredTencentTmt();
     const CustomTranslationConfig &custom_translation = GetConfiguredCustomTranslation();
+    const NetworkProxyConfig network_proxy = GetConfiguredNetworkProxy();
     nlohmann::json payload = {
         {"type", "configSnapshot"},
         {"data",
@@ -1608,7 +1640,8 @@ void PostSettingsConfig()
                      catalog.push_back(nlohmann::json{{"id", entry.id},
                                                       {"displayName", entry.display_name},
                                                       {"sizeHint", entry.size_hint},
-                                                      {"license", entry.license}});
+                                                      {"license", entry.license},
+                                                      {"url", collocation::SourceUrl(entry)}});
                  }
                  return catalog;
              }()}}},
@@ -1626,6 +1659,7 @@ void PostSettingsConfig()
            {{"enabled", custom_translation.enabled},
             {"endpoint", custom_translation.endpoint},
             {"api_key", custom_translation.api_key}}},
+          {"network", {{"proxy_mode", network_proxy.mode}, {"proxy_server", network_proxy.server}}},
           {"utility",
            {{"unicode_mode", GetConfiguredUnicodeModeEnabled()},
             {"quick_phrase", GetConfiguredQuickPhraseEnabled()},

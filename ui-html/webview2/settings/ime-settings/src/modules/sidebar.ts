@@ -62,6 +62,9 @@ const setupLoaders: Record<string, () => Promise<void>> = {
   stats: async () => {
     (await import('./stats')).setupStats();
   },
+  'help-settings': async () => {
+    (await import('./help-settings')).setupHelpSettings();
+  },
   'about-settings': async () => {
     (await import('./about-settings')).setupAboutSettings();
   },
