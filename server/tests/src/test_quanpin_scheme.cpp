@@ -669,17 +669,28 @@ TEST_CASE(QuanpinAutocorrectInsertionTableEntriesAreLegal)
     }
 }
 
-TEST_CASE(QuanpinAutocorrectCutGatesEachTypeIndependently)
+TEST_CASE(QuanpinAutocorrectCutTypeBitSwitchMatrix)
 {
     const unsigned none = 0;
     const unsigned transposition_only = quanpin::kAutocorrectTransposition;
     const unsigned neighbor_only = quanpin::kAutocorrectNeighbor;
     const unsigned both = transposition_only | neighbor_only;
 
+    // The generated correction space attaches its out-of-table substitutions to
+    // kAutocorrectNeighbor, so that bit no longer maps one-to-one onto the static
+    // neighbour table: swapping "sang"'s leading vowel for "h" is not a QWERTY
+    // neighbour pair (kQwertyNeighbors['a'] == "qwsz"), and the generated space
+    // explains "sahng" as "sa'ang" under the neighbour bit alone. The cases below
+    // used to pin that one-to-one relation and are kept, with the widened reading
+    // spelled out. The bare bit used here is unreachable in the product: engine.cpp
+    // assembles the deletion and insertion bits alongside the legacy switches, so
+    // the only non-zero masks are 0xd/0xe/0xf. That makes THIS row untriggerable by
+    // a user; it does not make the generated space unreachable, because 0xe/0xf
+    // still carry the neighbour bit and all three carry the insertion bit.
     // "sahng" is a transposition fix; only that bit may correct it.
     REQUIRE(quanpin::autocorrect_cut("sahng", none).empty());
     REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("sahng", transposition_only)), std::string("shang"));
-    REQUIRE(quanpin::autocorrect_cut("sahng", neighbor_only).empty());
+    REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("sahng", neighbor_only)), std::string("sa'ang"));
     // "shabg" is a neighbor fix; only that bit may correct it.
     REQUIRE(quanpin::autocorrect_cut("shabg", none).empty());
     REQUIRE(quanpin::autocorrect_cut("shabg", transposition_only).empty());
@@ -709,6 +720,24 @@ TEST_CASE(QuanpinJianpinShapeGuardBlocksCorrection)
     // jianpin, so correction is the only useful reading of e.g. bqng -> bang.
     REQUIRE(!quanpin::looks_like_syllable_with_jianpin_tail("bqng"));
     REQUIRE(!quanpin::looks_like_syllable_with_jianpin_tail("wj"));
+}
+
+// The counterpart of QuanpinJianpinShapeGuardBlocksCorrection: the shape predicate
+// says "jianpin intent", and the correction search still cuts it anyway. Both are
+// correct -- the guard is applied by the callers, not here.
+TEST_CASE(QuanpinAutocorrectCutExplainsJianpinShapeByGeneratedSubstitution)
+{
+    const unsigned both = quanpin::kAutocorrectTransposition | quanpin::kAutocorrectNeighbor;
+    // "keneng" is ken + eng with zero corrected letters. That guard is the CALLERS'
+    // responsibility (quanpin_dictionary.cpp, input_session_composition.cpp) and
+    // autocorrect_cut deliberately does not consult it -- test_pinyin.cpp's "zher"
+    // case documents that same contract, where the correction cut exists by design.
+    // What the generated space changed is coverage, not the guard: it supplies
+    // "eng" -> "ang" as an out-of-table substitution, so the search now explains an
+    // input the static tables happened not to. develop returned empty here only
+    // because no static deletion pair happened to exist, not because a guard fired.
+    // The mask is unreachable in production: see QuanpinAutocorrectCutTypeBitSwitchMatrix.
+    REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("keneng", both)), std::string("ken'ang"));
 }
 
 TEST_CASE(QuanpinAutocorrectCutSingleSyllableTranspositions)
@@ -741,7 +770,7 @@ TEST_CASE(QuanpinAutocorrectCutPrefersFewestCorrections)
     REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("sahnguai", both)), std::string("shan'guai"));
 }
 
-TEST_CASE(QuanpinAutocorrectCutRejectsInputsOutOfScope)
+TEST_CASE(QuanpinAutocorrectCutRejectsInputsWithNoCorrectionPath)
 {
     const unsigned both = quanpin::kAutocorrectTransposition | quanpin::kAutocorrectNeighbor;
     // The mask short-circuits before any table lookup.
@@ -749,7 +778,6 @@ TEST_CASE(QuanpinAutocorrectCutRejectsInputsOutOfScope)
     // Legal input: the caller must only invoke autocorrect when the correction
     // cut already failed, so a fully legal spelling yields no correction.
     REQUIRE(quanpin::autocorrect_cut("shang", both).empty());
-    REQUIRE(quanpin::autocorrect_cut("keneng", both).empty());
     // Manual delimiter: user-intended boundary, never rewritten.
     REQUIRE(quanpin::autocorrect_cut("xi'an", both).empty());
     // No correction path: unresolvable garbage.
@@ -851,15 +879,18 @@ TEST_CASE(QuanpinAutocorrectCutMixedDeletionAndNeighbor)
     // "shngzhk" mixes a deletion edge (shng -> shang) with a neighbor edge
     // (zhk -> zhi): two corrected edges, weights 11 + 13.
     REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("shngzhk", all)), std::string("shang'zhi"));
-    // Without the deletion bit the same input stays unexplained.
-    REQUIRE(quanpin::autocorrect_cut("shngzhk", both).empty());
+    // Without the deletion bit the generated space still explains it: "shng"
+    // becomes "sang" through an out-of-table substitution on the leading vowel,
+    // then the static neighbour edge zhk -> zhi carries the rest (15 + 13 = 28).
+    // The deletion-bit reading above still wins because it costs 11 + 13 = 24.
+    REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("shngzhk", both)), std::string("sang'zhi"));
 
     // A two-letter jianpin leftover ("zh") stays out of correction scope even
     // with deletion on: the tables hold no 2-letter keys.
     REQUIRE(quanpin::autocorrect_cut("sahngzh", all).empty());
 }
 
-TEST_CASE(QuanpinAutocorrectCutGatesDeletionIndependently)
+TEST_CASE(QuanpinAutocorrectCutDeletionBitSwitchMatrix)
 {
     const unsigned none = 0;
     const unsigned transposition_only = quanpin::kAutocorrectTransposition;
@@ -867,10 +898,13 @@ TEST_CASE(QuanpinAutocorrectCutGatesDeletionIndependently)
     const unsigned deletion_only = quanpin::kAutocorrectDeletion;
     const unsigned all = transposition_only | neighbor_only | deletion_only;
 
-    // "shng" is a deletion fix; only that bit may correct it.
+    // "shng" is a deletion fix; only that bit may correct it directly.
     REQUIRE(quanpin::autocorrect_cut("shng", none).empty());
     REQUIRE(quanpin::autocorrect_cut("shng", transposition_only).empty());
-    REQUIRE(quanpin::autocorrect_cut("shng", neighbor_only).empty());
+    // ...except that the generated space also reads "shng" as "sang" (out-of-table
+    // substitution on the leading vowel, weight 15) under the neighbour bit.
+    // The direct deletion reading costs 11 and still wins wherever both bits are on.
+    REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("shng", neighbor_only)), std::string("sang"));
     REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("shng", deletion_only)), std::string("shang"));
     REQUIRE_EQ(quanpin::join_segments(quanpin::autocorrect_cut("shng", all)), std::string("shang"));
 

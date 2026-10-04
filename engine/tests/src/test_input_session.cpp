@@ -337,6 +337,249 @@ void run_umlaut_alias_session_tests(const std::filesystem::path &data_directory)
 // 光标驱动的前缀解码（PRD R2–R7，Stage 1）：候选与量化边界按「光标之前的完整音节
 // 单元前缀」重算。自建隔离词库，不与主 fixture 互相污染；Server（Stage 2）将以
 // set_caret + recompute_candidates 的同一方式消费这些入口。
+// 阶段 1 上下文消解（任务 quanpin-autocorrect-context-ranking）：同档纠错读法
+// 在词格路径分边际达标时由胜出切分接管领衔。zhng 的删除目标按表序 zhang 在前
+// （主切），fixture 让 zheng 侧的办证权重高 20 倍——启发式路径分差 ln(20)=3.0
+// （log10 1.3），两种标度下都过 1.0 接管边际。fixture 无 sc.lm，词格退回
+// 启发式打分（ln(weight)+词长奖励），权重完全决定路径分，测试因此确定。
+void run_autocorrect_context_ranking_tests(const std::filesystem::path &data_directory)
+{
+    const std::filesystem::path directory = data_directory / "autocorrect-context";
+    std::filesystem::create_directories(directory);
+    {
+        Database database(directory / "msime.db");
+        database.execute("CREATE TABLE tbl_2_b(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                         "INSERT INTO tbl_2_b VALUES('ban''zheng', 'bz', '办证', 100000);"
+                         "INSERT INTO tbl_2_b VALUES('ban''zheng', 'bz', '辩证', 10);"
+                         "INSERT INTO tbl_2_b VALUES('ban''zhang', 'bz', '班长', 5000);"
+                         "INSERT INTO tbl_2_b VALUES('ban''zhang', 'bz', '搬账', 4000);");
+        database.execute("CREATE TABLE tbl_1_s(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                         "INSERT INTO tbl_1_s VALUES('shang', 's', '上', 900);"
+                         "INSERT INTO tbl_1_s VALUES('sheng', 's', '生', 800);");
+    }
+
+    metasequoia::RuntimePaths paths;
+    paths.resources = directory;
+    paths.user_data = directory;
+    paths.cache = directory;
+    paths.dictionaries = directory;
+    const unsigned both = quanpin::kAutocorrectTransposition | quanpin::kAutocorrectNeighbor;
+    SentenceAssociationOptions lattice_only;
+    lattice_only.word_lattice = true;
+
+    const auto candidate_words = [](const metasequoia::InputSession &session) {
+        std::vector<std::string> words;
+        for (const auto &item : session.candidates())
+        {
+            words.push_back(item.word);
+        }
+        return words;
+    };
+
+    // 关联关闭 = 现状静态路径：合并池按权重排序，办证系与班长系交错。
+    {
+        metasequoia::InputSession session(SchemeType::Quanpin, both, true, true, true, paths);
+        type(session, "banzhng");
+        const auto words = candidate_words(session);
+        require(words.size() == 4 && words[0] == "办证" && words[1] == "班长" && words[2] == "搬账" &&
+                    words[3] == "辩证",
+                "The static same-tier merge must interleave the readings by dictionary weight.");
+    }
+
+    // 关联开启：zheng 切分上下文胜出接管领衔——办证系整体前移，辩证从末位
+    // 升到第 2 位，班长系整体后移。
+    {
+        metasequoia::InputSession session(SchemeType::Quanpin, both, true, true, true, paths);
+        session.set_sentence_association(lattice_only);
+        type(session, "banzhng");
+        const auto words = candidate_words(session);
+        require(words.size() == 4 && words[0] == "办证" && words[1] == "辩证" && words[2] == "班长" &&
+                    words[3] == "搬账",
+                "The context-ranked reading must lead with its whole word group.");
+    }
+
+    // 单音节纠错无词格可搭（词格要求 >=2 完整音节）：两种状态必须逐位一致。
+    {
+        metasequoia::InputSession off(SchemeType::Quanpin, both, true, true, true, paths);
+        type(off, "shng");
+        metasequoia::InputSession on(SchemeType::Quanpin, both, true, true, true, paths);
+        on.set_sentence_association(lattice_only);
+        type(on, "shng");
+        require(same_candidate_words(off, on),
+                "A single-syllable correction must take the static path even with the word lattice on.");
+        require(candidate_words(on).size() == 2, "The single-syllable fixture must surface both deletion targets.");
+    }
+}
+
+// 审阅缺陷 D1（PR #592 行内评论）：上下文重排接管后，胜出切分的单字前缀曾被插到
+// 同键位整词前面。query_series 的 count 从整键递减到 1，ban'zheng 的输出里除了
+// 办证/辩证/整句还带着首音节的单字；这些单字排在 rest（班长、搬账）之前，把同键位的
+// 其他整词整组挤出首页。原 fixture 没有 tbl_1_b，前缀这条路根本没被走到。
+// 这里补单字表，并直接断言「整键在前、前缀在后」这条分层不变量。
+// 同上一组 fixture：词库目录里没有 sc.lm，词格退回启发式打分，权重完全决定路径分，
+// 因此 zheng 侧稳定胜出、重排稳定接管，用例不依赖任何模型文件。
+void run_autocorrect_context_layering_tests(const std::filesystem::path &data_directory)
+{
+    const std::filesystem::path directory = data_directory / "autocorrect-context-layering";
+    std::filesystem::create_directories(directory);
+    {
+        Database database(directory / "msime.db");
+        database.execute("CREATE TABLE tbl_2_b(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                         "INSERT INTO tbl_2_b VALUES('ban''zheng', 'bz', '办证', 100000);"
+                         "INSERT INTO tbl_2_b VALUES('ban''zheng', 'bz', '辩证', 10);"
+                         "INSERT INTO tbl_2_b VALUES('ban''zhang', 'bz', '班长', 5000);"
+                         "INSERT INTO tbl_2_b VALUES('ban''zhang', 'bz', '搬账', 4000);");
+        // 单字表：query_series 递减到 count==1 时查它，前缀行由此产生。单字权重取 1e6
+        // 量级（真实词库里单字是语料计数），确保它们不会被 append 阶段的去重或调频挪走。
+        database.execute("CREATE TABLE tbl_1_b(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                         "INSERT INTO tbl_1_b VALUES('ban', 'b', '办', 1000000);"
+                         "INSERT INTO tbl_1_b VALUES('ban', 'b', '半', 900000);");
+    }
+
+    metasequoia::RuntimePaths paths;
+    paths.resources = directory;
+    paths.user_data = directory;
+    paths.cache = directory;
+    paths.dictionaries = directory;
+    const unsigned both = quanpin::kAutocorrectTransposition | quanpin::kAutocorrectNeighbor;
+    SentenceAssociationOptions lattice_only;
+    lattice_only.word_lattice = true;
+
+    metasequoia::InputSession session(SchemeType::Quanpin, both, true, true, true, paths);
+    session.set_sentence_association(lattice_only);
+    type(session, "banzhng");
+
+    const auto &items = session.candidates();
+    const auto index_of = [&items](const std::string &word) {
+        for (size_t i = 0; i < items.size(); ++i)
+        {
+            if (items[i].word == word)
+            {
+                return i;
+            }
+        }
+        return items.size();
+    };
+
+    // 先确认 fixture 真的同时产出了整键行与单字前缀行，否则下面的分层断言是空的。
+    const size_t prefix_a = index_of("办");
+    const size_t prefix_b = index_of("半");
+    require(prefix_a != items.size() && prefix_b != items.size(),
+            "The layering fixture must surface single-character prefix rows for the winner cut.");
+    const size_t sibling = index_of("班长");
+    require(sibling != items.size(), "The layering fixture must surface the same-tier whole word.");
+
+    require(index_of("办证") < prefix_a, "The winner cut's whole word must precede its own single-character prefixes.");
+    require(sibling < prefix_a && sibling < prefix_b,
+            "Same-tier whole words must not be pushed behind the winner cut's single-character prefixes.");
+
+    // 分层的完整形式：所有整键行都在任何前缀行之前。全拼键用 ' 分隔音节，
+    // 单音节键不含 '。
+    const auto is_prefix_row = [&items](size_t i) { return items[i].canonical_pinyin.find('\'') == std::string::npos; };
+    bool seen_prefix = false;
+    for (size_t i = 0; i < items.size(); ++i)
+    {
+        if (is_prefix_row(i))
+        {
+            seen_prefix = true;
+        }
+        else
+        {
+            require(!seen_prefix, "Every whole-key row must precede every single-character prefix row.");
+        }
+    }
+}
+
+// 阶段 2 生成式纠错空间（任务 quanpin-autocorrect-generated-space）：静态表
+// 形状之外的单编辑手误由生成式索引兜底，权重落贵档（15）。隔离 fixture：
+// - shatg = shang 的 n→t（t 非邻键，远键替换）
+// - zthou = zhou 的 z/h 之间插 t（t 不在静态覆盖集，远键插入）
+// - chng 同键双读：chng→chang（静态漏字 11）与 chng→cang（生成 15），
+//   静态最优时生成切分整体丢弃——静态优先语义的判别性断言
+// - shatngzh = head shatng + 简拼尾 zh：head 组合路径同享静态优先
+void run_autocorrect_generated_space_tests(const std::filesystem::path &data_directory)
+{
+    const std::filesystem::path directory = data_directory / "autocorrect-generated";
+    std::filesystem::create_directories(directory);
+    {
+        Database database(directory / "msime.db");
+        database.execute("CREATE TABLE tbl_1_s(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                         "INSERT INTO tbl_1_s VALUES('shang', 's', '上', 900);");
+        database.execute("CREATE TABLE tbl_1_z(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                         "INSERT INTO tbl_1_z VALUES('zhou', 'z', '周', 900);");
+        database.execute("CREATE TABLE tbl_1_c(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                         "INSERT INTO tbl_1_c VALUES('chang', 'c', '长', 900);"
+                         "INSERT INTO tbl_1_c VALUES('cang', 'c', '仓', 5000);");
+        database.execute("CREATE TABLE tbl_2_s(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                         "INSERT INTO tbl_2_s VALUES('shang''zh', 'sz', '上周', 900);");
+        database.execute("CREATE TABLE tbl_3_s(key TEXT,jp TEXT,value TEXT,weight INTEGER);"
+                         "INSERT INTO tbl_3_s VALUES('sha''tang''zh', 'stz', '沙汤扎', 900);");
+    }
+
+    metasequoia::RuntimePaths paths;
+    paths.resources = directory;
+    paths.user_data = directory;
+    paths.cache = directory;
+    paths.dictionaries = directory;
+    const unsigned both = quanpin::kAutocorrectTransposition | quanpin::kAutocorrectNeighbor;
+
+    // 远键替换：shatg → shang（生成对，贵档 15）。
+    {
+        metasequoia::InputSession session(SchemeType::Quanpin, both, true, true, true, paths);
+        type(session, "shatg");
+        const auto found = find_candidate_index(session, "上");
+        require(found < session.candidates().size() && session.candidates()[found].corrected_from == "shatg",
+                "A far-substitution typo must be corrected to 上 with the typed letters recorded.");
+    }
+
+    // 远键插入（词中位）：zthou → zhou（t 不在 z/h 的覆盖集）。fixture 特意
+    // 选无竞争切分的输入：zhwou 这类插入位会拼出 [zha(w 邻键替换)+ou] 等更
+    // 便宜的合法切分（权重 13 < 15），生成读法按契约排后被前缀候选遮蔽——
+    // 那是排序语义，不是生成类失效。zthou 无任何竞争切分，唯一读即纠错读法。
+    {
+        metasequoia::InputSession session(SchemeType::Quanpin, both, true, true, true, paths);
+        type(session, "zthou");
+        const auto found = find_candidate_index(session, "周");
+        require(found < session.candidates().size() && session.candidates()[found].corrected_from == "zthou",
+                "A far-insertion typo must be corrected to 周 with the typed letters recorded.");
+    }
+
+    // 静态优先语义：chng = chang 漏 a。读法竞争——chng→chang（静态漏字 11）与
+    // chng→cang（生成远键替换 h→a，15）。最优切分为纯静态时生成切分整体丢弃：
+    // 仓不出现（混表加权仲裁依赖训练权重，方向阶段 3），长照常领衔。
+    {
+        metasequoia::InputSession session(SchemeType::Quanpin, both, true, true, true, paths);
+        type(session, "chng");
+        require(candidate_index(session, "长") == 0, "The in-table cheaper deletion reading must lead for chng.");
+        require(
+            find_candidate_index(session, "仓") == session.candidates().size(),
+            "Static-priority semantics: the generated cang reading must not surface when a static cut tops the input.");
+    }
+
+    // head+简拼尾组合路径的静态优先：shatngzh 在整串 k-best 上无解（尾部 zh 非
+    // 完整音节），走 head 重试。head shatng 的读法竞争——sha+tng→tang（静态漏字
+    // 11）与 shatng→shang（生成插入 15）。丢弃规则由 k-best 搜索自身执行，head
+    // 路径同享：静态读法的沙汤扎（sha'tang'zh 精确键）在场，上周（shang+zh 生成
+    // 读法经 costlier 档，表内输入的基线里不存在）不得出现。
+    {
+        metasequoia::InputSession session(SchemeType::Quanpin, both, true, true, true, paths);
+        type(session, "shatngzh");
+        require(find_candidate_index(session, "沙汤扎") < session.candidates().size(),
+                "The head-composition path must still correct shatng to sha+tang.");
+        require(find_candidate_index(session, "上周") == session.candidates().size(),
+                "Static priority must hold on the head path: the generated shang+zh reading must not surface.");
+    }
+
+    // 守卫与合法输入：尾位插入（shangv 类）受简拼尾守卫——纠错不触发由
+    // test_pinyin 的 zheg 用例与输入门不变式覆盖，此处不重复；合法拼写原样直出。
+    {
+        metasequoia::InputSession legal(SchemeType::Quanpin, both, true, true, true, paths);
+        type(legal, "shang");
+        require(candidate_index(legal, "上") == 0 && legal.candidates()[0].corrected_from.empty(),
+                "A legal spelling must stay uncorrected.");
+    }
+}
+
 void run_caret_prefix_session_tests(const std::filesystem::path &data_directory)
 {
     const std::filesystem::path directory = data_directory / "caret-prefix";
@@ -1242,6 +1485,10 @@ int run_test()
 
     run_umlaut_alias_session_tests(data_directory);
     run_caret_prefix_session_tests(data_directory);
+    run_autocorrect_context_ranking_tests(data_directory);
+    run_autocorrect_context_layering_tests(data_directory);
+
+    run_autocorrect_generated_space_tests(data_directory);
 #endif
 
 #ifndef METASEQUOIA_SKIP_FREQUENCY_TESTS

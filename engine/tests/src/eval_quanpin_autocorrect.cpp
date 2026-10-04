@@ -89,6 +89,7 @@ enum class ErrorModel
     Deletion,
     Ambiguous,
     Insertion,
+    Outside,
 };
 
 enum class ErrorKind
@@ -97,6 +98,8 @@ enum class ErrorKind
     Neighbor,
     Deletion,
     Insertion,
+    FarSubstitution,
+    FarInsertion,
 };
 
 struct Options
@@ -109,6 +112,7 @@ struct Options
     ErrorModel model = ErrorModel::Mixed;
     std::string model_name = "mixed";
     std::string csv_path;
+    std::string seeds_path;
     int dump = 0;
 };
 
@@ -119,8 +123,8 @@ void usage_exit(const std::string &message)
         std::cerr << "ERROR: " << message << "\n";
     }
     std::cerr << "usage: eval_quanpin_autocorrect --db <msime.db> [--samples N] [--seed S]\n"
-              << "           [--rates 10,25,50,100] [--model mixed|deletion|ambiguous|insertion]\n"
-              << "           [--resource <dir>] [--csv <path>] [--dump N]\n";
+              << "           [--rates 10,25,50,100] [--model mixed|deletion|ambiguous|insertion|outside]\n"
+              << "           [--resource <dir>] [--csv <path>] [--seeds-file <path>] [--dump N]\n";
     std::exit(2);
 }
 
@@ -215,6 +219,10 @@ Options parse_options(int argc, char *argv[])
             {
                 options.model = ErrorModel::Insertion;
             }
+            else if (options.model_name == "outside")
+            {
+                options.model = ErrorModel::Outside;
+            }
             else
             {
                 usage_exit("unknown --model: " + options.model_name);
@@ -229,6 +237,10 @@ Options parse_options(int argc, char *argv[])
         else if (argument == "--csv")
         {
             value_or_exit(options.csv_path);
+        }
+        else if (argument == "--seeds-file")
+        {
+            value_or_exit(options.seeds_path);
         }
         else if (argument == "--dump")
         {
@@ -429,7 +441,7 @@ std::vector<std::string> raw_variants(ErrorKind kind, const std::string &syllabl
             out.push_back(syllable.substr(0, i) + syllable.substr(i + 1));
         }
     }
-    else
+    else if (kind == ErrorKind::Insertion)
     {
         // 插入：与生成器 insertion_variants 同款约束——位置锚定串首（参照右
         // 邻）、串尾（参照左邻）、中间（参照任一侧），插入字母必须是相邻键的
@@ -467,6 +479,69 @@ std::vector<std::string> raw_variants(ErrorKind kind, const std::string &syllabl
             }
         }
     }
+    else if (kind == ErrorKind::FarSubstitution)
+    {
+        // 表外形状：非相邻键替换（替换键不是原键也不是其 QWERTY 邻键）。与
+        // 静态表替换形状构造性不相交，用于度量生成式纠错空间的覆盖增益。
+        for (size_t i = 0; i < syllable.size(); ++i)
+        {
+            std::unordered_set<char> blocked;
+            blocked.insert(syllable[i]);
+            for (const auto &[key, neighbors] : qwerty_neighbors())
+            {
+                if (key == syllable[i])
+                {
+                    blocked.insert(neighbors.begin(), neighbors.end());
+                }
+            }
+            for (char key = 'a'; key <= 'z'; ++key)
+            {
+                if (blocked.count(key) != 0)
+                {
+                    continue;
+                }
+                out.push_back(syllable.substr(0, i) + key + syllable.substr(i + 1));
+            }
+        }
+    }
+    else if (kind == ErrorKind::FarInsertion)
+    {
+        // 表外形状：插入字母不属于静态覆盖集（该位相邻字母及其邻键）。
+        for (size_t position = 0; position <= syllable.size(); ++position)
+        {
+            std::unordered_set<char> covered;
+            if (position > 0)
+            {
+                covered.insert(syllable[position - 1]);
+                for (const auto &[key, neighbors] : qwerty_neighbors())
+                {
+                    if (key == syllable[position - 1])
+                    {
+                        covered.insert(neighbors.begin(), neighbors.end());
+                    }
+                }
+            }
+            if (position < syllable.size())
+            {
+                covered.insert(syllable[position]);
+                for (const auto &[key, neighbors] : qwerty_neighbors())
+                {
+                    if (key == syllable[position])
+                    {
+                        covered.insert(neighbors.begin(), neighbors.end());
+                    }
+                }
+            }
+            for (char key = 'a'; key <= 'z'; ++key)
+            {
+                if (covered.count(key) != 0)
+                {
+                    continue;
+                }
+                out.push_back(syllable.substr(0, position) + key + syllable.substr(position));
+            }
+        }
+    }
     return out;
 }
 
@@ -490,7 +565,8 @@ std::vector<std::string> usable_variants(ErrorKind kind, const std::string &syll
 }
 
 // mixed = 交换 25% / 邻键 25% / 漏字 25% / 多字 25%；deletion = 100% 漏字；
-// insertion = 100% 多字。选中的错误类型在该音节上无可用变体（如 2 字母音节
+// insertion = 100% 多字；outside = 非相邻替换 / 远键插入各半（表外形状，度量
+// 生成式纠错空间的覆盖增益）。选中的错误类型在该音节上无可用变体（如 2 字母音节
 // 或 6 字母音节的插入变体超长）时保持原样，交由样本级作废逻辑处理，不回退
 // 到其他类型，保证分布可解释。
 std::string corrupt_syllable(const std::string &syllable, std::mt19937 &rng, ErrorModel model,
@@ -508,6 +584,11 @@ std::string corrupt_syllable(const std::string &syllable, std::mt19937 &rng, Err
     else if (model == ErrorModel::Insertion)
     {
         kind = ErrorKind::Insertion;
+    }
+    else if (model == ErrorModel::Outside)
+    {
+        kind = std::uniform_int_distribution<int>(1, 100)(rng) <= 50 ? ErrorKind::FarSubstitution
+                                                                     : ErrorKind::FarInsertion;
     }
     const auto variants = usable_variants(kind, syllable, legal);
     if (variants.empty())
@@ -801,6 +882,128 @@ std::vector<std::string> top_words_for_syllable(sqlite3 *db, const std::string &
     return words;
 }
 
+// 种子表一条（固定精度套件）：键入串 + 期望读音（带撇号切分）+ 目标词。
+// 目标词留空 = 取该读音在词库里的最高权重词。来源与维护纪律见任务
+// eval/seeds.txt 头注：用户反馈的误报/漏报样例固化于此，豁免于「注错生成器
+// 逐键一致」契约——它度量的正是契约外与用户直接相关的场景。
+struct SeedCase
+{
+    std::string typo;
+    std::string expected_key;
+    std::string word;
+};
+
+std::vector<SeedCase> load_seed_cases(const std::string &path)
+{
+    std::ifstream input(path);
+    if (!input)
+    {
+        usage_exit("cannot open seeds file: " + path);
+    }
+    std::vector<SeedCase> cases;
+    std::string line;
+    while (std::getline(input, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+        {
+            line.pop_back();
+        }
+        if (line.empty() || line.front() == '#')
+        {
+            continue;
+        }
+        std::istringstream stream(line);
+        SeedCase seed;
+        if (!std::getline(stream, seed.typo, '\t') || !std::getline(stream, seed.expected_key, '\t'))
+        {
+            continue;
+        }
+        std::getline(stream, seed.word, '\t');
+        cases.push_back(std::move(seed));
+    }
+    return cases;
+}
+
+// 目标词缺省时的兜底：取该读音在词库里的最高权重词。平局按 value 字典序，与
+// build_sample_pool 的排序决胜锚点同一约定，保证逐次运行可复现。key 用绑定参数：
+// 多音节 key 带撇号，内插会打碎 SQL 串。
+std::string top_word_for_key(sqlite3 *db, const std::string &key)
+{
+    const std::string table = quanpin::build_table_name(quanpin::split_segments(key));
+    if (table.empty())
+    {
+        return {};
+    }
+    const std::string sql = "SELECT value FROM " + table + " WHERE key = ?1 ORDER BY weight DESC, value ASC LIMIT 1";
+    sqlite3_stmt *statement = nullptr;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &statement, nullptr) != SQLITE_OK)
+    {
+        return {};
+    }
+    std::string word;
+    if (sqlite3_bind_text(statement, 1, key.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+        sqlite3_step(statement) == SQLITE_ROW)
+    {
+        const auto *text = reinterpret_cast<const char *>(sqlite3_column_text(statement, 0));
+        if (text != nullptr)
+        {
+            word = text;
+        }
+    }
+    sqlite3_finalize(statement);
+    return word;
+}
+
+struct SeedOutcome
+{
+    std::string typo;
+    std::string expected_key;
+    std::string word;
+    int rank = 0;
+    bool restored = false;
+    bool skipped = false; // 词库查不到目标词，无法计分
+};
+
+struct SeedReport
+{
+    RateReport summary;
+    std::vector<SeedOutcome> outcomes;
+};
+
+// 种子套件：逐条按 evaluate_case 的口径（预热一次、计时第二次查询）跑，
+// 汇总一行聚合（R@1/R@3/读音还原/温态），明细进报告供人工对照。
+SeedReport run_seed_suite(QuanpinDictionary &dictionary, sqlite3 *db, const Options &options,
+                          unsigned autocorrect_types)
+{
+    SeedReport report;
+    report.summary.rate = 100;
+    for (const auto &seed : load_seed_cases(options.seeds_path))
+    {
+        SeedOutcome outcome{seed.typo, seed.expected_key, seed.word, 0, false, false};
+        if (outcome.word.empty())
+        {
+            outcome.word = top_word_for_key(db, seed.expected_key);
+        }
+        if (outcome.word.empty())
+        {
+            outcome.skipped = true;
+            report.outcomes.push_back(std::move(outcome));
+            continue;
+        }
+        const Entry entry{seed.expected_key, outcome.word};
+        const auto case_outcome = evaluate_case(dictionary, seed.typo, entry, autocorrect_types);
+        outcome.rank = case_outcome.rank;
+        outcome.restored = case_outcome.restored;
+        ++report.summary.samples;
+        report.summary.recall1 += outcome.rank == 1 ? 1 : 0;
+        report.summary.recall3 += outcome.rank >= 1 && outcome.rank <= 3 ? 1 : 0;
+        report.summary.restored += outcome.restored ? 1 : 0;
+        report.summary.warm_ms.push_back(case_outcome.warm_ms);
+        report.outcomes.push_back(std::move(outcome));
+    }
+    return report;
+}
+
 struct AmbiguousTargetOutcome
 {
     std::string input;
@@ -946,6 +1149,12 @@ int main(int argc, char *argv[])
         reports = run_injected_model(dictionary, pool, options, autocorrect_types);
     }
 
+    std::optional<SeedReport> seed_report;
+    if (!options.seeds_path.empty())
+    {
+        seed_report = run_seed_suite(dictionary, sampling_db, options, autocorrect_types);
+    }
+
     std::ostringstream markdown;
     markdown << "# Quanpin autocorrect evaluation\n\n";
     markdown << "- model: " << options.model_name << "\n";
@@ -1013,6 +1222,30 @@ int main(int argc, char *argv[])
                      << percent(report.gate.serviceable_recall3, report.gate.serviceable) << " |\n";
         }
     }
+    if (seed_report.has_value())
+    {
+        markdown << "\n## Seed suite (fixed precision cases)\n\n";
+        markdown << "| typo | expected key | target word | rank | reading restored |\n";
+        markdown << "|------|--------------|-------------|-----:|-----------------:|\n";
+        for (const auto &outcome : seed_report->outcomes)
+        {
+            markdown << "| " << outcome.typo << " | " << outcome.expected_key << " | " << outcome.word << " | ";
+            if (outcome.skipped)
+            {
+                markdown << "skip (word not in dictionary) |\n";
+            }
+            else
+            {
+                markdown << outcome.rank << " | " << (outcome.restored ? "yes" : "no") << " |\n";
+            }
+        }
+        markdown << "\n- seed aggregate: R@1 " << percent(seed_report->summary.recall1, seed_report->summary.samples)
+                 << ", R@3 " << percent(seed_report->summary.recall3, seed_report->summary.samples) << ", restored "
+                 << percent(seed_report->summary.restored, seed_report->summary.samples) << ", p50 "
+                 << milliseconds(percentile(seed_report->summary.warm_ms, 0.50)) << ", p95 "
+                 << milliseconds(percentile(seed_report->summary.warm_ms, 0.95)) << " (" << seed_report->summary.samples
+                 << " scored)\n";
+    }
     std::cout << markdown.str();
 
     if (!options.csv_path.empty())
@@ -1026,6 +1259,10 @@ int main(int argc, char *argv[])
         if (ambiguous_run)
         {
             append_csv_row(csv, "ambiguous-protected", ambiguous_report.gate_protected);
+        }
+        if (seed_report.has_value())
+        {
+            append_csv_row(csv, "seeds", seed_report->summary);
         }
         std::cout << "csv written: " << options.csv_path << "\n";
     }

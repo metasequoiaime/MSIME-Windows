@@ -3,6 +3,7 @@
 #include "autocorrect_table.h"
 #include "../common/helpcode_utils.h"
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <string_view>
 #include <unordered_map>
@@ -535,6 +536,10 @@ struct CorrectionTarget
     // pair. The tie-break weight is derived from the ENABLED subset at query
     // time (see min_enabled_correction_weight), never from a switched-off table.
     unsigned type_bit = 0;
+    // Out-of-table generated pair (non-neighbor substitution / arbitrary-letter
+    // insertion): flat expensive-tier weight (kAutocorrectGeneratedShapeWeight)
+    // instead of the per-bit derivation; switch gating still uses type_bit.
+    bool generated = false;
 };
 
 // Canonical per-type tie-break cost. Each correction type carries one fixed
@@ -574,6 +579,126 @@ int min_enabled_correction_weight(const unsigned enabled_bits)
     return best;
 }
 
+// QWERTY letter-key neighbors (finger-movement range, letter keys only), the
+// same adjacency as server/scripts/generate_quanpin_autocorrect.py:42-69.
+// Indexed by letter - 'a' (a..z order -- NOT keyboard order). Drift is
+// self-healing only in one direction: a pair misclassified as "non-neighbor"
+// that actually collides with the static table falls back to the cheaper
+// static weight, but a neighbor misclassified as "far" simply skips
+// generation -- so keep this table byte-identical to the generator's.
+constexpr std::array<std::string_view, 26> kQwertyNeighbors = {
+    "qwsz",   // a
+    "vghn",   // b
+    "xdfv",   // c
+    "serfcx", // d
+    "wrsd",   // e
+    "drtgvc", // f
+    "ftyhbv", // g
+    "gyujbn", // h
+    "uojk",   // i
+    "huikmn", // j
+    "jiolm",  // k
+    "kop",    // l
+    "njk",    // m
+    "bhjm",   // n
+    "ipkl",   // o
+    "ol",     // p
+    "wa",     // q
+    "etdf",   // r
+    "awdexz", // s
+    "ryfg",   // t
+    "yihj",   // u
+    "cfgb",   // v
+    "qeas",   // w
+    "zsdc",   // x
+    "tugh",   // y
+    "asx",    // z
+};
+
+constexpr bool is_qwerty_neighbor(char key, char of_letter)
+{
+    const unsigned row = static_cast<unsigned>(of_letter - 'a');
+    return row < kQwertyNeighbors.size() && kQwertyNeighbors[row].find(key) != std::string_view::npos;
+}
+
+// One out-of-table generated pair: wrong-form string plus the legal syllable it
+// stands for. wrong is owned by the generated store (static lifetime) because
+// the correction index refers to it through string_views.
+struct GeneratedPair
+{
+    std::string wrong;
+    std::string_view syllable;
+    unsigned type_bit;
+};
+
+// Enumerate the out-of-table shapes over every legal syllable: non-neighbor
+// substitutions and arbitrary-letter insertions. Transpositions and deletions
+// are exhaustive in the static tables -- nothing to add. Wrong forms must be
+// non-legal, at least three letters (shorter strings belong to the jianpin
+// space) and at most six (the k-best piece scan never looks at longer pieces) --
+// the same window as the static tables and the evaluation filter.
+std::vector<GeneratedPair> build_generated_pairs()
+{
+    const auto &legal = intact_pinyin_set();
+    std::vector<GeneratedPair> pairs;
+    for (const std::string &syllable : intact_pinyin_list())
+    {
+        if (syllable.size() < 3)
+        {
+            continue; // same-length substitutions would violate the 3-letter floor
+        }
+        // 非相邻键替换：换上的字母既不是原字母也不是它的 QWERTY 邻键。
+        for (size_t i = 0; i < syllable.size(); ++i)
+        {
+            for (char key = 'a'; key <= 'z'; ++key)
+            {
+                if (key == syllable[i] || is_qwerty_neighbor(key, syllable[i]))
+                {
+                    continue;
+                }
+                std::string wrong = syllable;
+                wrong[i] = key;
+                if (legal.find(wrong) != legal.end())
+                {
+                    continue;
+                }
+                pairs.push_back({std::move(wrong), syllable, kAutocorrectNeighbor});
+            }
+        }
+        // 任意字母插入：插入字母不属于静态覆盖集（该位相邻字母及其邻键）。
+        for (size_t i = 0; i <= syllable.size(); ++i)
+        {
+            const char left = i > 0 ? syllable[i - 1] : '\0';
+            const char right = i < syllable.size() ? syllable[i] : '\0';
+            for (char key = 'a'; key <= 'z'; ++key)
+            {
+                const bool statically_covered = key == left || key == right ||
+                                                (left != '\0' && is_qwerty_neighbor(key, left)) ||
+                                                (right != '\0' && is_qwerty_neighbor(key, right));
+                if (statically_covered)
+                {
+                    continue;
+                }
+                std::string wrong = syllable;
+                wrong.insert(i, 1, key);
+                if (wrong.size() > 6 || legal.find(wrong) != legal.end())
+                {
+                    continue; // 7 letters sit outside the k-best piece scan window
+                }
+                pairs.push_back({std::move(wrong), syllable, kAutocorrectInsertion});
+            }
+        }
+    }
+    return pairs;
+}
+
+// Static lifetime: the correction index refers to `wrong` through string_views.
+const std::vector<GeneratedPair> &generated_pairs()
+{
+    static const std::vector<GeneratedPair> pairs = build_generated_pairs();
+    return pairs;
+}
+
 const std::unordered_map<std::string_view, std::vector<CorrectionTarget>> &correction_index()
 {
     static const std::unordered_map<std::string_view, std::vector<CorrectionTarget>> kIndex = [] {
@@ -609,6 +734,21 @@ const std::unordered_map<std::string_view, std::vector<CorrectionTarget>> &corre
         add_table(autocorrect::kDeletionEntries, autocorrect::kDeletionCount, kAutocorrectDeletion);
         add_table(autocorrect::kInsertionEntries, autocorrect::kInsertionCount, kAutocorrectInsertion);
         add_table(autocorrect::kNeighborEntries, autocorrect::kNeighborCount, kAutocorrectNeighbor);
+        // Out-of-table generated shapes: appended AFTER the static tables so a
+        // shared wrong key keeps its cheaper static targets first. A generated
+        // pair colliding with a static pair is dropped -- the static table's
+        // cheaper weight already covers it (self-heals engine/generator drift).
+        for (const auto &pair : generated_pairs())
+        {
+            auto &targets = index[pair.wrong];
+            const auto duplicate = std::find_if(targets.begin(), targets.end(), [&](const CorrectionTarget &target) {
+                return target.syllable == pair.syllable;
+            });
+            if (duplicate == targets.end())
+            {
+                targets.push_back(CorrectionTarget{pair.syllable, pair.type_bit, true});
+            }
+        }
         return index;
     }();
     return kIndex;
@@ -624,6 +764,11 @@ struct AutocorrectEdge
     size_t raw_length = 0;
     std::string_view syllable;
     bool corrected = false;
+    // Out-of-table generated pair (non-neighbor substitution / arbitrary-letter
+    // insertion). Generated-containing hypotheses rank behind ALL static
+    // hypotheses (see the finalize comparator) so in-table inputs keep their
+    // baseline cut set.
+    bool generated = false;
 };
 
 // One propagated cut hypothesis, ranked by (edge_count, weight, arrival):
@@ -638,6 +783,10 @@ struct SearchHypothesis
     size_t prev_index = kNoPredecessor;
     size_t arrival = 0;
     int weight = 0;
+    // True once any generated edge participates in this path. Such hypotheses
+    // rank behind every static hypothesis (see the finalize comparator) so
+    // in-table inputs keep their baseline cut set.
+    bool has_generated = false;
     AutocorrectEdge edge;
     // Order-sensitive rolling hash of the joined syllable sequence. Two
     // hypotheses reaching the same position share a sequence iff their hashes
@@ -696,6 +845,14 @@ std::vector<AutocorrectCut> autocorrect_cut_kbest(const std::string &pinyin, con
             return;
         }
         std::sort(list.begin(), list.end(), [](const SearchHypothesis &lhs, const SearchHypothesis &rhs) {
+            // Generated-containing hypotheses rank behind ALL static ones
+            // regardless of edge count: out-of-table shapes only step in when
+            // the static space has no better explanation, and in-table inputs
+            // must keep their baseline cut set (zero-regression by design).
+            if (lhs.has_generated != rhs.has_generated)
+            {
+                return lhs.has_generated < rhs.has_generated;
+            }
             if (lhs.edge_count != rhs.edge_count)
             {
                 return lhs.edge_count < rhs.edge_count;
@@ -743,6 +900,7 @@ std::vector<AutocorrectCut> autocorrect_cut_kbest(const std::string &pinyin, con
         child.arrival = arrival++;
         child.weight = parent.weight + edge_weight;
         child.edge = edge;
+        child.has_generated = parent.has_generated || edge.generated;
         child.seq_hash = extend_sequence_hash(parent.seq_hash, edge.syllable);
         best[end].push_back(std::move(child));
     };
@@ -788,7 +946,9 @@ std::vector<AutocorrectCut> autocorrect_cut_kbest(const std::string &pinyin, con
                 }
                 edge.syllable = target.syllable;
                 edge.corrected = true;
-                const int weight = min_enabled_correction_weight(enabled_bits);
+                edge.generated = target.generated;
+                const int weight =
+                    target.generated ? kAutocorrectGeneratedShapeWeight : min_enabled_correction_weight(enabled_bits);
                 for (size_t i = 0; i < hypotheses.size(); ++i)
                 {
                     extend(start + len, hypotheses[i], i, edge, weight);
@@ -797,6 +957,18 @@ std::vector<AutocorrectCut> autocorrect_cut_kbest(const std::string &pinyin, con
         }
     }
     finalize(length);
+    // Static-priority zero-regression (see the header contract): when the best
+    // cut is pure static, drop every generated cut so every caller -- the
+    // primary resolver, the head+tail composition retry, the k == 1 preedit
+    // projection -- consumes exactly the baseline cut set; generated readings
+    // surface only when no static cut explains the input at all. Living here
+    // (not in each caller) is the point: a future consumer cannot forget it.
+    if (!best[length].empty() && !best[length].front().has_generated)
+    {
+        best[length].erase(std::remove_if(best[length].begin(), best[length].end(),
+                                          [](const SearchHypothesis &hypothesis) { return hypothesis.has_generated; }),
+                           best[length].end());
+    }
 
     // Rebuild each surviving end hypothesis by walking the predecessor chain.
     // raw_length (not syllable.size()) gives the raw span: deletion edges

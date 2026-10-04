@@ -26,12 +26,20 @@ cmake --build build --config Release --target <imetest | eval_quanpin_autocorrec
 
 注错的变体生成规则（交换/邻键/漏字/多字、QWERTY 邻键表、长度与合法音节过滤）与 `server/scripts/generate_quanpin_autocorrect.py` **必须逐键一致**——两侧漂移会让注错模型脱离纠错表的假设空间，基线失去可比性。改任一侧时在同一个提交里同步另一侧。
 
+`--seeds-file <路径>` 是独立数据入口：每行 `typo<TAB>期望key[<TAB>期望词]`（`#` 注释、空行跳过，期望词缺省时取该 key 的最高权重词），产出独立的 Seed suite 报告节与 `seeds` 聚合 CSV 行。它**豁免于上述逐键一致契约**——种子表度量的正是契约外与用户反馈直接相关的场景（误报/漏报样例固化）。
+
+资源目录要求：引擎加载 `sc.lm`（词格）与 `sentence-model-*.safetensors`（神经重排），而 `server/assets/tables` 只有 `dict_pinyin.dat`、`helpcode.txt`、`user_dict.dat`——模型文件不入库。本机没有把模型放进 tables 时，用安装数据目录拼一个隔离资源目录（只读模型拷贝 + `msime.db` 副本），`--db` 与 `--resource` 都指过去；直接指安装目录也可以，但评测进程会以读写方式打开 `--db`，拷贝副本更干净。
+
+沙箱环境下子进程可能被拒绝在 `%TEMP%` 下新建目录（表现为 `create_directories: Access is denied.` 后直接退出），把 `TEMP`/`TMP` 环境变量指到仓库内的已存在目录再跑即可。
+
 历史基线与采集笔记在归档任务目录：`.trellis/tasks/archive/2026-09/09-12-quanpin-autocorrect-patent/eval/`（阶段 0 基线）与 `09-13-quanpin-insertion-autocorrect/eval/`（insertion 上线前后对照）。
 
 ### 运行
 
 ```powershell
-# 仓库根目录执行；--model 可选 mixed|deletion|ambiguous|insertion
+# 仓库根目录执行；--model 可选 mixed|deletion|ambiguous|insertion|outside
+# outside = 表外形状注错（非相邻替换/远键插入），度量生成式纠错空间的覆盖增益，
+# 与静态表形状构造性不相交——该档 R@1 在无生成空间的代码上恒为 0。
 ./engine/tests/build/bin/Release/eval_quanpin_autocorrect.exe `
     --db <msime.db 路径> `
     --samples 300 --seed 42 --model mixed `

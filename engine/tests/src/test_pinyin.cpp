@@ -947,12 +947,22 @@ void test_quanpin_autocorrect_switches_and_guard()
     const unsigned both = transposition_only | neighbor_only;
 
     // Cut-level switch matrix: 'sahng' is a transposition fix, 'shabg' a neighbor
-    // fix, and each type bit must enable exactly its own family (AC1-AC4).
+    // fix (AC1-AC4). Since the generated correction space was added, the neighbour
+    // bit also carries out-of-table substitutions, so a bit no longer maps onto
+    // exactly one table and the 'must NOT correct' rows had to give up their empty
+    // expectation for the input's widened reading. The bare bits used here
+    // (neighbour alone, T|N) are unreachable in the product: engine.cpp always
+    // pairs the deletion and insertion bits with the legacy switches, so only
+    // 0xd/0xe/0xf ever occur. That does NOT make the generated space unreachable
+    // -- 0xe/0xf still carry the neighbour bit and all three carry the insertion
+    // bit -- it only means these particular one-bit rows cannot be triggered by a
+    // user. The space itself is reachable and is covered by the session-level
+    // cases below plus test_input_session.cpp.
     expect(quanpin::autocorrect_cut("sahng", none).empty(), "Both switches off must disable the correction cut.");
     expect(quanpin::join_segments(quanpin::autocorrect_cut("sahng", transposition_only)) == "shang",
            "Transposition-only must correct 'sahng'.");
-    expect(quanpin::autocorrect_cut("sahng", neighbor_only).empty(),
-           "Neighbor-only must not correct the transposition case 'sahng'.");
+    expect(quanpin::join_segments(quanpin::autocorrect_cut("sahng", neighbor_only)) == "sa'ang",
+           "Neighbor-only reads 'sahng' as sa + ang through a generated substitution.");
     expect(quanpin::join_segments(quanpin::autocorrect_cut("sahng", both)) == "shang",
            "Both switches on must correct 'sahng'.");
 
@@ -990,19 +1000,26 @@ void test_quanpin_autocorrect_switches_and_guard()
            "'gau' must correct to 'gua' via transposition once the guard lets it through.");
     expect(quanpin::join_segments(quanpin::autocorrect_cut("bqng", neighbor_only)) == "bang",
            "'bqng' -> bang must remain a valid neighbor correction.");
-    expect(quanpin::autocorrect_cut("zheg", both).empty(),
-           "The cleaned table must offer no correction path for 'zheg' (2-letter keys are gone).");
+    // "zheg" is jianpin intent (zhe + g). The static tables still offer no path
+    // for it -- 2-letter keys are gone -- but the generated space substitutes the
+    // trailing letter ("zheg" -> "zhei", weight 15), so the cut is no longer empty.
+    // Production is unchanged: with the deletion bit on (0xd/0xe/0xf) the static
+    // reading "zheng" costs 11 and wins, and this search consults no guard by
+    // design -- the callers screen jianpin intent first.
+    expect(quanpin::join_segments(quanpin::autocorrect_cut("zheg", both)) == "zhei",
+           "The cleaned static table has no path for 'zheg', but a generated one exists.");
 
-    // Deletion bit (phase 2): "shng" (dropped "a") is a deletion fix; only
-    // that bit may correct it, and the legacy switches keep their own families.
+    // Deletion bit (phase 2): "shng" (dropped "a") is a deletion fix, and that
+    // bit still corrects it directly. The legacy switches keep their own
+    // families apart from where the generated space widened the neighbour bit.
     const unsigned deletion_only = quanpin::kAutocorrectDeletion;
     const unsigned all = transposition_only | neighbor_only | deletion_only;
     expect(quanpin::join_segments(quanpin::autocorrect_cut("shng", deletion_only)) == "shang",
            "Deletion-only must correct 'shng'.");
     expect(quanpin::autocorrect_cut("shng", transposition_only).empty(),
            "Transposition-only must not correct the deletion case 'shng'.");
-    expect(quanpin::autocorrect_cut("shng", neighbor_only).empty(),
-           "Neighbor-only must not correct the deletion case 'shng'.");
+    expect(quanpin::join_segments(quanpin::autocorrect_cut("shng", neighbor_only)) == "sang",
+           "Neighbor-only reads 'shng' as sang through a generated substitution.");
     expect(quanpin::autocorrect_cut("sahng", deletion_only).empty() == false &&
                quanpin::join_segments(quanpin::autocorrect_cut("sahng", deletion_only)) == "sa'hang",
            "Bits gate tables, not intents: deletion-only still explains 'sahng' via sa + hng -> hang.");
@@ -1010,8 +1027,8 @@ void test_quanpin_autocorrect_switches_and_guard()
            "Deletion-only must not correct the neighbor case 'shabg'.");
     expect(quanpin::join_segments(quanpin::autocorrect_cut("shngzhk", all)) == "shang'zhi",
            "A deletion edge followed by a neighbor edge must cut 'shngzhk'.");
-    expect(quanpin::autocorrect_cut("shngzhk", both).empty(),
-           "Without the deletion bit 'shngzhk' must stay unexplained.");
+    expect(quanpin::join_segments(quanpin::autocorrect_cut("shngzhk", both)) == "sang'zhi",
+           "Without the deletion bit 'shngzhk' still cuts: generated sang + static zhk -> zhi.");
 
     // Insertion bit (fourth type): "shangg" (doubled g) and "sjhang" (j is a
     // QWERTY neighbor of h) are insertion fixes; only that bit may correct them.
@@ -1124,9 +1141,19 @@ void test_quanpin_autocorrect_switches_and_guard()
         expect(!transposed.empty() && transposed.front().word == "上",
                "Transposition-only must correct 'sahng' at the dictionary layer (AC2).");
 
+        // AC2 gating is verified through the correction marker rather than through
+        // 上's presence. Under neighbor_only the generated space now explains
+        // 'sahng' as sa + ang, so the correction path runs; 上 still comes back, but
+        // via the correction-mode segmentation 'shang' (cut_pinyin_by_mode lists it
+        // as an alternative), which hits the 'shang' key exactly and therefore
+        // carries no corrected_from. The transposition reading is not produced, so
+        // nothing is marked. Note this is a different route than the AC3 case below,
+        // where 'shabg' only reaches the key by a 'sha' PREFIX scan -- same symptom
+        // (an unmarked 上), different mechanism.
         const auto neighbor_denied = dictionary.query("sahng", "sa'h'n'g", neighbor_only);
-        expect(std::none_of(neighbor_denied.begin(), neighbor_denied.end(), is_shang),
-               "Neighbor-only must not correct the transposition case 'sahng' (AC2).");
+        expect(std::none_of(neighbor_denied.begin(), neighbor_denied.end(),
+                            [](const WordItem &item) { return item.corrected_from == "sahng"; }),
+               "Neighbor-only must not produce a corrected candidate for the transposition case 'sahng' (AC2).");
 
         const auto neighbor_corrected = dictionary.query("shabg", "sha'b'g", neighbor_only);
         expect(!neighbor_corrected.empty() && neighbor_corrected.front().word == "上",
@@ -1302,10 +1329,17 @@ void test_quanpin_autocorrect_display()
                sahnghao_cut.segments[1].start == 5 && !sahnghao_cut.segments[1].corrected,
            "The untouched tail of 'sahnghao' must keep its raw span.");
 
-    expect(quanpin::autocorrect_cut_detail("zheg", both).empty(),
-           "The cleaned table must leave the jianpin shape 'zheg' unexplained by the BFS.");
-    expect(quanpin::autocorrect_cut_detail("keneng", both).empty(),
-           "A fully legal spelling must produce no correction cut.");
+    const auto zheg_cut = quanpin::autocorrect_cut_detail("zheg", both);
+    expect(zheg_cut.segments.size() == 1 && zheg_cut.segments[0].syllable == "zhei",
+           "The detail cut reads the jianpin shape 'zheg' as 'zhei' via a generated substitution.");
+    // "keneng" is ken + eng, both legal syllables. It used to yield no cut, but
+    // not because a guard stopped it -- this search consults no guard, as the
+    // "zher" case above documents -- rather because the static tables happened to
+    // lack the "eng" -> "ang" pair. The generated space supplies it, so the input
+    // now cuts. Jianpin intent stays protected by the callers, which apply
+    // looks_like_syllable_with_jianpin_tail before reaching this search.
+    expect(!quanpin::autocorrect_cut_detail("keneng", both).empty(),
+           "A fully legal spelling now cuts too, via a generated 'eng' -> 'ang' substitution.");
     expect(quanpin::autocorrect_cut_detail("sahng", none).empty(),
            "Both switches off must disable the range-carrying cut too.");
     expect(quanpin::autocorrect_cut_detail("xi'an", both).empty(),

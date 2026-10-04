@@ -70,9 +70,11 @@ std::optional<std::vector<std::size_t>> RescoreWorker::order_for(const SentenceM
         const auto active = active_keys_.find(&model);
         if (active != active_keys_.end() && active->second == key)
         {
-            // 正在算的就是这一批，算完自会进表并回调。这也是该模型最新的请求，排在它后面的旧待办
-            // 已经没人要了（用户打出去又退了回来），一并丢掉。
-            pending_.erase(&model);
+            // 正在算的就是这一批，算完自会进表并回调，所以不必再排一份。
+            // 刻意不碰 pending_：这一批在算的这些工夫里，用户完全可能已经打到了更新的输入，
+            // pending_ 里那个才是当前请求。抹掉它就再没有人排它了——本次调用拿到 nullopt 也
+            // 不会有回调，失败模式是那次重排永久缺失，而不只是延迟。pending_ 按模型留一格、
+            // 下次 order_for 直接覆盖，本来就不需要这里清理。
             return std::nullopt;
         }
         Job job;
@@ -130,6 +132,9 @@ void RescoreWorker::run()
             Job job;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
+                // 这里按模型判「有没有空槽」就够，不必比键：待办是在下面取走的那一刻才从表里 erase 的，
+                // 在那之前同一个模型的键只挂在 active_keys_ 上，两张表不可能记着同一个模型同一批——否则
+                // 这个谓词会把正在算的那一批重排一遍。按键去重的那一层判断在 order_for 里。
                 wake_.wait(lock, [this] {
                     return stopping_ || std::any_of(pending_.begin(), pending_.end(), [this](const auto &item) {
                                return active_keys_.find(item.first) == active_keys_.end();

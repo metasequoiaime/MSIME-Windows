@@ -10,6 +10,7 @@
 #include <climits>
 #include <cstring>
 #include <fmt/format.h>
+#include <unordered_map>
 #include <unordered_set>
 #include <utf8/cpp17.h>
 
@@ -31,6 +32,18 @@ constexpr size_t kAlternativeSegmentationFirstPageSize = 6;
 // 比值 3.3% 仍提升；xie -> 西鄂(6) 对 些(3.75M) 被拒，jiang -> 激昂(23.7K) 对
 // 将(2.63M) 同样被拒。
 constexpr std::int64_t kAlternativeSegmentationPromotionRatio = 100;
+
+// 同档纠错读法的上下文消解（阶段 1 design）：同档备选切分各自过一遍完整管线，
+// 跨切分比较词格路径分（log10×1000，同档等罚，分差即纯上下文差）。胜出切分边际
+// 达标时接管「主切」角色领衔候选；不达标或词格不可用时与现状逐位一致。
+// 解码预算：只解通过静态门槛（上面 1/100 同款）且词库有行的备选，上限 4 个——
+// uanli 这类掉声母输入有 10-15 个等权目标，全解会伤 p95。
+constexpr size_t kAutocorrectContextDecodeLimit = 4;
+// 接管边际：以打分器自身的对数单位计——词格 LM 打分是 log10（1.0 ≈ 10× 句概率），
+// 无 LM 的启发式回退是 ln（1.0 ≈ e≈2.7×）。对标 CN105045778B 的 β 型先验比率边际
+// （同音校对 β=0.01 → 2.0），手误场景放宽一档。ponytail: 朴素常数；校准路径 =
+// user_journal 挖混淆先验（方向阶段 3）。
+constexpr double kAutocorrectContextMarginLog = 1.0;
 
 bool is_alpha_vk(ImeKeyCode vk)
 {
@@ -163,6 +176,10 @@ SeriesQueryResolution resolve_series_query(const std::string &raw_input, const q
             }
         };
 
+        // 静态优先语义由 k-best 搜索自身保证（见 quanpin_utils.h 契约）：最优
+        // 切分为纯静态时生成切分已在搜索内被丢弃，下面的 head+简拼尾组合路径
+        // 与 k=1 预编辑投影等调用方同享该保证；生成读法只在静态空间完全无法
+        // 解释输入时出场。混表竞争的加权仲裁依赖训练权重，留给方向阶段 3。
         const auto cuts = quanpin::autocorrect_cut_kbest(raw_input, autocorrect_types, kAutocorrectCutKBest);
         if (!cuts.empty())
         {
@@ -394,10 +411,141 @@ std::vector<WordItem> QuanpinDictionary::query_exact(const std::string &raw_inpu
         const std::string fallback_segmentation =
             segmentation.empty() ? quanpin::join_segments(segments) : segmentation;
         append_unique_words(result, query_series(raw_input, fallback_segmentation, segments));
+
+        // 同档上下文消解（阶段 1）：词格开启时直接解出主切与同档备选的最佳路径分
+        // 裁决，静态词频只承担解码前置过滤。不能从候选列表读分——
+        // merge_lattice_candidates 会把与已有候选同词的生成行去重掉（already 集），
+        // 最优路径通常恰好就是词库首行，列表里根本看不到它。词格不可用或边际不足
+        // 时，下面的一切与改造前逐位一致（降级矩阵见任务 design.md）。
+        bool context_reordered = false;
+        if (sentence_association_.word_lattice && !resolution.alternative_corrected_cuts.empty() &&
+            resolution.corrected_segments.size() >= 2 &&
+            quanpin::has_only_complete_pinyin_segments(resolution.corrected_segments))
+        {
+            // 与 query_series 的装配保持一致：collocation 项同样参与路径分。
+            quanpin::WordLatticeOptions lattice_options;
+            lattice_options.language_model = language_model_;
+            if (collocation_db_ != nullptr && collocation_db_->valid() &&
+                sentence_association_.collocation_weight != 0.0)
+            {
+                lattice_options.collocation_scorer = [db = collocation_db_](std::string_view tail,
+                                                                            std::string_view word, bool is_rear) {
+                    return db->query(std::string(tail), std::string(word), is_rear, gram::GrammarConfig{});
+                };
+                lattice_options.collocation_weight = sentence_association_.collocation_weight;
+            }
+            const auto lookup = quanpin::make_lattice_db_lookup(db_, statement_cache_, lattice_options.span_limit);
+            const auto best_path_score = [&lookup,
+                                          &lattice_options](const quanpin::Segments &cut) -> std::optional<double> {
+                if (cut.size() < 2 || !quanpin::has_only_complete_pinyin_segments(cut))
+                {
+                    return std::nullopt;
+                }
+                const auto cut_paths = quanpin::decode_word_lattice(cut, lookup, lattice_options);
+                return cut_paths.empty() ? std::nullopt : std::optional<double>(cut_paths.front().log_prob);
+            };
+            const auto primary_score = best_path_score(resolution.corrected_segments);
+            if (primary_score.has_value())
+            {
+                // 前置过滤沿用保护位同款 1/100 量级：今天就赢不了晋升的备选不付解码钱。
+                // 基准必须与 merge_alternative_segmentations 的 primary_top_weight 同源，
+                // 即取正读**整键**命中的首位权重、没有整键行时取 0。不能取 result.front()：
+                // result 是 query_series 的完整输出，头部可能是高权重前缀单字（真实词库里
+                // 单字是 1e6+ 的语料计数，见 heuristic_log_prob）或生成的整句。正读两音节
+                // 在词库里没有整词、词格只能用单字拼出路径时，那正是重排价值最高的场景，拿单字
+                // 当基准会在解码之前就把正常备选全筛掉，重排悄悄不生效。同参调用
+                // query_single_path 走缓存，不额外查库。
+                const std::string primary_key = quanpin::join_segments(resolution.corrected_segments);
+                const auto primary_full = query_single_path(raw_input, primary_key, resolution.corrected_segments);
+                const std::int64_t primary_top_weight = primary_full.empty() ? 0 : primary_full.front().weight;
+                const auto alternative_items = quanpin::query_exact_segmentations_keyed_flat(
+                    resolution.alternative_corrected_cuts, db_, statement_cache_,
+                    kAlternativeSegmentationCandidateLimit);
+                // 每个备选切分的最佳词权重：行按权重降序返回，emplace 只留首行。
+                std::unordered_map<std::string, std::int64_t> best_weight_by_key;
+                best_weight_by_key.reserve(alternative_items.size());
+                for (const auto &item : alternative_items)
+                {
+                    best_weight_by_key.emplace(item.key, item.weight);
+                }
+                std::vector<std::pair<std::int64_t, quanpin::Segments>> decode_pool;
+                for (const auto &cut : resolution.alternative_corrected_cuts)
+                {
+                    const auto found = best_weight_by_key.find(quanpin::join_segments(cut));
+                    if (found == best_weight_by_key.end() ||
+                        found->second * kAlternativeSegmentationPromotionRatio < primary_top_weight)
+                    {
+                        continue;
+                    }
+                    decode_pool.emplace_back(found->second, cut);
+                }
+                std::stable_sort(decode_pool.begin(), decode_pool.end(),
+                                 [](const auto &lhs, const auto &rhs) { return lhs.first > rhs.first; });
+                // 第一遍只解路径分选胜者，只为胜出切分付完整管线的钱。
+                std::optional<double> winner_score;
+                quanpin::Segments winner_segments;
+                for (size_t i = 0; i < decode_pool.size() && i < kAutocorrectContextDecodeLimit; ++i)
+                {
+                    const auto &cut = decode_pool[i].second;
+                    if (const auto cut_score = best_path_score(cut);
+                        cut_score.has_value() && (!winner_score.has_value() || *cut_score > *winner_score))
+                    {
+                        winner_score = cut_score;
+                        winner_segments = cut;
+                    }
+                }
+                if (winner_score.has_value() && *winner_score - *primary_score >= kAutocorrectContextMarginLog)
+                {
+                    // 边际达标：胜出切分领衔。merge_alternative_segmentations 假定传入
+                    // result 的头部是主切词库行，所以这里仍以主切为锚组装其余列表（从
+                    // 合并池摘掉胜出切分），再把胜出列表接到最前。胜出列表占满首页时，
+                    // 原保护位钉的名次随整体后移——首页本就该是胜出读音的词。
+                    std::vector<quanpin::Segments> remaining_alternatives;
+                    remaining_alternatives.reserve(alternative_segmentations.size());
+                    const std::string winner_key = quanpin::join_segments(winner_segments);
+                    for (const auto &alternative : alternative_segmentations)
+                    {
+                        if (quanpin::join_segments(alternative) != winner_key)
+                        {
+                            remaining_alternatives.push_back(alternative);
+                        }
+                    }
+                    std::vector<WordItem> rest =
+                        merge_alternative_segmentations(raw_input, pinyin_segmentation_, resolution.corrected_segments,
+                                                        remaining_alternatives, std::move(result));
+                    // query_series 的 count 从整键递减到 1，返回的不只是胜出切分的整键行，还有它
+                    // 首音节的全部单字。整句与词格行跟整键行同键——append_ime_fallback 用完整
+                    // segmentation 填 canonical_pinyin，词格 select_distinct 用 path->key——所以
+                    // 按 canonical_pinyin == winner_key 能干净地把前缀行摘出去。
+                    //
+                    // 这个判据依赖一个前置事实：整键档的 canonical 必然就是 winner_key 本身。
+                    // 胜出切分只能出自 decode_pool，那里用 query_exact_segmentations_keyed_flat
+                    // 只收精确键，词库里没有整词的切分压根进不了池；于是整键档走的是
+                    // query_single_cut_keyed 的精确键分支，不会退到前缀区间扫描那层降级
+                    // （那种行的 key 是别的读音，会被这个判据误当成前缀行沉到末尾）。
+                    //
+                    // 不切开会破坏 merge_alternative_segmentations 的既有分层（merged_full 在前、
+                    // 前缀作为 remaining 追加）：query_series(ban'zheng) 先出 办证/辩证/整句，再出
+                    // 班/办/半/般…，而班长、搬账这些同键位整词在 rest 里、排在单字之后，整组被挤
+                    // 出首页。这里恢复同一分层：整键块、rest、前缀块。
+                    std::vector<WordItem> winner_full;
+                    std::vector<WordItem> winner_prefix;
+                    for (auto &item : query_series(raw_input, winner_key, winner_segments))
+                    {
+                        (item.canonical_pinyin == winner_key ? winner_full : winner_prefix).push_back(std::move(item));
+                    }
+                    result = std::move(winner_full);
+                    append_unique_words(result, std::move(rest));
+                    append_unique_words(result, std::move(winner_prefix));
+                    context_reordered = true;
+                }
+            }
+        }
+
         // Query-time disambiguation (patent M3): the alternative readings of the
         // same typo compete with the primary cut under dictionary word
         // frequency; the best one keeps a protected slot near the top.
-        if (!alternative_segmentations.empty())
+        if (!context_reordered && !alternative_segmentations.empty())
         {
             result = merge_alternative_segmentations(raw_input, pinyin_segmentation_, resolution.corrected_segments,
                                                      alternative_segmentations, std::move(result));
